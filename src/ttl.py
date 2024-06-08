@@ -34,6 +34,23 @@ class DataWithTTL():
         else:
             raise ValueError("Value Expired!")
     
+    def get_timeout(self) -> float:
+        """Return the timeout
+
+        Returns:
+            float: Timeout in UNIX seconds.
+        """
+        return self.__timeout
+
+    def is_valid(self) -> bool:
+        """Return true if still alive
+
+        Returns:
+            bool: True if alive
+        """
+        return self.__timeout > time.time()
+
+    
     def get_value_or_null(self) -> Optional[any]:
         """Get value stored, or return None if past TTL.
 
@@ -45,13 +62,13 @@ class DataWithTTL():
         else:
             return None
     
-    def __repr__(self):
-        val = self.get_value()
-        valid = self.__timeout > time.time()
-        if(valid):
-            return f"{val} - Expires at: {self.__timeout}"
-        else:
-            return f"{val} - EXPIRED. Expired at: {self.__timeout}"
+    # def __repr__(self):
+    #     val = self.get_value()
+    #     valid = self.__timeout > time.time()
+    #     if(valid):
+    #         return f"{val} - Expires at: {self.__timeout}"
+    #     else:
+    #         return f"{val} - EXPIRED. Expired at: {self.__timeout}"
 
 # class HashmapTTL():
 #     pass        

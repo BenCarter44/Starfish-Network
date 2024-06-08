@@ -3,9 +3,11 @@ import binascii
 import os
 import threading
 import time
+from typing import Dict
 import zmq
 
 from MessageFormats import PeerKV, PeerKV_Hello, PeerKV_Hello_Receipt, dump
+from ttl import DataWithTTL
 
 
 def zpipe(ctx):
@@ -50,7 +52,12 @@ class KeyValueCommunications():
 
         self.peers = {} # DataTTL() dictionary by time.
 
-        self.keyvalues = {} # IP is key. TTL is value.
+        self.keyvalues : Dict[str, DataWithTTL] = {} # IP is key. TTL is value.
+
+        key = f"{serving_endpoint_pub}/P"
+        self.keyvalues[key] = DataWithTTL(key, self.ttl + time.time())
+        key = f"{serving_endpoint_query}/Q"
+        self.keyvalues[key] = DataWithTTL(key, self.ttl + time.time())
 
         self.control_socket_outside, inside_socket = zpipe(self.context)
 
@@ -59,6 +66,8 @@ class KeyValueCommunications():
 
         self.ticker = {}
         self.ticker["connect-peer"] = -1
+        self.ticker["state-request"] = 10
+        self.state_replay = 0
 
 
     def connect_to_peer(self, endpoint_publish_point, endpoint_query):
@@ -66,7 +75,14 @@ class KeyValueCommunications():
         self.peer_query_socket.connect(endpoint_query)
     
         self.send_hello()
-       
+
+    def send_state_request_to_peers(self):
+        pk = PeerKV()
+        pk.fetch_state_command()
+        self.ticker["state-request"] = time.time() + 10
+        self.peer_query_socket.send_multipart(pk.compile())
+        
+
     def send_hello(self):
          # Currently, this will be sent to ALL connected peers (dealer socket)
         msg = PeerKV_Hello()
@@ -74,9 +90,9 @@ class KeyValueCommunications():
                    self.serving_endpoint_query,
                    self.ttl + time.time()
                    )
+        self.ticker["connect-peer"] = time.time() + 10 # 10 sec timeout!
         self.peer_query_socket.send_multipart(msg.compile())
         print("Sent hello!")
-        self.ticker["connect-peer"] = time.time() + 10 # 10 sec timeout!
 
     def stop(self):
         self.control_socket_outside.send_string("STOP")
@@ -109,8 +125,17 @@ class KeyValueCommunications():
                     pk.import_msg(data)
 
                     endpoints = pk.get_endpoints()
-                    self.peers[f"{identity}-pub"] = endpoints[0]
-                    self.peers[f"{identity}-query"] = endpoints[1]
+                    endpt_pub = endpoints[0].get_value_or_null()
+                    endpt_query = endpoints[1].get_value_or_null()
+                    if(not(endpt_pub is None or endpt_query is None)):
+
+                        self.peers[f"{identity}-pub"] = endpoints[0].get_value_or_null()
+                        self.peers[f"{identity}-query"] = endpoints[1].get_value_or_null()
+
+                        key = f"{endpt_pub}/P"
+                        self.keyvalues[key] = DataWithTTL(key, self.ttl + time.time())
+                        key = f"{endpt_query}/Q"
+                        self.keyvalues[key] = DataWithTTL(key, self.ttl + time.time())
 
                     pk_response = PeerKV_Hello_Receipt()
                     pk_response.create()
@@ -120,7 +145,18 @@ class KeyValueCommunications():
 
                 elif(data[0] == b'General'):
                     pk = PeerKV()
-                    pk.import_msg(msg)
+                    pk_response = PeerKV()
+                    pk.import_msg(data)
+                    if(pk.is_fetch_state()):
+                        results = []
+                        for val in self.keyvalues:
+                            if(self.keyvalues[val].is_valid()):
+                                results.append(self.keyvalues[val])
+
+                        pk_response.return_state_receipt(results)
+                        self.receive_query_socket.send_multipart(
+                            pk_response.compile_with_address(identity))
+                        print('Sent response to general state request!', time.time())        
 
                 else:
                     raise ValueError("Unknown message received from Query Router Socket")
@@ -132,7 +168,27 @@ class KeyValueCommunications():
                     pk = PeerKV_Hello_Receipt()
                     pk.import_msg(msg)
                     self.ticker["connect-peer"] = 0 # done!      
-                    print("Connected!")  
+                    print("Connected!") 
+                    self.send_state_request_to_peers()  # send request for state.
+                
+                elif(msg[0] == b'General'):
+                    pk = PeerKV()
+                    pk.import_msg(msg)
+                    if(pk.is_return_state()):
+                        state = pk.get_state_from_return()
+                        
+                        # merge the key values together.
+                        for key in state:
+                            k = key.get_value_or_null()
+                            if(k is None):
+                                continue
+                            if(k in self.keyvalues and key.get_timeout() > self.keyvalues[k].get_timeout()):
+                                self.keyvalues[k] = key
+                            elif(not(k in self.keyvalues)):
+                                self.keyvalues[k] = key
+                        print("Received state. Merged in.")
+                        self.ticker["state-request"] = 0
+
                 else:
                     raise ValueError("Unknown message received from Peer Dealer Socket")
             
@@ -140,6 +196,12 @@ class KeyValueCommunications():
                 # resend hello!
                 print("Resending Hello!")             
                 self.send_hello()
+            
+            if(self.ticker["state-request"] > 100 and self.ticker["state-request"] < time.time() and self.state_replay < 10):
+                # resend hello!
+                print("Resending state request!") 
+                self.state_replay += 1            
+                self.send_state_request_to_peers()
             
 
     

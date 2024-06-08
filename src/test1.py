@@ -16,7 +16,10 @@ connect_endpoint_query2 = "tcp://127.0.0.1:8019"
 
 kvcomm.connect_to_peer(connect_endpoint_pub2, connect_endpoint_query2)
 
-input("Delay\n")
+
+input("Delay2\n")
+
 kvcomm.stop()
 
 print(kvcomm.peers)
+print(kvcomm.keyvalues)
