@@ -15,6 +15,7 @@ connect_endpoint_query1 = "tcp://127.0.0.1:8009"
 print("Attempting to connect to peer.")
 kvcomm.connect_to_peer(connect_endpoint_pub1,connect_endpoint_query1)
 
+kvcomm.pretty_print_endpoint_kv()
+
 input("\n---------- Finished --------\n")
 kvcomm.stop()
-print(kvcomm.endpoints_kv)

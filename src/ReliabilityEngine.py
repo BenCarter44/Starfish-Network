@@ -59,13 +59,14 @@ class ReliabilityEngine():
         self.pending_tasks += 1
         return msg
     
-    def add_message_RM(self, msg: ReliableMessage, decrement : bool = False) -> ReliableMessage:
+    def add_message_RM(self, msg: ReliableMessage) -> ReliableMessage:
         if(msg.max_retry is not None and msg.max_retry <= 0):
             return
-        if(decrement and msg.max_retry is not None):
+        if(msg.max_retry is not None):
             msg.max_retry -= 1
+        #print('Retry')
         self.socket.send_multipart(msg.data)
-        #print(f"Sent message: {message}. Time: {time.time() % 240} Remaining: {self.pending_tasks}")
+        #print(f"Sent message: {msg.data}. Time: {time.time() % 240} Remaining: {self.pending_tasks}")
         self.__add_to_timer(msg.retry_gap + time.time(), msg)
         self.pending_tasks += 1
         return msg
@@ -94,7 +95,7 @@ class ReliabilityEngine():
             if(self.timer[0] < time.time()):
                 msg = self.msg_objects[0]
                 if(not(msg.is_complete())):
-                    self.add_message_RM(msg,msg.max_retry != None)
+                    self.add_message_RM(msg)
                 self.timer.pop(0) 
                 self.msg_objects.pop(0)
                 self.pending_tasks -= 1
@@ -107,9 +108,6 @@ class ReliabilityEngine():
 if __name__ == "__main__":
     re = ReliabilityEngine(None)
     
-    for x in range(1000):
-        start = time.time() % 240
-        r = random.randint(1,15)
-        re.add_message(f"Hello world! Apple {x} - {r}",r,5)
-        start += r
-        print(f"Hello world! Apple {x} should go again at - {r} - {start}")
+
+    re.add_message(f"Hello world!",1,5)
+    
