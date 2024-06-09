@@ -12,9 +12,9 @@ print("Finished setting up ports!")
 connect_endpoint_pub1 = "tcp://127.0.0.1:8008"
 connect_endpoint_query1 = "tcp://127.0.0.1:8009"
 
+print("Attempting to connect to peer.")
 kvcomm.connect_to_peer(connect_endpoint_pub1,connect_endpoint_query1)
 
-input("Delay\n")
+input("\n---------- Finished --------\n")
 kvcomm.stop()
-
-print(kvcomm.peers)
+print(kvcomm.endpoints_kv)
