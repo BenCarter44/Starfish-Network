@@ -127,9 +127,9 @@ class IP_TTL():
         try:   
             d = dill.loads(in_data)
         except dill.UnpicklingError:
-            print(len(in_data), in_data)
+            print("DILL ERROR", len(in_data), in_data)
         if d is None:
-            print(len(in_data), in_data)
+            print("D NONE ERROR", len(in_data), in_data)
             raise ValueError()
         self.data = d[0]
         self.ttl = d[1]

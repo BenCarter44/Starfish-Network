@@ -43,14 +43,16 @@ class KeyValueCommunications():
         
         self.receive_query_socket = self.context.socket(zmq.ROUTER)
         self.receive_query_socket.bind(serving_endpoint_query)
-        self.receive_query_socket_RE = ReliabilityEngine(self.receive_query_socket)
 
         # sockets for connecting to peers 
         self.peer_subscribe_socket = self.context.socket(zmq.SUB)
         # self.peer_subscribe_socket.setsockopt(zmq.IDENTITY,my_identity)
-        self.peer_query_socket = self.context.socket(zmq.DEALER,)
-        self.peer_query_socket.hwm = 1000
-        self.peer_query_socket_RE = ReliabilityEngine(self.peer_query_socket)
+        peer_query_socket = self.context.socket(zmq.DEALER)
+        peer_query_socket.hwm = 1000
+
+        self.peer_query_socket_incoming, output = zpipe(self.context)
+
+        self.peer_query_socket_RE = ReliabilityEngine(self.context, peer_query_socket, output)
         # TODO: Design Decision: Dealer sends communications to ALL connected peers
         # self.peer_query_socket.setsockopt(zmq.IDENTITY,my_identity)
         # TODO: Identity is not required here. (Key Value doesn't have identity.)
@@ -118,8 +120,12 @@ class KeyValueCommunications():
 
     def connect_to_peer(self, endpoint_publish_point, endpoint_query):
         self.peer_subscribe_socket.connect(endpoint_publish_point)
-        self.peer_query_socket.connect(endpoint_query)
-        self.peer_query_socket_RE.add_peer()
+        i = self.peer_query_socket_RE.get_number_peers()
+        self.peer_query_socket_RE.add_peer(endpoint_query)
+        i2 = self.peer_query_socket_RE.get_number_peers()
+        while(i == i2): # wait for connect.
+            i2 = self.peer_query_socket_RE.get_number_peers()
+            time.sleep(0.01)
 
         r = random.randint(0,32766)
         while f"hello-{r}" in self.open_messages:  # TODO: Instead of R, do hash of data.
@@ -150,17 +156,15 @@ class KeyValueCommunications():
 
     def disconnect_from_peer(self, endpoint_publish_point, endpoint_query):
         self.peer_subscribe_socket.disconnect(endpoint_publish_point)
-        self.peer_query_socket.disconnect(endpoint_query)
+        self.peer_query_socket_RE.remove_peer(endpoint_query)
 
         key = f"{endpoint_publish_point}/P"
         self.connected_peers.remove(key)
         key = f"{endpoint_query}/Q"
         self.connected_peers.remove(key)
-        self.peer_query_socket_RE.remove_peer()
 
     def stop(self):
         self.peer_query_socket_RE.stop()
-        self.receive_query_socket_RE.stop()
         self.control_socket_outside.send_string("STOP")
         self.th.join()
     
@@ -468,7 +472,11 @@ class KeyValueCommunications():
         key, val_raw = msg.get_push_key_val()
 
         v = IP_TTL()
-        v.import_from_bytes(val_raw)
+        try:
+            v.import_from_bytes(val_raw)
+        except Exception as e:
+            dump(msg.compile_with_address(address))
+            raise e
         self.__update_keyval(key,  v)
         
         pk_response.return_push_change(msg.get_r_identity())
@@ -494,7 +502,7 @@ class KeyValueCommunications():
         poller = zmq.Poller() # put number in here if you want a timeout
         poller.register(self.receive_query_socket, zmq.POLLIN)
         poller.register(self.peer_subscribe_socket, zmq.POLLIN)
-        poller.register(self.peer_query_socket, zmq.POLLIN)
+        poller.register(self.peer_query_socket_incoming, zmq.POLLIN)
         poller.register(status_socket, zmq.POLLIN)
 
         while True:
@@ -535,7 +543,7 @@ class KeyValueCommunications():
                     elif(pk.is_push_change()):
                         self.__answer_pushed_change(pk, addr) 
                     else:
-                        print("Unknown message received from Query Router Socket")
+                        raise ValueError("Unknown message received from Query Router Socket")
                     
                 elif(data[0] == b'dummy'):
                     pk = BasicMultipartMessage()
@@ -543,10 +551,10 @@ class KeyValueCommunications():
                     self.__receive_dummy(pk,addr)
 
                 else:
-                    print("Unknown message received from Query Router Socket")
+                    raise ValueError("Unknown message received from Query Router Socket")
             
-            if(self.peer_query_socket in socket_receiving):
-                msg = self.peer_query_socket.recv_multipart()
+            if(self.peer_query_socket_incoming in socket_receiving):
+                msg = self.peer_query_socket_incoming.recv_multipart()
                 # print("Received on peer query socket: ",time.time())
                 # dump(msg)
                 # print("---\n")
@@ -578,10 +586,10 @@ class KeyValueCommunications():
                             self.__send_hello(r)
                             # wait for the RE to then request it again.
                     else:
-                        print("Unknown message received from Peer Dealer Socket")
+                        raise ValueError("Unknown message received from Peer Dealer Socket")
 
                 else:
-                    print("Unknown message received from Peer Dealer Socket")
+                    raise ValueError("Unknown message received from Peer Dealer Socket")
             
     
 

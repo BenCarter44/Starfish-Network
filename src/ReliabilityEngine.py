@@ -1,6 +1,8 @@
 
 
 
+import binascii
+import os
 import random
 import threading
 from typing import List
@@ -22,10 +24,25 @@ class ReliableMessage():
     def is_complete(self):
         return self.status
 
+
+def zpipe(ctx):
+    """build inproc pipe for talking to threads
+
+    mimic pipe used in czmq zthread_fork.
+
+    Returns a pair of PAIRs connected via inproc
+    """
+    a = ctx.socket(zmq.PAIR)
+    b = ctx.socket(zmq.PAIR)
+    a.linger = b.linger = 0
+    a.hwm = b.hwm = 1
+    iface = "inproc://%s" % binascii.hexlify(os.urandom(8))
+    a.bind(iface)
+    b.connect(iface)
+    return a,b
+
 class ReliabilityEngine():
-    def __init__(self, socket : zmq.Socket) -> None:
-        
-        self.socket = socket
+    def __init__(self, ctx : zmq.Context, socket : zmq.Socket, output : zmq.Socket) -> None:
 
         self.timer : List[float] = []
         self.msg_objects : List[ReliableMessage] = []
@@ -37,15 +54,60 @@ class ReliabilityEngine():
         self.th = threading.Thread(None,self.replay_management,name="Reliability Engine Thread")
         self.th.start()
 
+        self.control_pipe, pipe = zpipe(ctx)
+
+        self.th2 = threading.Thread(None, self.socket_management, args=(pipe, output, socket), name="Reliablity Socket Thread")
+        self.th2.start()
+
         self.pending_tasks = 0
+        self.output_socket = output
+
+        self.verified_peers = 0
+
+    def socket_management(self, pipe : zmq.Socket, output : zmq.Socket, primary : zmq.Socket):
+        poller = zmq.Poller()
+        poller.register(pipe, zmq.POLLIN)
+        poller.register(primary, zmq.POLLIN)
+
+        while True:
+            socket_receiving = dict(poller.poll(1000))
+            if(pipe in socket_receiving):
+                i = pipe.recv_multipart()
+                if(i[0] == b"STOP STOP STOP RE ENGINE"):
+                    break
+                if(i[0] == b"RE ENGINE connect"):
+                    # print("Connected")
+                    primary.connect(i[1].decode('utf-8'))
+                    self.verified_peers += 1
+                elif(i[0] == b"RE ENGINE disconnect"):
+                    # print("Disconnected")
+                    primary.disconnect(i[1].decode('utf-8'))
+                    self.verified_peers -= 1
+                else:
+                    # print("Send: ",i)
+                    primary.send_multipart(i)
+                        
+            if(primary in socket_receiving):
+                i = primary.recv_multipart()
+                # print("Recv: ",i)
+                output.send_multipart(i)
+
 
     def get_number_pending(self):
         return self.pending_tasks
-
-    def add_peer(self):
-        self.peers += 1
     
-    def remove_peer(self):
+    def get_number_peers(self):
+        return self.verified_peers
+
+    def add_peer(self, endpoint : str):
+        # print("connect")
+        self.peers += 1
+        self.add_message([b"RE ENGINE connect",endpoint.encode('utf-8')],max_retry=1)
+
+    
+    def remove_peer(self, endpoint : str):
+        self.add_message([b"RE ENGINE disconnect",endpoint.encode('utf-8')],max_retry=1)
+
         if(self.peers > 0):
             self.peers -= 1
 
@@ -57,21 +119,24 @@ class ReliabilityEngine():
         self.timer.insert(count,time_fire)
         self.msg_objects.insert(count, msg)
         self.signal.set()
-        # print("QUEUE LENGTH: ",len(self.timer))
+        # print("QUEUE: ",self.timer)
 
     def add_message(self, message: List[bytes], retry_gap=10, max_retry=None) -> ReliableMessage:
         if(max_retry is not None and max_retry <= 0):
             return
         if(self.peers == 0):
             return # drop if no one to send to!
-        self.socket.send_multipart(message)
+        
         #print(f"Sent message: {message}. Time: {time.time() % 240} Remaining: {self.pending_tasks}")
         msg = ReliableMessage(message,retry_gap,max_retry)
+        # print("MESSAGE  : ",msg.data)
+        self.__add_to_timer(0, msg) # send immediately!
+        self.pending_tasks += 1
+        
         self.__add_to_timer(retry_gap + time.time(), msg)
-        # print("MESSAGE: ",msg.data)
         self.pending_tasks += 1
         return msg
-    
+
     def add_message_RM(self, msg: ReliableMessage) -> ReliableMessage:
         if(msg.max_retry is not None and msg.max_retry <= 0):
             return
@@ -80,8 +145,8 @@ class ReliabilityEngine():
         #print('Retry')
         if(self.peers == 0):
             return # drop if no one to send to!
-        self.socket.send_multipart(msg.data)
-        #print(f"Sent message: {msg.data}. Time: {time.time() % 240} Remaining: {self.pending_tasks}")
+        self.control_pipe.send_multipart(msg.data)
+        # print(f"Sent message: {msg.data}. Remain: {self.pending_tasks}")
         self.__add_to_timer(msg.retry_gap + time.time(), msg)
         self.pending_tasks += 1
         return msg
@@ -102,14 +167,17 @@ class ReliabilityEngine():
                     self.signal.wait(w)
 
             if(self.is_stop):
+                self.control_pipe.send_multipart([b"STOP STOP STOP RE ENGINE"])
                 break
 
             wait_end = time.time()
             self.timer[0] = self.timer[0] - (wait_end - wait_start)
             # print(f"Time Remaining: {(time.time() - self.timer[0]) % 240}.")
+            # print("MESSAGE-r: ",self.msg_objects[0].data, self.timer[0])
             if(self.timer[0] < time.time()):
                 msg = self.msg_objects[0]
                 if(not(msg.is_complete())):
+                    # print("PIzza@")
                     self.add_message_RM(msg)
                 self.timer.pop(0) 
                 self.msg_objects.pop(0)
