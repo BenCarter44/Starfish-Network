@@ -224,25 +224,25 @@ class IP_TTL():
         if(not(self.owned)):
             if(self.ttl < time.time()):
                 return (f"{self.data} | EXPIRED ({datetime.datetime.fromtimestamp(self.ttl)})| "
-                " - \t \t \t | "
-                " - \t \t \t | ")
+                " - \t \t \t \t \t \t | "
+                " - \t \t \t \t \t \t | ")
 
             return (f"{self.data} | "
                 f"{datetime.datetime.fromtimestamp(self.ttl)} | "
-                " - \t \t \t | "
+                " - \t \t \t \t \t \t | "
                 f"{datetime.datetime.fromtimestamp(self.last_seen)} | ")
     
         window_gate = (self.ttl - self.last_seen) * self.WINDOW_GATE_THRESHOLD + self.last_seen
         if(self.ttl < time.time()):
             return (f"{self.data} |  EXPIRED ({datetime.datetime.fromtimestamp(self.ttl)}) | "
               f"{datetime.datetime.fromtimestamp(self.ttl)}   | "
-              f"{datetime.datetime.fromtimestamp(window_gate)}   | "
-              f"{datetime.datetime.fromtimestamp(self.last_seen)}   | "
+              f"{datetime.datetime.fromtimestamp(window_gate)}  | "
+              f"{datetime.datetime.fromtimestamp(self.last_seen)}  | "
               f"{self.avg_time_send} avg s.")
         return (f"{self.data} | "
               f"{datetime.datetime.fromtimestamp(self.ttl)} | "
-              f"{datetime.datetime.fromtimestamp(window_gate)}   | "
-              f"{datetime.datetime.fromtimestamp(self.last_seen)}    | "
+              f"{datetime.datetime.fromtimestamp(window_gate)}  | "
+              f"{datetime.datetime.fromtimestamp(self.last_seen)} | "
               f"{self.avg_time_send} avg s.")
 
 

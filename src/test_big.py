@@ -20,13 +20,17 @@ def main_worker(identity):
     time.sleep(identity % 7 + 2)
     
     while True:
-        if(random.random() < 0.8):
+        if(random.random() < 0.1):
             kvcomm.send_dummy()
-        time.sleep(0.1)
-        # print(f"Node: {identity}")
-        # f = open(f"{identity}.log",'w')
-        # f.write(kvcomm.string_print_endpoint_kv())
-        # f.close()
+        time.sleep(1)
+        print(f"Node: {identity}")
+        f = open(f"{identity}.log",'w')
+        f.write(kvcomm.string_print_endpoint_kv())
+        f.close()
+        if(random.random() < 0.004):
+            print(f'{identity} Disconnect')
+            break
+    kvcomm.stop()
 
 
 

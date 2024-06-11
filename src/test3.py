@@ -20,7 +20,7 @@ print("Attempting to connect to peer.")
 kvcomm.connect_to_peer(connect_endpoint_pub2, connect_endpoint_query2)
 
 count = 0
-for x in range(30):
+for x in range(3):
     # if(kvcomm.endpoints_modified()):
     print(count)
     count += 1
@@ -28,5 +28,5 @@ for x in range(30):
     #     kvcomm.reset_modify()
 
     kvcomm.send_dummy()
-    time.sleep(random.randint(3,10))
+    time.sleep(random.randint(3,5))
 kvcomm.stop()

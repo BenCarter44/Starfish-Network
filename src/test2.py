@@ -13,7 +13,7 @@ print("Finished setting up ports!")
 connect_endpoint_pub1 = "tcp://127.0.0.1:8008"
 connect_endpoint_query1 = "tcp://127.0.0.1:8009"
 
-kvcomm.connect_to_peer(connect_endpoint_pub1, connect_endpoint_query1)
+# kvcomm.connect_to_peer(connect_endpoint_pub1, connect_endpoint_query1)
 
 count = 0
 while True:
