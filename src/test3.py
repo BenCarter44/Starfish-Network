@@ -1,6 +1,8 @@
 
 
 
+import random
+import time
 from SharedKV import KeyValueCommunications
 
 
@@ -17,7 +19,14 @@ connect_endpoint_query2 = "tcp://127.0.0.1:8019"
 print("Attempting to connect to peer.")
 kvcomm.connect_to_peer(connect_endpoint_pub2, connect_endpoint_query2)
 
-kvcomm.pretty_print_endpoint_kv()
+count = 0
+for x in range(30):
+    # if(kvcomm.endpoints_modified()):
+    print(count)
+    count += 1
+    kvcomm.pretty_print_endpoint_kv()
+    #     kvcomm.reset_modify()
 
-input("\n---------- Finished --------\n")
+    kvcomm.send_dummy()
+    time.sleep(random.randint(3,10))
 kvcomm.stop()

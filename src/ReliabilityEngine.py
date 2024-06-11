@@ -7,6 +7,7 @@ from typing import List
 import time
 
 import zmq
+import pickle
 
 class ReliableMessage():
     def __init__(self, data, retry_gap, max_retry):
@@ -31,6 +32,7 @@ class ReliabilityEngine():
         self.signal = threading.Event()
         self.signal.clear()
         self.is_stop = False
+        self.peers = 0
 
         self.th = threading.Thread(None,self.replay_management,name="Reliability Engine Thread")
         self.th.start()
@@ -40,6 +42,13 @@ class ReliabilityEngine():
     def get_number_pending(self):
         return self.pending_tasks
 
+    def add_peer(self):
+        self.peers += 1
+    
+    def remove_peer(self):
+        if(self.peers > 0):
+            self.peers -= 1
+
     def __add_to_timer(self,time_fire : float, msg : ReliableMessage):       
         count = 0
         while count < len(self.timer) and self.timer[count] < time_fire:
@@ -48,14 +57,18 @@ class ReliabilityEngine():
         self.timer.insert(count,time_fire)
         self.msg_objects.insert(count, msg)
         self.signal.set()
+        # print("QUEUE LENGTH: ",len(self.timer))
 
     def add_message(self, message: List[bytes], retry_gap=10, max_retry=None) -> ReliableMessage:
         if(max_retry is not None and max_retry <= 0):
             return
+        if(self.peers == 0):
+            return # drop if no one to send to!
         self.socket.send_multipart(message)
         #print(f"Sent message: {message}. Time: {time.time() % 240} Remaining: {self.pending_tasks}")
         msg = ReliableMessage(message,retry_gap,max_retry)
         self.__add_to_timer(retry_gap + time.time(), msg)
+        # print("MESSAGE: ",msg.data)
         self.pending_tasks += 1
         return msg
     
@@ -65,6 +78,8 @@ class ReliabilityEngine():
         if(msg.max_retry is not None):
             msg.max_retry -= 1
         #print('Retry')
+        if(self.peers == 0):
+            return # drop if no one to send to!
         self.socket.send_multipart(msg.data)
         #print(f"Sent message: {msg.data}. Time: {time.time() % 240} Remaining: {self.pending_tasks}")
         self.__add_to_timer(msg.retry_gap + time.time(), msg)

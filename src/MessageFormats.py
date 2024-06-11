@@ -2,9 +2,9 @@
 
 import binascii
 import string
-from typing import List
+from typing import List, Tuple
 
-from ttl import DataWithTTL
+from ttl import IP_TTL
 import dill
 
 def dump(msg):
@@ -21,13 +21,16 @@ def dump(msg):
 
 class BasicMultipartMessage():
     def __init__(self):
-        self.output = []
+        self.output = [b'dummy',b'']
+    
+    def set_val(self, val):
+        self.output[1] = val
     
     def compile(self) -> List[bytes]:
         return self.output
 
     def import_msg(self, data_in):
-        self.data = data_in
+        self.output = data_in
     
     def compile_with_address(self, addr) -> List[bytes]:
         d = self.compile()
@@ -49,18 +52,14 @@ class PeerKV_Subscribe(BasicMultipartMessage):
 
     def get_value(self):
         b = self.data[2]
-        c = self.data[3]
-        val = dill.loads(b) # can be Null
-        ttl = float(c.decode('utf-8'))
-        return DataWithTTL(val, ttl)
+        return b
     
     def create(self, topic):
-        self.data = [0,0,0,0]
+        self.data = [0,0,0]
         self.data[0] = topic.encode('utf-8')
 
-    def set_value(self, val : DataWithTTL):
-        self.data[2] = dill.dumps(val.get_value_or_null())
-        self.data[3] = str(val.get_timeout()).encode("utf-8")
+    def set_value(self, val : bytes):
+        self.data[2] = val
     
     def set_key(self, key):
         self.data[1] = key.encode('utf-8')
@@ -83,7 +82,7 @@ class PeerKV(BasicMultipartMessage):
         self.output = [0,0,0]
         self.output[0] = b'General'
         self.output[1] = b'fetch_state'
-        self.output[2] = int.to_bytes(r_identity, 2)
+        self.output[2] = int.to_bytes(r_identity, 2, 'big')
     
     def is_fetch_state(self):
         return self.output[1] == b'fetch_state'
@@ -97,49 +96,44 @@ class PeerKV(BasicMultipartMessage):
     def is_push_change_receive(self):
         return self.output[1] == b'push_change_receive'
 
-    def return_state_receipt(self, values : List[DataWithTTL], r_identity):
+    def return_state_receipt(self, values : List[Tuple[str, IP_TTL]], r_identity):
         self.output = [0,0,0,0]
         self.output[0] = b'General'
         self.output[1] = b'return_state'
-        self.output[2] = int.to_bytes(r_identity, 2)
-        self.output[3] = int.to_bytes(len(values), 4)
+        self.output[2] = int.to_bytes(r_identity, 2, 'big')
+        self.output[3] = int.to_bytes(len(values), 4, 'big')
         for x in values:
-            val = dill.dumps(x.get_value_or_null())
-            self.output.append(val)
-            self.output.append(str(x.get_timeout()).encode("utf-8"))
-    
-    def push_change(self, key : str, value : DataWithTTL, r_identity : int):
-        self.output = [0,0,0,0,0,0,0]
+            self.output.append(x[0].encode('utf-8'))
+            self.output.append(x[1])
+           
+    def push_change(self, key : str, value : bytes, r_identity : int):
+        self.output = [0,0,0,0,0,0]
         self.output[0] = b'General'
         self.output[1] = b'push_change'
-        self.output[2] = int.to_bytes(r_identity, 2)
-        self.output[3] = int.to_bytes(1, 4)
-
-        val = dill.dumps(value.get_value_or_null())
+        self.output[2] = int.to_bytes(r_identity, 2, 'big')
+        self.output[3] = int.to_bytes(1, 4, 'big')
         self.output[4] = key.encode('utf-8')
-        self.output[5] = val
-        self.output[6] = (str(value.get_timeout()).encode("utf-8"))
+        self.output[5] = value
     
     def get_push_key_val(self):
-        return self.output[4].decode('utf-8'), DataWithTTL(dill.loads(self.output[5]),float(self.output[6].decode('utf-8')))
+        return self.output[4].decode('utf-8'), self.output[5]
     
     def return_push_change(self, r_identity : int):
         self.output = [0,0,0]
         self.output[0] = b'General'
         self.output[1] = b'push_change_receive'
-        self.output[2] = int.to_bytes(r_identity, 2)
+        self.output[2] = int.to_bytes(r_identity, 2, 'big')
        
         
-    def get_state_from_return(self) -> List[DataWithTTL]:
+    def get_state_from_return(self) -> List[Tuple[str, bytes]]:
         assert self.output[1] == b'return_state'
-        length = int.from_bytes(self.output[3])
+        length = int.from_bytes(self.output[3],'big')
         
         out = list(range(length))
         # assumes length is not lying, telling the truth
         state_data = self.output[4:]
         for x in range(length):
-            out[x] = DataWithTTL(dill.loads(state_data[x * 2]),float(state_data[x * 2 +1].decode('utf-8')))
-        
+            out[x] = (state_data[x * 2].decode('utf-8'), state_data[x * 2 + 1])
         return out
 
     def import_msg(self, data_in):
@@ -148,8 +142,22 @@ class PeerKV(BasicMultipartMessage):
             raise ValueError("Malformed Peer KV General Message!")
     
     def get_r_identity(self):
-        return int.from_bytes(self.output[2])
+        return int.from_bytes(self.output[2], 'big')
     
+    def is_error_msg(self):
+        return self.output[1] == b'Error'
+
+    def get_error_code(self):
+        return int.from_bytes(self.output[3],'big'), self.output[4].decode('utf-8')
+
+    def error_feedback(self, code, cmd, r_identity):
+        self.output = [0,0,0,0,0]
+        self.output[0] = b'General'
+        self.output[1] = b'Error'
+        self.output[2] = int.to_bytes(r_identity, 2, 'big')
+        self.output[3] = int.to_bytes(code, 2, 'big')
+        self.output[4] = cmd.encode('utf-8')
+
     def compile_with_address(self, addr) -> List[bytes]:
         d = super(PeerKV, self).compile()
         d.insert(0,addr)
@@ -160,17 +168,15 @@ class PeerKV(BasicMultipartMessage):
 class PeerKV_Hello(PeerKV):
     def __init__(self):
         super(PeerKV_Hello, self).__init__()
-        self.output = [0,0,0,0,0,0,0,0]
+        self.output = [0,0,0,0,0,0]
     
-    def create(self, r_check :int, serving_endpoint_pub : str, serving_endpoint_query : str, ttl : float):
+    def create(self, r_check :int, serving_endpoint_pub : str, serving_endpoint_query : str):
         self.output[0] = b'Hello!'
         self.output[1] = b'key_update'
-        self.output[2] = int.to_bytes(r_check, 2)
-        self.output[3] = int.to_bytes(2, 4)
+        self.output[2] = int.to_bytes(r_check, 2, 'big')
+        self.output[3] = int.to_bytes(2, 4, 'big')
         self.output[4] = serving_endpoint_pub.encode("utf-8")
-        self.output[5] = str(ttl).encode("utf-8")
-        self.output[6] = serving_endpoint_query.encode("utf-8")
-        self.output[7] = str(ttl).encode("utf-8")
+        self.output[5] = serving_endpoint_query.encode("utf-8")
     
     def set_welcome(self):
         self.output[0] = b'Welcome'
@@ -178,14 +184,14 @@ class PeerKV_Hello(PeerKV):
     def import_msg(self, data_in):
         self.output = data_in
 
-        if((self.output[0] != b'Hello' or self.output[0] != b'Welcome') and len(self.output) != 8):
+        if((self.output[0] != b'Hello' or self.output[0] != b'Welcome') and len(self.output) != 6):
             raise ValueError("Malformed Peer KV Hello Message!")
     
     def get_endpoints(self):
-        return DataWithTTL(self.output[4].decode('utf-8'),float(self.output[5].decode("utf-8")),True), DataWithTTL(self.output[6].decode('utf-8'),float(self.output[7].decode("utf-8")),True)
+        return self.output[4].decode('utf-8'), self.output[5].decode('utf-8')
 
     def get_r_identity(self):
-        return int.from_bytes(self.output[2])
+        return int.from_bytes(self.output[2], 'big')
 
     def compile(self) -> List[bytes]:
         return super(PeerKV_Hello, self).compile()
