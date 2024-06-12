@@ -77,6 +77,7 @@ class IP_TTL():
 class IP_TTL():
 
     WINDOW_GATE_THRESHOLD = 0.25
+    DEFAULT_TTL = 60
 
     def __init__(self):
         self.data = None
@@ -84,16 +85,18 @@ class IP_TTL():
         self.last_seen = 0
         self.raw = 0
         self.owned = False
-        self.avg_time_send = 10 # 10 seconds per request.
+        self.avg_time_send = self.DEFAULT_TTL # self.DEFAULT_TTL seconds per request.
 
     def create(self, ip, ttl : int):
         self.owned = False
         self.data = ip
         self.ttl = ttl
     
-    def create_owned(self, ip, default_rate=10):
+    def create_owned(self, ip, default_rate=None):
+        if(default_rate == None):
+            default_rate = self.DEFAULT_TTL / 3
         self.owned = True
-        self.ttl = 10 + time.time()
+        self.ttl = self.DEFAULT_TTL + time.time()
         self.last_seen = time.time()
         self.raw = time.time()
         self.data = ip
@@ -108,7 +111,7 @@ class IP_TTL():
         else:
             a = self.avg_time_send
 
-        multiplier = 70 * pow(2,-1 * self.avg_time_send) + 3
+        multiplier = 70 * pow(2,-1 * self.avg_time_send) + 30
         
         ttl = self.last_seen + a * multiplier
     

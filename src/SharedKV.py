@@ -11,6 +11,7 @@ from MessageFormats import *
 from ReliabilityEngine import *
 from ttl import IP_TTL
 
+DEFAULT_TTL = 60
 
 def zpipe(ctx):
     """build inproc pipe for talking to threads
@@ -68,12 +69,12 @@ class KeyValueCommunications():
        
         key = f"{serving_endpoint_pub}/P"
         ttl = IP_TTL()
-        ttl.create(serving_endpoint_pub, time.time() + 10) # personal one (not owned though). Assume you'll last 10 sec
+        ttl.create(serving_endpoint_pub, time.time() + DEFAULT_TTL) # personal one (not owned though). Assume you'll last DEFAULT_TTL sec
         self.endpoints_kv[key] = ttl
 
         key = f"{serving_endpoint_query}/Q"
         ttl = IP_TTL()
-        ttl.create(serving_endpoint_query, time.time() + 10) # personal one (not owned though). Assume you'll last 10 sec
+        ttl.create(serving_endpoint_query, time.time() + DEFAULT_TTL) # personal one (not owned though). Assume you'll last DEFAULT_TTL sec
         self.endpoints_kv[key] = ttl
 
         self.control_socket_outside, inside_socket = zpipe(self.context)
@@ -84,7 +85,11 @@ class KeyValueCommunications():
         self.th = threading.Thread(None,self.handle_responses,args=(inside_socket,),name="KeyVal Management")
         self.th.start()
 
-        
+    def printf(self, msg):
+        colors = {101:93, 102:137, 103: 75, 104: 28, 105: 168, 106:106, 107:107, 108:108,109:109,110:110}
+        color_print = f"\033[38;5;{colors[self.my_identity]}m"
+        color_stop = "\033[0m"
+        print(f"{color_print}Node {self.my_identity} | {datetime.datetime.now()} : {msg}{color_stop}")
 
     # TODO: Structure:
     #   Interface: 
@@ -119,6 +124,11 @@ class KeyValueCommunications():
     #
 
     def connect_to_peer(self, endpoint_publish_point, endpoint_query):
+
+        if(f"{endpoint_publish_point}/P" in self.connected_peers):
+            self.printf("Already connected to Peer! Aborting")
+            return
+
         self.peer_subscribe_socket.connect(endpoint_publish_point)
         i = self.peer_query_socket_RE.get_number_peers()
         self.peer_query_socket_RE.add_peer(endpoint_query)
@@ -126,7 +136,6 @@ class KeyValueCommunications():
         while(i == i2): # wait for connect.
             i2 = self.peer_query_socket_RE.get_number_peers()
             time.sleep(0.01)
-
         r = random.randint(0,32766)
         while f"hello-{r}" in self.open_messages:  # TODO: Instead of R, do hash of data.
             r = random.randint(0,32766)
@@ -178,9 +187,9 @@ class KeyValueCommunications():
     def pretty_print_endpoint_kv(self, title="Endpoints:"):
         out_debug = title + "\n"
         out_debug += "\t IP \t\t\t | \t IP-val \t\t\t | \t EXP \t \n"
-        print(out_debug)
+        self.printf(out_debug)
         for x in self.endpoints_kv:
-            print(x, end=' | ')
+            self.printf(x, end=' | ')
             self.endpoints_kv[x].display()
     
     def string_print_endpoint_kv(self, title="Endpoints:"):
@@ -196,7 +205,7 @@ class KeyValueCommunications():
         for endpoint in list(self.endpoints_kv.keys()):
             if(self.endpoints_kv[endpoint].get_ip_or_null() is None):
                 if(endpoint in self.connected_peers):
-                    print(f"Peer {endpoint} disconnected!")
+                    self.printf(f"Peer {endpoint} disconnected (expired)!")
                     self.connected_peers.remove(endpoint)
                 
                 del self.endpoints_kv[endpoint]
@@ -220,7 +229,7 @@ class KeyValueCommunications():
                    self.serving_endpoint_pub + "/P",
                    self.serving_endpoint_query + "/Q",
                    )
-        print("Sending hello!")
+        self.printf(f"Sending hello message with r:{r_identity}") # TODO. DEALER socket distributes requests... this means that it must be repeated.
         rm = self.peer_query_socket_RE.add_message(msg.compile(), 10, 25)
         self.open_messages[f"hello-{r_identity}"] = rm
 
@@ -233,16 +242,18 @@ class KeyValueCommunications():
        
         # NO BLOCKING UPDATES IN THREAD!
         endpoints = msg.get_endpoints()
-        ttl = IP_TTL()
-        ttl.create(endpoints[0][:-2], time.time() + 10)
-        self.__update_keyval(endpoints[0],  ttl, distribute=True)
+        # ttl = IP_TTL()
+        # ttl.create(endpoints[0][:-2], time.time() + DEFAULT_TTL)
+        # self.__update_keyval(endpoints[0],  ttl, distribute=True)
         self.connected_peers.add(endpoints[0])
 
-        ttl = IP_TTL()
-        ttl.create(endpoints[1][:-2], time.time() + 10)
-        self.__update_keyval(endpoints[1], ttl, distribute=True)
+        # ttl = IP_TTL()
+        # ttl.create(endpoints[1][:-2], time.time() + DEFAULT_TTL)
+        # self.__update_keyval(endpoints[1], ttl, distribute=True)
 
         self.connected_peers.add(endpoints[1])
+
+        self.printf(f"Finished Hello. Recv'ed response with r:{msg.get_r_identity()}")
 
         request_data["done"] = True # passes by ref.
         if("next-state" in request_data):
@@ -250,14 +261,17 @@ class KeyValueCommunications():
             self.open_message_data[f"state-{r}"] = {"done" : False}
 
     def __send_state_request(self, r):
+
         pk = PeerKV()
         pk.fetch_state_command(r_identity=r)
+        self.printf(f"Send State Request r:{r}")
         rm = self.peer_query_socket_RE.add_message(pk.compile(), 10, 5) 
         self.open_messages[f"state-{r}"] = rm
     
     def __finish_state_request(self, msg: PeerKV):
         state = msg.get_state_from_return()
         if(self.open_messages[f"state-{msg.get_r_identity()}"].is_complete()):
+            self.printf(f"Finish State Req - message already received. Drop r:{msg.get_r_identity()}")
             return # don't need to answer. Already received response due to dealer.
         
         # merge the key values together.
@@ -271,7 +285,8 @@ class KeyValueCommunications():
             ttl.import_from_bytes(val)
             self.__update_keyval(key, ttl)
            
-       
+        
+        self.printf(f"Finish State Req. Recv'd response :{msg.get_r_identity()}")
         r = msg.get_r_identity()
         self.open_messages[f"state-{r}"].mark_done() 
         request_data = self.open_message_data[f"state-{r}"]
@@ -281,12 +296,12 @@ class KeyValueCommunications():
         if(address + b'/P' not in self.marking_use):
             # impossible! Client connected without saying hello first!
             # drop!
-            print("Client connected without saying hello first! Dropping!")
+            self.printf("Client connected without saying hello first! Dropping!")
             return False
         if(address + b'/Q' not in self.marking_use):
             # impossible! Client connected without saying hello first!
             # drop!
-            print("Client connected without saying hello first! Dropping!")
+            self.printf("Client connected without saying hello first! Dropping!")
             return False
         
         pub_q = self.marking_use[address + b'/P']
@@ -324,10 +339,12 @@ class KeyValueCommunications():
     def __post_update(self, key : str, data : IP_TTL, distribute=False):
         self.new_data = True
         # print(f"Update [{key}] = {data.get_ip_or_null()}")
+
         pk = PeerKV_Subscribe()  # TODO: Add "repeat-missing" updates!
         pk.create("IP Update")
         pk.set_key(key)
         pk.set_value(self.endpoints_kv[key].prep_for_send())
+        self.printf(f"Post Update at key: (PUB soc) {key}")
         self.publish_update_socket.send_multipart(pk.compile())
 
         if(not(distribute)):
@@ -341,6 +358,7 @@ class KeyValueCommunications():
             r = random.randint(0,32766)
 
         pk.push_change(key, self.endpoints_kv[key].prep_for_send(), r)
+        self.printf(f"Post Update at key: (DEALER soc) {key} r:{r}")
         rm = self.peer_query_socket_RE.add_message(pk.compile(), 5, 2)
         self.open_message_data[f"push-change-{r}"] = {"done" : False}
         self.open_messages[f"push-change-{r}"] = rm
@@ -385,18 +403,22 @@ class KeyValueCommunications():
                 ttl.create(ip,val.get_ttl())
                 ttl.import_from_bytes(val.prep_for_send())
                 self.endpoints_kv[key] = ttl
+                changed = True
 
         if(not(changed)):
             return
         # print(f"Pushed changes! - {key} - {datetime.datetime.fromtimestamp(val.get_ttl())} - {ownership_connection}")
-        self.__post_update(key, self.endpoints_kv[key], distribute=distribute)
+        self.__post_update(key, self.endpoints_kv[key], distribute=False) # force to use D too... testing.# distribute)
         self.prune_endpoints()
 
 
     def __finish_update_keyval(self, msg : PeerKV):
         r = msg.get_r_identity()
         if(self.open_messages[f"push-change-{r}"].is_complete()):
+            self.printf(f"Recv ACK on Push Change r:{r} - duplicate")
             return # don't need to answer. Already received response due to dealer.
+        
+        self.printf(f"Recv ACK on Push Change r:{r}")
         self.open_messages[f"push-change-{r}"].mark_done() 
         request_data = self.open_message_data[f"push-change-{r}"]
         request_data["done"] = True # passes by ref.
@@ -404,6 +426,13 @@ class KeyValueCommunications():
     # Receiving methods ----------------------- No blocking allowed!
 
     def __receiving_hello(self, msg : PeerKV_Hello, address : bytes):
+
+        # store address/ip in lookup table for mark use
+        if(address + b'/P' in self.marking_use): # TODO: Design Decision: Assuming IP won't change
+            # I already know this person.
+            self.printf(f"Recv hello, but already know peer! Dropping")
+            return
+
         endpoints = msg.get_endpoints()
         endpt_pub = endpoints[0]
         endpt_query = endpoints[1] # TODO: Currently does not save if passed in TTL is 0
@@ -428,19 +457,23 @@ class KeyValueCommunications():
                    )
         pk_response.set_welcome()
 
+        self.printf(f"Received hello with r:{msg.get_r_identity()}, now I know ID: {endpoints}")
+        self.printf(f"Send hello response to PEER with r:{pk_response.get_r_identity()}")
         self.receive_query_socket.send_multipart(
             pk_response.compile_with_address(address))
 
     def __subscribed_updates(self, msg : PeerKV_Subscribe):
         key = msg.get_key()        
+        self.printf(f"Recv Update By Subscribed - key:{key}")
         v = IP_TTL()
         v.import_from_bytes(msg.get_value())
         self.__update_keyval(key,  v)
     
     def __answer_state_request(self, msg : PeerKV, address : bytes):
-        
+        self.printf(f"Received State Request r:{msg.get_r_identity()}")
         test = self.__mark_use(address)
         if(not(test)):
+            self.printf(f"Send State Response to PEER - Error! r:{msg.get_r_identity()}")
             pk_response = PeerKV()
             pk_response.error_feedback(10,"return_state",msg.get_r_identity())
             self.receive_query_socket.send_multipart(
@@ -453,6 +486,7 @@ class KeyValueCommunications():
         for val in self.endpoints_kv:
             results.append((val, self.endpoints_kv[val].prep_for_send()))
 
+        self.printf(f"Send State Response to PEER r:{msg.get_r_identity()}")
         pk_response.return_state_receipt(results, msg.get_r_identity())
         self.receive_query_socket.send_multipart(
             pk_response.compile_with_address(address))
@@ -461,6 +495,7 @@ class KeyValueCommunications():
         
         test = self.__mark_use(address)
         if(not(test)):
+            self.printf(f"Recv Update By Push, send error! - key:{msg.get_push_key_val()[0]} r:{msg.get_r_identity()} - Send Error for missing hello")
             pk_response = PeerKV()
             pk_response.error_feedback(10,"push_change_receive",msg.get_r_identity())
             self.receive_query_socket.send_multipart(
@@ -477,7 +512,10 @@ class KeyValueCommunications():
         except Exception as e:
             dump(msg.compile_with_address(address))
             raise e
+        self.printf(f"Recv Update By Push - key:{key} r:{msg.get_r_identity()}")
         self.__update_keyval(key,  v)
+
+        self.printf(f"Send Update ACK - key:{key} with r:{msg.get_r_identity()}")
         
         pk_response.return_push_change(msg.get_r_identity())
 
@@ -485,8 +523,12 @@ class KeyValueCommunications():
             pk_response.compile_with_address(address))
     
     def __receive_dummy(self, msg : BasicMultipartMessage, address : bytes):
+        
+        self.printf(f"Recv dummy")
+
         test = self.__mark_use(address)
         if(not(test)):
+            self.printf(f"Send error to client. Dummy missed hello!")
             pk_response = PeerKV()
             pk_response.error_feedback(10,"dummy",0)
             self.receive_query_socket.send_multipart(
@@ -576,7 +618,7 @@ class KeyValueCommunications():
                         if(error == 10):
                             # Must reconnect to server, I must have dropped or previously connected
                             # resend a hello
-                            print("Failed command: ", cmd)
+                            self.printf(f"Failed command: {cmd}")
 
                             r = random.randint(0,32766)
                             while f"hello-{r}" in self.open_messages:  # TODO: Instead of R, do hash of data.

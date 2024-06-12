@@ -85,7 +85,8 @@ class ReliabilityEngine():
                     self.verified_peers -= 1
                 else:
                     # print("Send: ",i)
-                    primary.send_multipart(i)
+                    for x in range(self.verified_peers): # TODO. DEALER distributes requests
+                        primary.send_multipart(i)
                         
             if(primary in socket_receiving):
                 i = primary.recv_multipart()
