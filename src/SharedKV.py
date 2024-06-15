@@ -156,6 +156,7 @@ class KeyValueCommunications():
 
     def disconnect_from_peer(self, endpoint_query, skip=False):
         if(endpoint_query not in self.connected_peers):
+            self.printf(f"Error - already disconnected from {endpoint_query}")
             return
         if(not(skip)):
             self.__send_disconnect_request(endpoint_query)
@@ -163,6 +164,7 @@ class KeyValueCommunications():
         self.connected_peers.remove(endpoint_query)
         self.connected_sockets[endpoint_query]["re"].remove_peer(endpoint_query)
         self.control_socket_outside.send_multipart([b'disconnect',endpoint_query.encode('utf-8')])
+        self.printf(f"Disconnected from {endpoint_query}")
             
 
     def stop(self):
@@ -236,7 +238,7 @@ class KeyValueCommunications():
         endpoint = msg.get_endpoint()
         
         # I now know endpoint!
-        d = DataWithTTL(endpoint, timeout=DEFAULT_TTL+time.time())
+        d = DataWithTTL(f"a{time.time()}", timeout=DEFAULT_TTL+time.time())
         self.endpoints_kv.add_merge_data_TTL(endpoint,d)
 
         # doesn't matter for retries.
@@ -296,6 +298,7 @@ class KeyValueCommunications():
             v = dat.get_value_or_null()
             if(v is not None):
                 results.append((key, dat))
+                print(key, v, datetime.datetime.fromtimestamp(dat.get_timeout()))
 
         self.printf(f"Send State Response to PEER r:{msg.get_r_identity()}")
         pk_response.return_state_receipt(results, msg.get_r_identity())
@@ -313,6 +316,8 @@ class KeyValueCommunications():
         for state_val in state:
             key = state_val[0]
             val = state_val[1]
+            print(key, val.get_value_or_null(), datetime.datetime.fromtimestamp(val.get_timeout()))
+            self.endpoints_kv.merge(key, val)
             
         self.printf(f"Finish State Req. Recv'd response :{msg.get_r_identity()}")
         r = msg.get_r_identity()
@@ -365,6 +370,7 @@ class KeyValueCommunications():
         endpoint = self.inbound_peers_addr[addr]["endpt"]
         self.printf(f"Received a disconnection request from {endpoint} with r:{msg.get_r_identity()}")
         self.disconnect_from_peer(endpoint, skip=True)
+        del self.inbound_peers_addr[addr]
 
 
     def __finish_request_for_connection(self, msg : PeerKV):
@@ -408,7 +414,7 @@ class KeyValueCommunications():
             else:
                 a = avg
 
-            multiplier = 70 * pow(2,-0.2 * avg) + 2
+            multiplier = 60 * pow(2,-0.2 * avg) + 1.25
             
             ttl = time.time() + a * multiplier
         
@@ -444,7 +450,7 @@ class KeyValueCommunications():
                 ttl = time.time() + 2
             self.printf(f"Calc for ttl: {datetime.datetime.fromtimestamp(ttl)}")
 
-        dt = DataWithTTL(endpoint,ttl)
+        dt = DataWithTTL(f"abc{time.time()}",ttl)
         self.endpoints_kv.merge(endpoint,dt)
         self.printf("Finish keep alive")
     
