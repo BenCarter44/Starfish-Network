@@ -15,7 +15,7 @@ from SharedKV import KeyValueCommunications, zpipe
 
 
 def main_worker(identity, control : zmq.Socket):
-    kvcomm = KeyValueCommunications(f"tcp://127.0.0.1:8{identity}",f"tcp://127.0.0.1:9{identity}",identity)
+    kvcomm = KeyValueCommunications(f"tcp://127.0.0.1:8{identity}",identity)
 
     poller = zmq.Poller()
     poller.register(control, zmq.POLLIN)
@@ -30,7 +30,7 @@ def main_worker(identity, control : zmq.Socket):
                     kvcomm.printf("Test : Error - Can't connect to itself")
                     continue
                 
-                kvcomm.connect_to_peer(f"tcp://127.0.0.1:8{peer}",f"tcp://127.0.0.1:9{peer}")
+                kvcomm.connect_to_peer(f"tcp://127.0.0.1:8{peer}")
                 kvcomm.printf(f"Test : Connected to {peer}")
             if(msg[0] == b'Disconnect'):
                 peer = int.from_bytes(msg[1],'big')
@@ -39,11 +39,26 @@ def main_worker(identity, control : zmq.Socket):
                     kvcomm.printf("Test : Error - Can't connect to itself")
                     continue
                 
-                kvcomm.disconnect_from_peer(f"tcp://127.0.0.1:8{peer}",f"tcp://127.0.0.1:9{peer}")
+                kvcomm.disconnect_from_peer(f"tcp://127.0.0.1:8{peer}")
                 kvcomm.printf(f"Test : Disconnected from {peer}")
-            if(msg[0] == b'SendData'):
+            if(msg[0] == b'SendData-C'):
+                peer = int.from_bytes(msg[1],'big')
+                if(peer == identity):
+                    # error!
+                    kvcomm.printf("Test : Error - Can't connect to itself")
+                    continue
                 kvcomm.printf(f"Test : Send Dummy")
-                kvcomm.send_dummy()
+                kvcomm.send_dummy_command(b"dummy command", f"tcp://127.0.0.1:8{peer}")
+            
+            if(msg[0] == b'SendData-D'):
+                peer = int.from_bytes(msg[1],'big')
+                if(peer == identity):
+                    # error!
+                    kvcomm.printf("Test : Error - Can't connect to itself")
+                    continue
+                kvcomm.printf(f"Test : Send Dummy")
+                kvcomm.send_dummy_data(b"dummy data", f"tcp://127.0.0.1:8{peer}")
+
             if(msg[0] == b'STOP'):
                 break
             if(msg[0] == b'print'):
@@ -115,7 +130,7 @@ while True:
         continue
     
     
-    if(c.find('send') != -1):
+    if(c.find('sendc') != -1):
         # first is node origin
         # second is the node to connect to 
         c_tokens = c.split(" ")
@@ -128,7 +143,25 @@ while True:
             print("Bad command")
             continue
         if(c_tokens[1] in peers):
-            peers[c_tokens[1]]["soc"].send_multipart([b'SendData'])
+            peers[c_tokens[1]]["soc"].send_multipart([b'SendData-C',int.to_bytes(int(c_tokens[2]),1,'big')])
+        else:
+            print("Unknown peer")
+        continue
+
+    if(c.find('sendd') != -1):
+        # first is node origin
+        # second is the node to connect to 
+        c_tokens = c.split(" ")
+        try:
+            for x in range(1,len(c_tokens)):
+                c_tokens[x] = int(c_tokens[x])
+            if(len(c_tokens) < 2):
+                raise ValueError
+        except:
+            print("Bad command")
+            continue
+        if(c_tokens[1] in peers):
+            peers[c_tokens[1]]["soc"].send_multipart([b'SendData-D',int.to_bytes(int(c_tokens[2]),1,'big')])
         else:
             print("Unknown peer")
         continue

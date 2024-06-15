@@ -1,8 +1,14 @@
 
 import datetime
+import threading
 import time
-from typing import Dict, Optional, Union
+from typing import Callable, Dict, Optional, Union
 import dill
+
+from ReliabilityEngine import ReliabilityEngine
+
+class DataWithTTL():
+    pass
 
 class DataWithTTL():
     def __init__(self, data : any, timeout : float, suppress_error : bool = False):
@@ -64,6 +70,122 @@ class DataWithTTL():
         else:
             return None
     
+    def to_bytes(self) -> bytes:
+        return dill.dumps((self.__data, self.__timeout))
+
+    def get_raw_val(self):
+        return self.__data
+
+    def from_bytes(self, byt : bytes):
+        byt = dill.loads(byt)
+        self.__data = byt[0]
+        self.__timeout = byt[1]
+        self.__time_created = time.time()
+    
+
+class DataTTL_Handler():
+    def __init__(self, send_handler : Callable):
+        self.data = {}
+        self.UPDATE_OFFSET = 5
+        self.cache : Dict[str, Optional[DataWithTTL]] = {}
+        self.evt = threading.Event()
+        self.is_stop = False
+        self.th = threading.Thread(None,self.wait_thread)
+        self.th.start()
+        self.send_msg = send_handler
+        self.old_timeouts = {}
+    
+    def add_data_TTL(self, key : str, data : DataWithTTL):
+        self.data[key] = data
+        self.cache[key] = None
+        self.old_timeouts[key] = time.time()
+    
+    def get_keys(self):
+        return self.data.keys()
+
+    def add_merge_data_TTL(self, key : str, data : DataWithTTL):
+        if(key in self.data):
+            self.merge(key, data)
+        else:
+            self.add_data_TTL(key,data)
+        
+    def del_key(self, key):
+        del self.data[key]
+        del self.cache[key]
+    
+    def stop(self):
+        self.is_stop = True
+        self.evt.set()
+        self.th.join()
+
+    def merge(self, key : str, inc : DataWithTTL):
+        if(key not in self.data):
+            self.add_data_TTL(key, inc)
+            self.send_msg(key, self.data[key])
+            return True
+        
+        if(inc.get_timeout() < self.data[key].get_timeout() + 1):
+            # force at least one sec update
+            return False # drop
+        
+        # if inc.get_timeout() > self.data[key].get_timeout()
+
+        if(self.data[key].get_timeout() - self.UPDATE_OFFSET > time.time()): # still got time
+            if(self.cache[key] is not None):
+                r = self.cache[key].get_timeout()
+                if(inc.get_timeout() > r):
+                    self.cache[key] = inc
+                    self.evt.set()
+            else:
+                self.cache[key] = inc
+                self.evt.set()
+        
+            return False
+        
+        # else
+
+        if(self.cache[key] is not None and inc.get_timeout() > self.cache[key].get_timeout()):
+            # clear cache
+            self.cache[key] = None
+            self.evt.set()
+            self.data[key] = inc
+            self.send_msg(key, self.data[key])
+            return True
+        
+        if(self.cache[key] is not None):
+            # cache time is greater
+            self.data[key] = self.cache[key]
+            self.cache[key] = None
+            self.evt.set()
+            self.send_msg(key, self.data[key])
+            return True
+
+        # cache is none
+        assert self.cache[key] is None
+        self.data[key] = inc
+        self.send_msg(key, self.data[key])
+        return True
+
+    def wait_thread(self):
+        while True:
+            self.evt.wait(0.5)
+            if(self.is_stop):
+                break
+            for key in self.cache:
+                if(self.cache[key] is not None and
+                  self.data[key].get_timeout() - self.UPDATE_OFFSET < time.time()):
+                
+                    assert self.cache[key].get_timeout() > self.data[key].get_timeout()
+                    self.data[key] = self.cache[key]
+                    self.send_msg(key, self.data[key]) 
+                    self.cache[key] = None
+
+
+            self.evt.clear()
+    
+    def get_data(self, key) -> DataWithTTL:
+        return self.data[key]
+
     # def __repr__(self):
     #     val = self.get_value()
     #     valid = self.__timeout > time.time()

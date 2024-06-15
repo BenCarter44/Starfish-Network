@@ -6,7 +6,7 @@ from SharedKV import KeyValueCommunications
 id2 = b"Apple Pie"
 endpoint_pub2 = "tcp://127.0.0.1:8018"
 endpoint_query2 = "tcp://127.0.0.1:8019"
-kvcomm = KeyValueCommunications(endpoint_pub2, endpoint_query2, id2)
+kvcomm = KeyValueCommunications(endpoint_query2, 102)
 
 print("Finished setting up ports!")
 

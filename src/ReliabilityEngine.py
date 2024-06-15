@@ -85,14 +85,12 @@ class ReliabilityEngine():
                     self.verified_peers -= 1
                 else:
                     # print("Send: ",i)
-                    for x in range(self.verified_peers): # TODO. DEALER distributes requests
-                        primary.send_multipart(i)
+                    # for x in range(self.verified_peers): # TODO. DEALER distributes requests
+                    primary.send_multipart(i)
                         
             if(primary in socket_receiving):
                 i = primary.recv_multipart()
-                # print("Recv: ",i)
                 output.send_multipart(i)
-
 
     def get_number_pending(self):
         return self.pending_tasks
@@ -105,9 +103,19 @@ class ReliabilityEngine():
         self.peers += 1
         self.add_message([b"RE ENGINE connect",endpoint.encode('utf-8')],max_retry=1)
 
+    def add_peer_listen_thread(self, endpoint : str):
+        # print("connect")
+        self.peers += 1
+        # self.output_socket.send_multipart([b"RE ENGINE connect",endpoint.encode('utf-8')],max_retry=1)
     
     def remove_peer(self, endpoint : str):
         self.add_message([b"RE ENGINE disconnect",endpoint.encode('utf-8')],max_retry=1)
+
+        if(self.peers > 0):
+            self.peers -= 1
+    
+    def remove_peer_listen_thread(self, endpoint : str):
+        # self.output_socket.send_multipart([b"RE ENGINE disconnect",endpoint.encode('utf-8')])
 
         if(self.peers > 0):
             self.peers -= 1
@@ -135,6 +143,22 @@ class ReliabilityEngine():
         self.pending_tasks += 1
         
         self.__add_to_timer(retry_gap + time.time(), msg)
+        self.pending_tasks += 1
+        return msg
+    
+    def add_message_delay(self, message: List[bytes], delay=1, retry_gap=10, max_retry=None) -> ReliableMessage:
+        if(max_retry is not None and max_retry <= 0):
+            return
+        if(self.peers == 0):
+            return # drop if no one to send to!
+        
+        #print(f"Sent message: {message}. Time: {time.time() % 240} Remaining: {self.pending_tasks}")
+        msg = ReliableMessage(message,retry_gap,max_retry)
+        # print("MESSAGE  : ",msg.data)
+        self.__add_to_timer(time.time() + delay, msg) # send immediately!
+        self.pending_tasks += 1
+        
+        self.__add_to_timer(retry_gap + time.time() + delay, msg)
         self.pending_tasks += 1
         return msg
 
