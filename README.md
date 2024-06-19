@@ -1,6 +1,6 @@
 # Starfish-Network
 
-A highly tolerant distributed network!
+A highly tolerant distributed network! Like a Starfish: No central brain, cut it in half, it stays alive! Rethinking distributed computing. Welcome to the Starfish-Network
 
 Creating a "virtualized computer" that can run on hundreds of nodes, with the nodes constantly going in and out. This virtualized computer has highly tolerant storage, can execute processes, and also hosts a shared database. This also will be completely decentralized, as opposed to a common technique of having a "master" server. All nodes are "treated the same"
 
