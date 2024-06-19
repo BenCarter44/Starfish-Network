@@ -12,6 +12,7 @@ from ReliabilityEngine import *
 from ttl import IP_TTL, DataTTL_Handler, DataWithTTL
 
 DEFAULT_TTL = 20
+IDENTITY_TTL = 86400
 
 def zpipe(ctx):
     """build inproc pipe for talking to threads
@@ -30,9 +31,10 @@ def zpipe(ctx):
     return a,b
 
 IP_KEY = ">ip>"
+IDENTITY_KEY = ">id_graph>"
 
 def kv_key(root, key):
-    return root + key
+    return root + str(key)
 
 class KeyValueCommunications():
     def __init__(self, serving_endpoint_query, my_identity):
@@ -49,7 +51,7 @@ class KeyValueCommunications():
         # # self.peer_subscribe_socket.setsockopt(zmq.IDENTITY,my_identity)
 
         # TODO: Design Decision: Dealer sends communications to ALL connected peers
-        # self.peer_query_socket.setsockopt(zmq.IDENTITY,my_identity)
+
         # TODO: Identity is not required here. (Key Value doesn't have identity.)
 
         # self.endpoints_kv : Dict[str, DataWithTTL] = {} # IP is key. TTL is value.
@@ -71,6 +73,9 @@ class KeyValueCommunications():
 
         self.th = threading.Thread(None,self.handle_responses,args=(inside_socket,),name="KeyVal Management")
         self.th.start()
+
+        base = kv_key(IDENTITY_KEY,self.my_identity)
+        self.set(base,f"{self.my_identity} + LIMIT",ttl=IDENTITY_TTL + time.time())
 
     def printf(self, msg, end='\n'):
         colors = {101:93, 102:137, 103: 75, 104: 28, 105: 168, 106:106, 107:107, 108:108,109:109,110:110}
@@ -117,6 +122,7 @@ class KeyValueCommunications():
             return
     
         socket = self.context.socket(zmq.DEALER)
+        socket.setsockopt(zmq.IDENTITY,str(self.my_identity).encode("utf-8")) # TODO: Set ID as key.
         output, b = zpipe(self.context)
         self.connected_sockets[endpoint_query] = {"re" : ReliabilityEngine(self.context, socket, b)}
         self.connected_sockets[endpoint_query]["out"] = output
@@ -260,8 +266,7 @@ class KeyValueCommunications():
         endpoint = msg.get_endpoint()
         
         # I now know endpoint!
-        d = DataWithTTL(f"a{time.time()}", timeout=DEFAULT_TTL+time.time())
-        self.endpoints_kv.add_merge_data_TTL(kv_key(IP_KEY,endpoint),d)
+        self.set(kv_key(IP_KEY,endpoint),f"a{time.time()}")
 
         # doesn't matter for retries.
         pk_response = PeerKV_Hello()
@@ -269,6 +274,10 @@ class KeyValueCommunications():
                    msg.get_r_identity()
                    )
     
+        base = kv_key(IDENTITY_KEY,self.my_identity)
+        self.set(base,f"{self.my_identity} + LIMIT",ttl=IDENTITY_TTL + time.time())
+        self.set(kv_key(base + ">",address.decode("utf-8")),address.decode("utf-8") + " LAT")
+
         self.inbound_peers[endpoint] = {"last_seen" : time.time(), "avg" : DEFAULT_TTL, "addr": address, "endpt": endpoint}
         self.inbound_peers_addr[address] = self.inbound_peers[endpoint]
 
@@ -320,7 +329,7 @@ class KeyValueCommunications():
             v = dat.get_value_or_null()
             if(v is not None):
                 results.append((key, dat))
-                print(key, v, datetime.datetime.fromtimestamp(dat.get_timeout()))
+                print(key, ":", v, datetime.datetime.fromtimestamp(dat.get_timeout()))
 
         self.printf(f"Send State Response to PEER r:{msg.get_r_identity()}")
         pk_response.return_state_receipt(results, msg.get_r_identity())
@@ -338,7 +347,7 @@ class KeyValueCommunications():
         for state_val in state:
             key = state_val[0]
             val = state_val[1]
-            print(key, val.get_value_or_null(), datetime.datetime.fromtimestamp(val.get_timeout()))
+            print(key,":", val.get_value_or_null(), datetime.datetime.fromtimestamp(val.get_timeout()))
             self.endpoints_kv.merge(key, val)
             
         self.printf(f"Finish State Req. Recv'd response :{msg.get_r_identity()}")
@@ -406,7 +415,7 @@ class KeyValueCommunications():
 
         request_data["done"] = True # passes by ref.
 
-    def __is_alive(self, endpoint : str, dealer = False): # outbound means from dealer
+    def __is_alive(self, endpoint : str, address = None, dealer = False): # outbound means from dealer
         # update endpoint's TTL with new value.
 
         if(dealer and endpoint not in self.connected_peers):
@@ -416,6 +425,9 @@ class KeyValueCommunications():
         if(not(dealer) and endpoint not in self.inbound_peers):
             self.printf("Isalive: Client connected without saying hello first!")
             return False
+    
+        if(not(dealer) and address is None):
+            raise ValueError("Require Address")
 
         self.printf("Running is alive")
 
@@ -471,10 +483,14 @@ class KeyValueCommunications():
             elif(ttl - time.time() < 1):
                 ttl = time.time() + 2
             self.printf(f"Calc for ttl: {datetime.datetime.fromtimestamp(ttl)}")
+            
+            base = kv_key(IDENTITY_KEY,self.my_identity)
+            self.set(base,f"{self.my_identity} + LIMIT",ttl=IDENTITY_TTL + time.time())
+            self.set(kv_key(base + ">",address.decode("utf-8")),address.decode("utf-8") + " LAT",ttl=int(ttl)-1)
 
-        dt = DataWithTTL(f"abc{time.time()}",ttl)
-        self.endpoints_kv.merge(kv_key(IP_KEY,endpoint),dt)
+        self.set(kv_key(IP_KEY,endpoint),f"abc{time.time()}",ttl)
         self.printf("Finish keep alive")
+
     
     def __send_update(self, key : str, data : DataWithTTL):
         for peer in self.connected_peers:
@@ -599,7 +615,7 @@ class KeyValueCommunications():
                     continue
 
                 peer = self.inbound_peers_addr[addr]["endpt"]
-                self.__is_alive(peer)
+                self.__is_alive(peer, address=addr)
                 
                 if(data[0] == b'General'):
                     pk = PeerKV()
@@ -638,7 +654,7 @@ class KeyValueCommunications():
                     self.__finish_hello(pk)
                 
                 elif(msg[0] == b'General'):
-                    self.__is_alive(peer,True)
+                    self.__is_alive(peer,dealer=True)
                     pk = PeerKV()
                     pk.import_msg(msg)
                     if(pk.is_return_state()):
@@ -659,7 +675,7 @@ class KeyValueCommunications():
                         raise ValueError("Unknown message received from Peer Dealer Socket")
 
                 elif(msg[0] == b'dummy'):
-                    self.__is_alive(peer,True)
+                    self.__is_alive(peer,dealer=True)
                     pk = BasicMultipartMessage()
                     pk.import_msg(data)
                     self.__receive_dummy_data(pk) 
