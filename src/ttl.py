@@ -100,8 +100,16 @@ class DataTTL_Handler():
         self.cache[key] = None
         self.old_timeouts[key] = time.time()
     
-    def get_keys(self):
-        return self.data.keys()
+    def get_keys(self, ignore=False):
+        if(ignore):
+            return self.data.keys()
+        
+        result = [] # TODO: Change to generator.
+        for x in self.data.keys():
+            if(self.data[x].get_value_or_null() is not None):
+                result.append(x)
+        return result
+
 
     def add_merge_data_TTL(self, key : str, data : DataWithTTL):
         if(key in self.data):
@@ -185,6 +193,9 @@ class DataTTL_Handler():
     
     def get_data(self, key) -> DataWithTTL:
         return self.data[key]
+
+    def has(self, key):
+        return key in self.data and self.data[key].get_value_or_null() is not None
 
     # def __repr__(self):
     #     val = self.get_value()

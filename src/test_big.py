@@ -36,7 +36,7 @@ def main_worker(identity, control : zmq.Socket):
                 peer = int.from_bytes(msg[1],'big')
                 if(peer == identity):
                     # error!
-                    kvcomm.printf("Test : Error - Can't connect to itself")
+                    kvcomm.printf("Test : Error - Can't disconnect to itself")
                     continue
                 
                 kvcomm.disconnect_from_peer(f"tcp://127.0.0.1:8{peer}")
@@ -45,7 +45,7 @@ def main_worker(identity, control : zmq.Socket):
                 peer = int.from_bytes(msg[1],'big')
                 if(peer == identity):
                     # error!
-                    kvcomm.printf("Test : Error - Can't connect to itself")
+                    kvcomm.printf("Test : Error - Can't send to itself")
                     continue
                 kvcomm.printf(f"Test : Send Dummy")
                 kvcomm.send_dummy_command(b"dummy command", f"tcp://127.0.0.1:8{peer}")
@@ -54,10 +54,16 @@ def main_worker(identity, control : zmq.Socket):
                 peer = int.from_bytes(msg[1],'big')
                 if(peer == identity):
                     # error!
-                    kvcomm.printf("Test : Error - Can't connect to itself")
+                    kvcomm.printf("Test : Error - Can't send to itself")
                     continue
                 kvcomm.printf(f"Test : Send Dummy")
                 kvcomm.send_dummy_data(b"dummy data", f"tcp://127.0.0.1:8{peer}")
+            
+            if(msg[0] == b'set'):
+                key = msg[1].decode("utf-8")
+                val = msg[2].decode("utf-8")
+                kvcomm.printf(f"Test : Set key")
+                kvcomm.set(key, val)
 
             if(msg[0] == b'STOP'):
                 break
@@ -180,6 +186,23 @@ while True:
             continue
         if(c_tokens[1] in peers):
             peers[c_tokens[1]]["soc"].send_multipart([b'print'])
+        else:
+            print("Unknown peer")
+        continue
+
+    if(c.find('set') != -1):
+        # first is node origin
+        # second is the node to connect to 
+        c_tokens = c.split(" ")
+        try:
+            c_tokens[1] = int(c_tokens[1])
+            if(len(c_tokens) < 3):
+                raise ValueError
+        except:
+            print("Bad command")
+            continue
+        if(c_tokens[1] in peers):
+            peers[c_tokens[1]]["soc"].send_multipart([b'set', c_tokens[2].encode("utf-8"), c_tokens[3].encode("utf-8")])
         else:
             print("Unknown peer")
         continue

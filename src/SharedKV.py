@@ -29,6 +29,11 @@ def zpipe(ctx):
     b.connect(iface)
     return a,b
 
+IP_KEY = ">ip>"
+
+def kv_key(root, key):
+    return root + key
+
 class KeyValueCommunications():
     def __init__(self, serving_endpoint_query, my_identity):
         
@@ -205,6 +210,23 @@ class KeyValueCommunications():
         return out_debug
         
 
+    def set(self, key, val, ttl=None):
+        # I now know endpoint!
+        if(ttl is None):
+            ttl = DEFAULT_TTL+time.time()
+        d = DataWithTTL(val, ttl)
+        self.endpoints_kv.merge(key,d)
+
+    def get(self, key):
+        return self.endpoints_kv.get_data(key)
+    
+    def has(self, key):
+        return self.endpoints_kv.has(key)
+    
+    def get_keys(self):
+        return self.endpoints_kv.get_keys()
+
+
     # Protocol Methods -------------------------------- No blocking allowed in all finishes.
     # All finishes too must be idempotent (assume req's are replayed)
 
@@ -239,7 +261,7 @@ class KeyValueCommunications():
         
         # I now know endpoint!
         d = DataWithTTL(f"a{time.time()}", timeout=DEFAULT_TTL+time.time())
-        self.endpoints_kv.add_merge_data_TTL(endpoint,d)
+        self.endpoints_kv.add_merge_data_TTL(kv_key(IP_KEY,endpoint),d)
 
         # doesn't matter for retries.
         pk_response = PeerKV_Hello()
@@ -293,7 +315,7 @@ class KeyValueCommunications():
         pk_response = PeerKV()
         results = []
         self.printf("Sending: ")
-        for key in self.endpoints_kv.get_keys():
+        for key in self.endpoints_kv.get_keys(): # general. Transfer all keys
             dat = self.endpoints_kv.get_data(key)
             v = dat.get_value_or_null()
             if(v is not None):
@@ -451,7 +473,7 @@ class KeyValueCommunications():
             self.printf(f"Calc for ttl: {datetime.datetime.fromtimestamp(ttl)}")
 
         dt = DataWithTTL(f"abc{time.time()}",ttl)
-        self.endpoints_kv.merge(endpoint,dt)
+        self.endpoints_kv.merge(kv_key(IP_KEY,endpoint),dt)
         self.printf("Finish keep alive")
     
     def __send_update(self, key : str, data : DataWithTTL):
