@@ -10,6 +10,19 @@ import time
 
 import zmq
 import pickle
+import string
+
+def dump(msg):
+    for part in msg:
+        print("[%03d]" % len(part), end=' ')        
+        try:
+            s_raw = part.decode('ascii')
+            for x in s_raw:
+                if(x not in string.printable):
+                    raise ValueError
+            print(s_raw)
+        except (UnicodeDecodeError, ValueError) as e:
+            print(r"0x %s" % (binascii.hexlify(part, ' ').decode('ascii')))
 
 class ReliableMessage():
     def __init__(self, data, retry_gap, max_retry):
@@ -73,6 +86,8 @@ class ReliabilityEngine():
             socket_receiving = dict(poller.poll(1000))
             if(pipe in socket_receiving):
                 i = pipe.recv_multipart()
+                # dump(i)
+                # print('-')
                 if(i[0] == b"STOP STOP STOP RE ENGINE"):
                     break
                 if(i[0] == b"RE ENGINE connect"):
@@ -83,6 +98,9 @@ class ReliabilityEngine():
                     # print("Disconnected")
                     primary.disconnect(i[1].decode('utf-8'))
                     self.verified_peers -= 1
+
+                    if(self.peers > 0):
+                        self.peers -= 1
                 else:
                     # print("Send: ",i)
                     # for x in range(self.verified_peers): # TODO. DEALER distributes requests
@@ -109,16 +127,9 @@ class ReliabilityEngine():
         # self.output_socket.send_multipart([b"RE ENGINE connect",endpoint.encode('utf-8')],max_retry=1)
     
     def remove_peer(self, endpoint : str):
+        # print("Disc")
         self.add_message([b"RE ENGINE disconnect",endpoint.encode('utf-8')],max_retry=1)
-
-        if(self.peers > 0):
-            self.peers -= 1
     
-    def remove_peer_listen_thread(self, endpoint : str):
-        # self.output_socket.send_multipart([b"RE ENGINE disconnect",endpoint.encode('utf-8')])
-
-        if(self.peers > 0):
-            self.peers -= 1
 
     def __add_to_timer(self,time_fire : float, msg : ReliableMessage):       
         count = 0
@@ -128,6 +139,7 @@ class ReliabilityEngine():
         self.timer.insert(count,time_fire)
         self.msg_objects.insert(count, msg)
         self.signal.set()
+        # print("Added to timer")
         # print("QUEUE: ",self.timer)
 
     def add_message(self, message: List[bytes], retry_gap=10, max_retry=None) -> ReliableMessage:
@@ -136,7 +148,7 @@ class ReliabilityEngine():
         if(self.peers == 0):
             return # drop if no one to send to!
         
-        #print(f"Sent message: {message}. Time: {time.time() % 240} Remaining: {self.pending_tasks}")
+        # print(f"Sent message: {message}. Time: {time.time() % 240} Remaining: {self.pending_tasks}")
         msg = ReliableMessage(message,retry_gap,max_retry)
         # print("MESSAGE  : ",msg.data)
         self.__add_to_timer(0, msg) # send immediately!
@@ -163,6 +175,7 @@ class ReliabilityEngine():
         return msg
 
     def add_message_RM(self, msg: ReliableMessage) -> ReliableMessage:
+        # print("RM: ", msg.max_retry)
         if(msg.max_retry is not None and msg.max_retry <= 0):
             return
         if(msg.max_retry is not None):

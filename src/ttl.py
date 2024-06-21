@@ -121,6 +121,15 @@ class DataTTL_Handler():
         del self.data[key]
         del self.cache[key]
     
+    def prune(self):
+        delete = []
+        for x in self.data:
+            if(self.data[x].get_value_or_null() is None):
+                delete.append(x)
+        
+        for d in delete:
+            self.del_key(d)
+    
     def stop(self):
         self.is_stop = True
         self.evt.set()
@@ -197,6 +206,9 @@ class DataTTL_Handler():
     def has(self, key):
         return key in self.data and self.data[key].get_value_or_null() is not None
 
+    def has_or_expired(self, key):
+        return key in self.data
+    
     # def __repr__(self):
     #     val = self.get_value()
     #     valid = self.__timeout > time.time()
