@@ -86,19 +86,19 @@ class DataWithTTL():
 class DataTTL_Handler():
     def __init__(self, send_handler : Callable):
         self.data = {}
-        self.UPDATE_OFFSET = 5
+        self.UPDATE_OFFSET = 0.75 # 75 percent window.
         self.cache : Dict[str, Optional[DataWithTTL]] = {}
         self.evt = threading.Event()
         self.is_stop = False
         self.th = threading.Thread(None,self.wait_thread)
         self.th.start()
         self.send_msg = send_handler
-        self.old_timeouts = {}
+        self.edit = {}
     
     def add_data_TTL(self, key : str, data : DataWithTTL):
         self.data[key] = data
         self.cache[key] = None
-        self.old_timeouts[key] = time.time()
+        self.edit[key] = time.time()
     
     def get_keys(self, ignore=False):
         if(ignore):
@@ -120,6 +120,7 @@ class DataTTL_Handler():
     def del_key(self, key):
         del self.data[key]
         del self.cache[key]
+        del self.edit[key]
     
     def prune(self):
         delete = []
@@ -135,6 +136,9 @@ class DataTTL_Handler():
         self.evt.set()
         self.th.join()
 
+    def get_window(self, large, small):
+        return (large - small) * self.UPDATE_OFFSET + small
+
     def merge(self, key : str, inc : DataWithTTL):
         if(key not in self.data):
             self.add_data_TTL(key, inc)
@@ -147,7 +151,7 @@ class DataTTL_Handler():
         
         # if inc.get_timeout() > self.data[key].get_timeout()
 
-        if(self.data[key].get_timeout() - self.UPDATE_OFFSET > time.time()): # still got time
+        if(self.get_window(self.data[key].get_timeout(), self.edit[key]) > time.time()): # still got time
             if(self.cache[key] is not None):
                 r = self.cache[key].get_timeout()
                 if(inc.get_timeout() > r):
@@ -166,6 +170,7 @@ class DataTTL_Handler():
             self.cache[key] = None
             self.evt.set()
             self.data[key] = inc
+            self.edit[key] = time.time()
             self.send_msg(key, self.data[key])
             return True
         
@@ -173,6 +178,7 @@ class DataTTL_Handler():
             # cache time is greater
             self.data[key] = self.cache[key]
             self.cache[key] = None
+            self.edit[key] = time.time()
             self.evt.set()
             self.send_msg(key, self.data[key])
             return True
@@ -180,6 +186,7 @@ class DataTTL_Handler():
         # cache is none
         assert self.cache[key] is None
         self.data[key] = inc
+        self.edit[key] = time.time()
         self.send_msg(key, self.data[key])
         return True
 
@@ -190,10 +197,11 @@ class DataTTL_Handler():
                 break
             for key in self.cache:
                 if(self.cache[key] is not None and
-                  self.data[key].get_timeout() - self.UPDATE_OFFSET < time.time()):
+                    self.get_window(self.data[key].get_timeout(), self.edit[key]) < time.time()):
                 
                     assert self.cache[key].get_timeout() > self.data[key].get_timeout()
                     self.data[key] = self.cache[key]
+                    self.edit[key] = time.time()
                     self.send_msg(key, self.data[key]) 
                     self.cache[key] = None
 
