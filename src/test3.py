@@ -1,6 +1,3 @@
-
-
-
 import random
 import time
 from SharedKV import KeyValueCommunications
@@ -28,5 +25,5 @@ for x in range(3):
     #     kvcomm.reset_modify()
 
     kvcomm.send_dummy()
-    time.sleep(random.randint(3,5))
+    time.sleep(random.randint(3, 5))
 kvcomm.stop()
