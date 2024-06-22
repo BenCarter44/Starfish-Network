@@ -1,9 +1,7 @@
-import binascii
-import string
 from typing import List, Tuple
 
-from ttl import DataWithTTL
-from utils import dump
+from src.ttl import DataTTL
+from src.utils import dump
 
 
 class BasicMultipartMessage:
@@ -172,9 +170,7 @@ class PeerKV(BasicMultipartMessage):
         self.output[1] = b"request_connection_ok"
         self.output[2] = int.to_bytes(r_identity, 2, "big")
 
-    def return_state_receipt(
-        self, values: List[Tuple[str, DataWithTTL]], r_identity: int
-    ):
+    def return_state_receipt(self, values: List[Tuple[str, DataTTL]], r_identity: int):
         """Create state-return message
 
         Args:
@@ -190,7 +186,7 @@ class PeerKV(BasicMultipartMessage):
             self.output.append(x[0].encode("utf-8"))
             self.output.append(x[1].to_bytes())
 
-    def push_change(self, key: str, value: DataWithTTL, r_identity: int):
+    def push_change(self, key: str, value: DataTTL, r_identity: int):
         """Push single change message
 
         Args:
@@ -206,14 +202,14 @@ class PeerKV(BasicMultipartMessage):
         self.output[4] = key.encode("utf-8")
         self.output[5] = value.to_bytes()
 
-    def get_push_key_val(self) -> tuple[str, DataWithTTL]:
+    def get_push_key_val(self) -> tuple[str, DataTTL]:
         """Get key value from message
 
         Returns:
             str: key
             DataWithTTL: value
         """
-        dt = DataWithTTL(None, 0, True)
+        dt = DataTTL(None, 0, True)
         dt.from_bytes(self.output[5])
         return self.output[4].decode("utf-8"), dt
 
@@ -228,7 +224,7 @@ class PeerKV(BasicMultipartMessage):
         self.output[1] = b"push_change_receive"
         self.output[2] = int.to_bytes(r_identity, 2, "big")
 
-    def get_state_from_return(self) -> List[Tuple[str, DataWithTTL]]:
+    def get_state_from_return(self) -> List[Tuple[str, DataTTL]]:
         """Load state from message
 
         Returns:
@@ -237,11 +233,11 @@ class PeerKV(BasicMultipartMessage):
         assert self.output[1] == b"return_state"
         length = int.from_bytes(self.output[3], "big")
 
-        out: list[tuple[str, DataWithTTL]] = list(range(length))  # type: ignore
+        out: list[tuple[str, DataTTL]] = list(range(length))  # type: ignore
         # assumes length is not lying, telling the truth
         state_data = self.output[4:]
         for x in range(length):
-            dt = DataWithTTL(None, 0, True)
+            dt = DataTTL(None, 0, True)
             dt.from_bytes(state_data[x * 2 + 1])
             out[x] = (state_data[x * 2].decode("utf-8"), dt)
         return out

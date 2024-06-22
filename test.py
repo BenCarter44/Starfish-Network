@@ -1,10 +1,9 @@
-import random
 import threading
-import time
-from typing import Union, cast
+from typing import Any, cast
 
 import zmq
-from SharedKV import KeyValueCommunications, zpipe
+from src.SharedKV import KeyValueCommunications
+from src.utils import zpipe
 
 
 # neighbors = {101:[102], 102:[103,104], 104:[105], 105:[103], 103:[101]}
@@ -77,7 +76,7 @@ def main_worker(identity, control: zmq.Socket):
 
 ctx = zmq.Context()
 
-peers = {}
+peers: dict[int, Any] = {}
 for id_num in range(101, 110 + 1):
     mine, theirs = zpipe(ctx)
     th = threading.Thread(None, main_worker, args=(id_num, theirs))

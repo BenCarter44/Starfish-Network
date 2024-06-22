@@ -5,9 +5,9 @@ import time
 from typing import Any, Dict, List, Set, Union, cast
 import zmq
 
-from MessageFormats import *
-from ReliabilityEngine import *
-from ttl import DataTTL_Handler, DataWithTTL
+from src.MessageFormats import *
+from src.ReliabilityEngine import *
+from src.ttl import DataTTL_Library, DataTTL
 
 DEFAULT_TTL = 5
 IDENTITY_TTL = 60 * 60
@@ -27,6 +27,38 @@ def kv_key(root: str, key: Any):
         str: combined path
     """
     return root + str(key)
+
+
+class ConnectedPeers_Dealer:
+    """Struct holding connected_socket information"""
+
+    def __init__(
+        self,
+        re: ReliabilityEngine,
+        out: zmq.Socket,
+        last_seen: float = time.time(),
+        avg: float = DEFAULT_TTL,
+    ):
+        self.rsoc = re
+        self.out = out
+        self.last_seen = last_seen
+        self.avg = avg
+
+
+class InboundPeers_Router:
+    """Struct holding connected_socket information"""
+
+    def __init__(
+        self,
+        addr: bytes,
+        endpt: str,
+        last_seen: float = time.time(),
+        avg: float = DEFAULT_TTL,
+    ):  # ignore:
+        self.addr = addr
+        self.endpoint = endpt
+        self.last_seen = last_seen
+        self.avg = avg
 
 
 class KeyValueCommunications:
@@ -55,16 +87,16 @@ class KeyValueCommunications:
         # TODO: Identity is not required here. (Key Value doesn't have identity.)
 
         # self.endpoints_kv : Dict[str, DataWithTTL] = {} # IP is key. TTL is value.
-        self.endpoints_kv: DataTTL_Handler = DataTTL_Handler(self.__send_update)
+        self.endpoints_kv: DataTTL_Library = DataTTL_Library(self.__send_update)
 
         self.connected_peers: Set[str] = set()  # outbound connections!
-        self.connected_sockets: Dict[
-            str, Dict[str, Union[ReliabilityEngine | zmq.Socket | float]]
-        ] = {}  # outbound connections!
+        self.connected_sockets: Dict[str, ConnectedPeers_Dealer] = (
+            {}
+        )  # outbound connections!
 
         # inbound connections!
-        self.inbound_peers: dict[str, dict[str, Union[float, str, bytes]]] = {}
-        self.inbound_peers_addr: dict[bytes, dict[str, Union[float, str, bytes]]] = {}
+        self.inbound_peers: dict[str, InboundPeers_Router] = {}
+        self.inbound_peers_addr: dict[bytes, InboundPeers_Router] = {}
 
         self.new_data = False
         # do not add yourself, others will tell you the TTL.
@@ -157,27 +189,18 @@ class KeyValueCommunications:
             zmq.IDENTITY, str(self.my_identity).encode("utf-8")
         )  # TODO: Set ID as key.
         output, b = zpipe(self.context)
-        self.connected_sockets[endpoint_query] = {
-            "re": ReliabilityEngine(self.context, socket, b)
-        }
-        self.connected_sockets[endpoint_query]["out"] = output
-        self.connected_sockets[endpoint_query]["last_seen"] = 0
-        self.connected_sockets[endpoint_query]["avg"] = DEFAULT_TTL
+        self.connected_sockets[endpoint_query] = ConnectedPeers_Dealer(
+            ReliabilityEngine(self.context, socket, b), output
+        )
         self.control_socket_outside.send_multipart(
             [b"connect", endpoint_query.encode("utf-8")]
         )
         # TODO. Move connected_sockets into a separate struct and open_message_data
-        i = cast(
-            ReliabilityEngine, self.connected_sockets[endpoint_query]["re"]
-        ).get_number_peers()
+        i = self.connected_sockets[endpoint_query].rsoc.get_number_peers()
         i2 = i
-        cast(ReliabilityEngine, self.connected_sockets[endpoint_query]["re"]).add_peer(
-            endpoint_query
-        )
+        self.connected_sockets[endpoint_query].rsoc.add_peer(endpoint_query)
         while i == i2:  # wait for connect.
-            i2 = cast(
-                ReliabilityEngine, self.connected_sockets[endpoint_query]["re"]
-            ).get_number_peers()
+            i2 = self.connected_sockets[endpoint_query].rsoc.get_number_peers()
             time.sleep(0.001)
 
         # connected! Send hello!
@@ -226,9 +249,7 @@ class KeyValueCommunications:
             self.__send_disconnect_request(endpoint_query)
             time.sleep(0.1)
         self.connected_peers.remove(endpoint_query)
-        cast(
-            ReliabilityEngine, self.connected_sockets[endpoint_query]["re"]
-        ).remove_peer(endpoint_query)
+        self.connected_sockets[endpoint_query].rsoc.remove_peer(endpoint_query)
         self.control_socket_outside.send_multipart(
             [b"disconnect", endpoint_query.encode("utf-8")]
         )
@@ -293,7 +314,7 @@ class KeyValueCommunications:
         keys.sort()
         for x in keys:
             out_debug += f"{sfill(x, 35)} | "
-            endpt: DataWithTTL = self.endpoints_kv.get_data(x)
+            endpt: DataTTL = self.endpoints_kv.get_data(x)
             out_debug += f"{sfill(endpt.get_value_or_null(), 30)} | {sfill(datetime.datetime.fromtimestamp(endpt.get_timeout()), 23)}   | \n"
 
         return out_debug
@@ -309,7 +330,7 @@ class KeyValueCommunications:
         # I now know endpoint!
         if ttl is None:
             ttl = DEFAULT_TTL + time.time()
-        d = DataWithTTL(val, ttl)
+        d = DataTTL(val, ttl)
         self.endpoints_kv.merge(key, d)
 
     def get(self, key: str) -> Any:
@@ -378,9 +399,7 @@ class KeyValueCommunications:
             f"Sending hello message with r:{reply_id}"
         )  # TODO. DEALER socket distributes requests... this means that it must be repeated.
 
-        rm = cast(
-            ReliabilityEngine, self.connected_sockets[endpoint]["re"]
-        ).add_message(msg.compile(), 10, 25)
+        rm = self.connected_sockets[endpoint].rsoc.add_message(msg.compile(), 10, 25)
         if rm is None:
             raise ValueError("RM is NONE!")  # todo here.
         self.open_messages[f"hello-{reply_id}"] = rm
@@ -410,12 +429,7 @@ class KeyValueCommunications:
             address.decode("utf-8") + " LAT",
         )
 
-        self.inbound_peers[endpoint] = {
-            "last_seen": time.time(),
-            "avg": DEFAULT_TTL,
-            "addr": address,
-            "endpt": endpoint,
-        }
+        self.inbound_peers[endpoint] = InboundPeers_Router(address, endpoint)
 
         self.inbound_peers_addr[address] = self.inbound_peers[endpoint]
 
@@ -439,7 +453,7 @@ class KeyValueCommunications:
         request_data = cast(dict[str, Any], self.open_message_data[f"hello-{r}"])
         endpoint = request_data["query"]
 
-        self.connected_sockets[endpoint]["last_seen"] = time.time()
+        self.connected_sockets[endpoint].last_seen = time.time()
         self.connected_peers.add(endpoint)
 
         self.printf(f"Finished Hello. Recv'ed response with r:{msg.get_r_identity()}")
@@ -468,9 +482,7 @@ class KeyValueCommunications:
         pk = PeerKV()
         pk.fetch_state_command(r_identity=reply_id)
         self.printf(f"Send State Request r:{endpoint}")
-        rm = cast(
-            ReliabilityEngine, self.connected_sockets[endpoint]["re"]
-        ).add_message(pk.compile(), 10, 5)
+        rm = self.connected_sockets[endpoint].rsoc.add_message(pk.compile(), 10, 5)
         if rm is None:
             raise ValueError("RM none 2")
         self.open_messages[f"state-{reply_id}"] = cast(ReliableMessage, rm)
@@ -547,9 +559,7 @@ class KeyValueCommunications:
         self.open_message_data[f"send-request-{reply_id}"] = {"done": False}
         pk = PeerKV()
         pk.request_connection_cmd(reply_id)
-        rm = cast(
-            ReliabilityEngine, self.connected_sockets[endpoint]["re"]
-        ).add_message(pk.compile(), 10, 5)
+        rm = self.connected_sockets[endpoint].rsoc.add_message(pk.compile(), 10, 5)
         if rm is None:
             raise ValueError("Rm is none 545")
         self.open_messages[f"send-request-{reply_id}"] = cast(ReliableMessage, rm)
@@ -564,7 +574,7 @@ class KeyValueCommunications:
             address (bytes): Address of sender
         """
         reply_identity = msg.get_r_identity()
-        endpoint = cast(str, self.inbound_peers_addr[address]["endpt"])
+        endpoint = self.inbound_peers_addr[address].endpoint
         self.printf(
             f"Received a connection request from {endpoint} with r:{reply_identity}"
         )
@@ -598,9 +608,7 @@ class KeyValueCommunications:
         self.open_message_data[f"disconn-send-request-{reply_id}"] = {"done": False}
         pk = PeerKV()
         pk.request_disconnect(reply_id)
-        rm = cast(
-            ReliabilityEngine, self.connected_sockets[endpoint]["re"]
-        ).add_message(pk.compile(), 0.1, 5)
+        rm = self.connected_sockets[endpoint].rsoc.add_message(pk.compile(), 0.1, 5)
         if rm is None:
             raise ValueError("RM is none!")
         self.open_messages[f"disconn-send-request-{reply_id}"] = cast(
@@ -615,7 +623,7 @@ class KeyValueCommunications:
             msg (PeerKV): _description_
             addr (bytes): _description_
         """
-        endpoint = cast(str, self.inbound_peers_addr[addr]["endpt"])
+        endpoint = self.inbound_peers_addr[addr].endpoint
         self.printf(
             f"Received a disconnection request from {endpoint} with r:{msg.get_r_identity()}"
         )
@@ -671,14 +679,14 @@ class KeyValueCommunications:
 
         ttl = DEFAULT_TTL + time.time()
         if dealer:
-            last_seen = cast(float, self.connected_sockets[endpoint]["last_seen"])
-            avg = cast(float, self.connected_sockets[endpoint]["avg"])
+            last_seen = self.connected_sockets[endpoint].last_seen
+            avg = self.connected_sockets[endpoint].avg
             avg = (avg * 0.30) + (time.time() - last_seen) * 0.70
 
             # self.printf(f"D - Last seen for {endpoint}: {datetime.datetime.fromtimestamp(last_seen)}")
             # self.printf(f"D - Avg for {endpoint}: {avg}")
-            self.connected_sockets[endpoint]["last_seen"] = time.time()
-            self.connected_sockets[endpoint]["avg"] = avg
+            self.connected_sockets[endpoint].last_seen = time.time()
+            self.connected_sockets[endpoint].avg = avg
 
             a: float = 0
             if avg > 3600:
@@ -698,14 +706,14 @@ class KeyValueCommunications:
 
         else:
             address = cast(bytes, address)
-            last_seen = cast(float, self.inbound_peers[endpoint]["last_seen"])
-            avg = cast(float, self.inbound_peers[endpoint]["avg"])
+            last_seen = self.inbound_peers[endpoint].last_seen
+            avg = self.inbound_peers[endpoint].avg
             # self.printf(f"R - Last seen for {endpoint}: {datetime.datetime.fromtimestamp(last_seen)}")
             # self.printf(f"R - Avg for {endpoint}: {avg}")
             avg = (avg * 0.80) + (time.time() - last_seen) * 0.20
 
-            self.inbound_peers[endpoint]["last_seen"] = time.time()
-            self.inbound_peers[endpoint]["avg"] = avg
+            self.inbound_peers[endpoint].last_seen = time.time()
+            self.inbound_peers[endpoint].avg = avg
 
             a = 0
             if avg > 3600:
@@ -734,7 +742,7 @@ class KeyValueCommunications:
         self.set(kv_key(IP_KEY, endpoint), f"abc{time.time()}", ttl)
         # self.printf("Finish keep alive")
 
-    def __send_update(self, key: str, data: DataWithTTL):
+    def __send_update(self, key: str, data: DataTTL):
         """Send update of keyvalue to peers
 
         Args:
@@ -754,9 +762,7 @@ class KeyValueCommunications:
                 f"Post update r:{reply_id} of [{key}]={data.get_value_or_null()} Timeout: {datetime.datetime.fromtimestamp(data.get_timeout())}- send to {peer}"
             )
 
-            rm = cast(
-                ReliabilityEngine, self.connected_sockets[peer]["re"]
-            ).add_message(msg.compile())
+            rm = self.connected_sockets[peer].rsoc.add_message(msg.compile())
             if rm is None:
                 self.printf("None found -- skip")
                 continue
@@ -809,9 +815,7 @@ class KeyValueCommunications:
         msg = BasicMultipartMessage()
         msg.set_val(command)
 
-        cast(ReliabilityEngine, self.connected_sockets[endpoint]["re"]).add_message(
-            msg.compile(), 0, 1
-        )
+        self.connected_sockets[endpoint].rsoc.add_message(msg.compile(), 0, 1)
 
     def __receive_dummy(self, msg: BasicMultipartMessage, address: bytes):
         """Receive dummy command from address
@@ -829,7 +833,7 @@ class KeyValueCommunications:
             data (bytes): Data
             endpoint (str): Endpoint
         """
-        addr = cast(bytes, self.inbound_peers[endpoint]["addr"])
+        addr = self.inbound_peers[endpoint].addr
         msg = BasicMultipartMessage()
         msg.set_val(data)
         lst = msg.compile_with_address(addr)
@@ -868,18 +872,11 @@ class KeyValueCommunications:
         for endpoint in rms:
             self.printf(f"Peer {endpoint} disconnected (expired)! - Dealer")
             self.connected_peers.remove(endpoint)
-            cast(ReliabilityEngine, self.connected_sockets[endpoint]["re"]).remove_peer(
-                endpoint
-            )
-            while (
-                cast(
-                    ReliabilityEngine, self.connected_sockets[endpoint]["re"]
-                ).get_number_peers()
-                != 0
-            ):
+            self.connected_sockets[endpoint].rsoc.remove_peer(endpoint)
+            while self.connected_sockets[endpoint].rsoc.get_number_peers() != 0:
                 pass  # wait until done
-            poller.unregister(self.connected_sockets[endpoint]["out"])
-            cast(ReliabilityEngine, self.connected_sockets[endpoint]["re"]).stop()
+            poller.unregister(self.connected_sockets[endpoint].out)
+            self.connected_sockets[endpoint].rsoc.stop()
             del self.connected_sockets[endpoint]
             self.new_data = True
 
@@ -906,6 +903,106 @@ class KeyValueCommunications:
     def __prune_kv(self):
         """Prune all expired records from library"""
         self.endpoints_kv.prune()
+
+    def __handle_receiving_socket(self, msg: list[bytes]):
+        """Handle information incoming on the ROUTER socket
+
+        Args:
+            msg (list[bytes]): multipart message
+
+        Raises:
+            ValueError: Malformed message
+        """
+        addr = msg[0]
+        data = msg[1:]
+
+        # self.printf("Received on router")
+        # dump(msg)
+        # self.printf("---")
+        if addr not in self.inbound_peers_addr:
+            if data[0] == b"Hello!":
+                # good. new peer. hello
+                pk = PeerKV_Hello()
+                pk.import_msg(data)
+                self.__receiving_hello(pk, addr)
+            else:
+                self.printf("New peer did not say hello! Dropping")
+
+        else:
+
+            peer = self.inbound_peers_addr[addr].endpoint
+            self.__is_alive(peer, address=addr)
+
+            if data[0] == b"General":
+                pk = PeerKV()  # type: ignore
+                pk.import_msg(data)
+                if pk.is_fetch_state():
+                    self.__receive_state_request(pk, addr)
+                elif pk.is_requesting_connection():
+                    self.__receive_request_for_connection(pk, addr)
+                elif pk.is_push_change():
+                    self.__receive_update(pk, addr)
+                elif pk.is_requesting_disconnection():
+                    self.__receive_disconnect_request(pk, addr)
+                else:
+                    raise ValueError(
+                        "Unknown message received from Query Router Socket"
+                    )
+            elif data[0] == b"dummy":
+                pk = BasicMultipartMessage()  # type: ignore
+                pk.import_msg(data)
+                self.__receive_dummy(pk, addr)
+            else:
+                raise ValueError("Unknown message received from Query Router Socket")
+
+    def __handle_receiving_dealer_socket(self, msg: list[bytes], peer: str):
+        """Handle information coming in from the DEALER socket
+
+        Args:
+            msg (list[bytes]): Multipart message
+            peer (str): Peer Endpoint
+
+        Raises:
+            ValueError: Malformed Message
+        """
+        # self.printf("Received on dealer")
+        # dump(msg)
+        # self.printf("---")
+
+        if msg[0] == b"Welcome":
+            pk = PeerKV_Hello()
+            pk.import_msg(msg)
+            self.__finish_hello(pk)
+
+        elif msg[0] == b"General":
+            self.__is_alive(peer, dealer=True)
+            pk = PeerKV()  # type: ignore
+            pk.import_msg(msg)
+            if pk.is_return_state():
+                self.__finish_state_request(pk)
+            elif pk.is_push_change_receive():
+                self.__finish_update(pk)
+            elif pk.is_requesting_connection_feedback():
+                self.__finish_request_for_connection(pk)
+            elif pk.is_error_msg():
+                error, cmd = pk.get_error_code()
+                if error == 10:
+                    # Must reconnect to server, I must have dropped or previously connected
+                    # resend a hello
+                    self.printf(f"Failed command: {cmd}")
+                    self.__send_hello(peer)
+                    # wait for the RE to then request it again.
+            else:
+                raise ValueError("Unknown message received from Dealer Socket")
+
+        elif msg[0] == b"dummy":
+            self.__is_alive(peer, dealer=True)
+            pk = BasicMultipartMessage()  # type: ignore
+            pk.import_msg(msg)
+            self.__receive_dummy_data(pk)
+
+        else:
+            raise ValueError("Unknown message received from Dealer Socket")
 
     # to be run by a thread!
     def __handle_responses(self, status_socket: zmq.Socket):
@@ -935,112 +1032,28 @@ class KeyValueCommunications:
                     break
                 if msg[0] == b"connect":
                     endpt = msg[1].decode("utf-8")
-                    poller.register(self.connected_sockets[endpt]["out"], zmq.POLLIN)
+                    poller.register(self.connected_sockets[endpt].out, zmq.POLLIN)
                 if msg[0] == b"disconnect":
                     endpt = msg[1].decode("utf-8")
-                    poller.unregister(self.connected_sockets[endpt]["out"])
+                    poller.unregister(self.connected_sockets[endpt].out)
                 if msg[0] == b"R-Relay":
                     dat = msg[1:]
                     self.receive_query_socket.send_multipart(dat)
 
             if self.receive_query_socket in socket_receiving:
-
                 msg = self.receive_query_socket.recv_multipart()
-                addr = msg[0]
-                data = msg[1:]
-
-                # self.printf("Received on router")
-                # dump(msg)
-                # self.printf("---")
-                if addr not in self.inbound_peers_addr:
-                    if data[0] == b"Hello!":
-                        # good. new peer. hello
-                        pk = PeerKV_Hello()
-                        pk.import_msg(data)
-                        self.__receiving_hello(pk, addr)
-                    else:
-                        self.printf("New peer did not say hello! Dropping")
-
-                else:
-
-                    peer = cast(str, self.inbound_peers_addr[addr]["endpt"])
-                    self.__is_alive(peer, address=addr)
-
-                    if data[0] == b"General":
-                        pk = PeerKV()  # type: ignore
-                        pk.import_msg(data)
-                        if pk.is_fetch_state():
-                            self.__receive_state_request(pk, addr)
-                        elif pk.is_requesting_connection():
-                            self.__receive_request_for_connection(pk, addr)
-                        elif pk.is_push_change():
-                            self.__receive_update(pk, addr)
-                        elif pk.is_requesting_disconnection():
-                            self.__receive_disconnect_request(pk, addr)
-                        else:
-                            raise ValueError(
-                                "Unknown message received from Query Router Socket"
-                            )
-                    elif data[0] == b"dummy":
-                        pk = BasicMultipartMessage()  # type: ignore
-                        pk.import_msg(data)
-                        self.__receive_dummy(pk, addr)
-                    else:
-                        raise ValueError(
-                            "Unknown message received from Query Router Socket"
-                        )
+                self.__handle_receiving_socket(msg)
 
             for peer in self.connected_sockets:
-                socket = self.connected_sockets[peer]["out"]
+                socket = self.connected_sockets[peer].out
                 if not (socket) in socket_receiving:
                     continue
 
                 socket = cast(zmq.Socket, socket)
 
                 msg = socket.recv_multipart()
+                self.__handle_receiving_dealer_socket(msg, peer)
 
-                # self.printf("Received on dealer")
-                # dump(msg)
-                # self.printf("---")
-
-                if msg[0] == b"Welcome":
-                    pk = PeerKV_Hello()
-                    pk.import_msg(msg)
-                    self.__finish_hello(pk)
-
-                elif msg[0] == b"General":
-                    self.__is_alive(peer, dealer=True)
-                    pk = PeerKV()  # type: ignore
-                    pk.import_msg(msg)
-                    if pk.is_return_state():
-                        self.__finish_state_request(pk)
-                    elif pk.is_push_change_receive():
-                        self.__finish_update(pk)
-                    elif pk.is_requesting_connection_feedback():
-                        self.__finish_request_for_connection(pk)
-                    elif pk.is_error_msg():
-                        error, cmd = pk.get_error_code()
-                        if error == 10:
-                            # Must reconnect to server, I must have dropped or previously connected
-                            # resend a hello
-                            self.printf(f"Failed command: {cmd}")
-                            self.__send_hello(peer)
-                            # wait for the RE to then request it again.
-                    else:
-                        raise ValueError(
-                            "Unknown message received from Peer Dealer Socket"
-                        )
-
-                elif msg[0] == b"dummy":
-                    self.__is_alive(peer, dealer=True)
-                    pk = BasicMultipartMessage()  # type: ignore
-                    pk.import_msg(data)
-                    self.__receive_dummy_data(pk)
-
-                else:
-                    raise ValueError("Unknown message received from Peer Dealer Socket")
-
-            # end for
             self.__prune(poller)
             self.__prune_inbound()
             self.__prune_kv()  # must go after the above.

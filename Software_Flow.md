@@ -12,4 +12,4 @@ After the `main` reaches a stable state, a release can be created from `main`, i
 Anything in `main` must have 0 Warnings and Errors from the following tools:
 1. black -- style
 2. mypy -- type checking
-3. interrogate -- docstring checking
+3. interrogate -- docstring checking. Docstrings for class structures are optional

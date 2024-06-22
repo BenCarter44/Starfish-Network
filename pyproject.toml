@@ -1,0 +1,2 @@
+[tool.interrogate]
+ignore-init-method = true

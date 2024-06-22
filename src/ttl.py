@@ -8,7 +8,7 @@ import dill  # type: ignore
 dict_keys = type({}.keys())  # type: ignore
 
 
-class DataWithTTL:
+class DataTTL:
     """Data with a time-to-live feature"""
 
     def __init__(self, data: Any, timeout: float, suppress_error: bool = False):
@@ -97,18 +97,18 @@ class DataWithTTL:
         self.__time_created = time.time()
 
 
-class DataTTL_Handler:
+class DataTTL_Library:
     """Manager that automatically dispatches updates to DataTTL pairs"""
 
-    def __init__(self, send_handler: Callable[[str, DataWithTTL], None]):
+    def __init__(self, send_handler: Callable[[str, DataTTL], None]):
         """Start up DataTTL manager
 
         Args:
             send_handler (Callable): Function to execute on pushed changes
         """
-        self.data: dict[str, DataWithTTL] = {}
+        self.data: dict[str, DataTTL] = {}
         self.UPDATE_OFFSET = 0.75  # 75 percent window.
-        self.cache: Dict[str, Optional[DataWithTTL]] = {}
+        self.cache: Dict[str, Optional[DataTTL]] = {}
         self.evt = threading.Event()
         self.is_stop = False
         self.th = threading.Thread(None, self.__wait_thread)
@@ -116,7 +116,7 @@ class DataTTL_Handler:
         self.send_msg = send_handler
         self.edit: dict[str, float] = {}
 
-    def add_data_TTL(self, key: str, data: DataWithTTL):
+    def add_data_TTL(self, key: str, data: DataTTL):
         """Add DataTTL to the library
 
         Args:
@@ -145,7 +145,7 @@ class DataTTL_Handler:
                 result[x] = self.data[x].get_value_or_null()
         return result.keys()
 
-    def add_merge_data_TTL(self, key: str, data: DataWithTTL):
+    def add_merge_data_TTL(self, key: str, data: DataTTL):
         """Merge in/add a key and DataTTL
 
         Args:
@@ -195,7 +195,7 @@ class DataTTL_Handler:
         """
         return (large - small) * self.UPDATE_OFFSET + small
 
-    def merge(self, key: str, inc: DataWithTTL) -> bool:
+    def merge(self, key: str, inc: DataTTL) -> bool:
         """Merge in a DataTTL record. Send updates to callback as necessary
 
         Args:
@@ -220,7 +220,7 @@ class DataTTL_Handler:
             self.get_window(self.data[key].get_timeout(), self.edit[key]) > time.time()
         ):  # still got time
             if self.cache[key] is not None:
-                r = cast(DataWithTTL, self.cache[key]).get_timeout()
+                r = cast(DataTTL, self.cache[key]).get_timeout()
                 if inc.get_timeout() > r:
                     self.cache[key] = inc
                     self.evt.set()
@@ -234,7 +234,7 @@ class DataTTL_Handler:
 
         if (
             self.cache[key] is not None
-            and inc.get_timeout() > cast(DataWithTTL, self.cache[key]).get_timeout()
+            and inc.get_timeout() > cast(DataTTL, self.cache[key]).get_timeout()
         ):
             # clear cache
             self.cache[key] = None
@@ -246,7 +246,7 @@ class DataTTL_Handler:
 
         if self.cache[key] is not None:
             # cache time is greater
-            self.data[key] = cast(DataWithTTL, self.cache[key])
+            self.data[key] = cast(DataTTL, self.cache[key])
             self.cache[key] = None
             self.edit[key] = time.time()
             self.evt.set()
@@ -281,7 +281,7 @@ class DataTTL_Handler:
 
             self.evt.clear()
 
-    def get_data(self, key: str) -> DataWithTTL:
+    def get_data(self, key: str) -> DataTTL:
         """Get value at key from library
 
         Args:
