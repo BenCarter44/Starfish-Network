@@ -39,6 +39,14 @@ class ConnectedPeers_Dealer:
         last_seen: float = time.time(),
         avg: float = DEFAULT_TTL,
     ):
+        """Struct holding connected_socket information from DEALER
+
+        Args:
+            re (ReliabilityEngine): Reliability Engine socket
+            out (zmq.Socket): Output PIPE from Reliability Engine
+            last_seen (float, optional): Timestamp of last seen. Defaults to time.time().
+            avg (float, optional): Average in seconds between requests. Defaults to DEFAULT_TTL.
+        """
         self.rsoc = re
         self.out = out
         self.last_seen = last_seen
@@ -46,7 +54,7 @@ class ConnectedPeers_Dealer:
 
 
 class InboundPeers_Router:
-    """Struct holding connected_socket information"""
+    """Struct holding socket information from ROUTER"""
 
     def __init__(
         self,
@@ -54,7 +62,15 @@ class InboundPeers_Router:
         endpt: str,
         last_seen: float = time.time(),
         avg: float = DEFAULT_TTL,
-    ):  # ignore:
+    ):
+        """Struct holding socket information from ROUTER
+
+        Args:
+            addr (bytes): Address of sender by ZMQ
+            endpt (str): Endpoint
+            last_seen (float, optional): Timestamp of peer last seen. Defaults to time.time().
+            avg (float, optional): Average time between requests. Defaults to DEFAULT_TTL.
+        """
         self.addr = addr
         self.endpoint = endpt
         self.last_seen = last_seen
