@@ -1,11 +1,7 @@
-import datetime
 import threading
 import time
-from typing import Any, Callable, Dict, Optional, cast
-from typing_extensions import Self
+from typing import Any, Callable, Optional
 import dill  # type: ignore
-
-dict_keys = type({}.keys())  # type: ignore
 
 
 class DataTTL:
@@ -108,7 +104,7 @@ class DataTTL_Library:
         """
         self.data: dict[str, DataTTL] = {}
         self.UPDATE_OFFSET = 0.75  # 75 percent window.
-        self.cache: Dict[str, Optional[DataTTL]] = {}
+        self.cache: dict[str, Optional[DataTTL]] = {}
         self.evt = threading.Event()
         self.is_stop = False
         self.th = threading.Thread(None, self.__wait_thread)
@@ -216,11 +212,12 @@ class DataTTL_Library:
 
         # if inc.get_timeout() > self.data[key].get_timeout()
 
-        if (
-            self.get_window(self.data[key].get_timeout(), self.edit[key]) > time.time()
-        ):  # still got time
-            if self.cache[key] is not None:
-                r = cast(DataTTL, self.cache[key]).get_timeout()
+        item_in_cache = self.cache[key]
+        window_limit = self.get_window(self.data[key].get_timeout(), self.edit[key])
+        if window_limit > time.time():  # still got time
+
+            if item_in_cache is not None:
+                r = item_in_cache.get_timeout()
                 if inc.get_timeout() > r:
                     self.cache[key] = inc
                     self.evt.set()
@@ -233,8 +230,8 @@ class DataTTL_Library:
         # else
 
         if (
-            self.cache[key] is not None
-            and inc.get_timeout() > cast(DataTTL, self.cache[key]).get_timeout()
+            item_in_cache is not None
+            and inc.get_timeout() > item_in_cache.get_timeout()
         ):
             # clear cache
             self.cache[key] = None
@@ -244,9 +241,9 @@ class DataTTL_Library:
             self.send_msg(key, self.data[key])
             return True
 
-        if self.cache[key] is not None:
+        if item_in_cache is not None:
             # cache time is greater
-            self.data[key] = cast(DataTTL, self.cache[key])
+            self.data[key] = item_in_cache
             self.cache[key] = None
             self.edit[key] = time.time()
             self.evt.set()
@@ -267,12 +264,13 @@ class DataTTL_Library:
             if self.is_stop:
                 break
             for key in self.cache:
-                if (
-                    self.cache[key] is not None
-                    and self.get_window(self.data[key].get_timeout(), self.edit[key])
-                    < time.time()
-                ):
+                item_in_cache = self.cache[key]
+                window_limit = self.get_window(
+                    self.data[key].get_timeout(),
+                    self.edit[key],
+                )
 
+                if item_in_cache is not None and window_limit < time.time():
                     assert self.cache[key].get_timeout() > self.data[key].get_timeout()
                     self.data[key] = self.cache[key]
                     self.edit[key] = time.time()

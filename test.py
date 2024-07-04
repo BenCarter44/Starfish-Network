@@ -1,5 +1,5 @@
 import threading
-from typing import Any, cast
+from typing import Any
 
 import zmq
 from src.SharedKV import KeyValueCommunications

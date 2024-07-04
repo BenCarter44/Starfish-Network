@@ -2,7 +2,7 @@ import datetime
 import random
 import threading
 import time
-from typing import Any, Dict, List, Set, Union, cast
+from typing import Any
 import zmq
 
 from src.MessageFormats import *
@@ -102,11 +102,11 @@ class KeyValueCommunications:
 
         # TODO: Identity is not required here. (Key Value doesn't have identity.)
 
-        # self.endpoints_kv : Dict[str, DataWithTTL] = {} # IP is key. TTL is value.
+        # self.endpoints_kv : dict[str, DataWithTTL] = {} # IP is key. TTL is value.
         self.endpoints_kv: DataTTL_Library = DataTTL_Library(self.__send_update)
 
-        self.connected_peers: Set[str] = set()  # outbound connections!
-        self.connected_sockets: Dict[str, ConnectedPeers_Dealer] = (
+        self.connected_peers: set[str] = set()  # outbound connections!
+        self.connected_sockets: dict[str, ConnectedPeers_Dealer] = (
             {}
         )  # outbound connections!
 
@@ -119,8 +119,8 @@ class KeyValueCommunications:
 
         self.control_socket_outside, inside_socket = zpipe(self.context)
 
-        self.open_messages: Dict[str, ReliableMessage] = {}
-        self.open_message_data: Dict[str, Any] = {}
+        self.open_messages: dict[str, ReliableMessage] = {}
+        self.open_message_data: dict[str, Any] = {}
 
         self.th = threading.Thread(
             None,
@@ -223,9 +223,7 @@ class KeyValueCommunications:
         reply_id = self.__send_hello(endpoint_query, not (block))
 
         # wait for it to be done!
-        while not (
-            cast(dict[str, bool], self.open_message_data[f"hello-{reply_id}"])["done"]
-        ):
+        while not (self.open_message_data[f"hello-{reply_id}"]["done"]):
             if not (block):
                 break
             time.sleep(0.01)  # try every 10 msec
@@ -236,19 +234,13 @@ class KeyValueCommunications:
         reply_id = self.__send_state_request(endpoint_query)
 
         # wait for it to be done!
-        while not (
-            cast(dict[str, bool], self.open_message_data[f"state-{reply_id}"])["done"]
-        ):
+        while not (self.open_message_data[f"state-{reply_id}"]["done"]):
             time.sleep(0.01)  # try every 10 msec
 
         reply_id = self.__send_request_connection(endpoint_query)
 
         # wait for it to be done!
-        while not (
-            cast(dict[str, bool], self.open_message_data[f"send-request-{reply_id}"])[
-                "done"
-            ]
-        ):
+        while not (self.open_message_data[f"send-request-{reply_id}"]["done"]):
             time.sleep(0.01)  # try every 10 msec
 
     def disconnect_from_peer(self, endpoint_query: str, skip=False):
@@ -331,7 +323,8 @@ class KeyValueCommunications:
         for x in keys:
             out_debug += f"{sfill(x, 35)} | "
             endpt: DataTTL = self.endpoints_kv.get_data(x)
-            out_debug += f"{sfill(endpt.get_value_or_null(), 30)} | {sfill(datetime.datetime.fromtimestamp(endpt.get_timeout()), 23)}   | \n"
+            out_debug += f"{sfill(endpt.get_value_or_null(), 30)} | "
+            out_debug += f"{sfill(datetime.datetime.fromtimestamp(endpt.get_timeout()), 23)}   | \n"
 
         return out_debug
 
@@ -466,7 +459,7 @@ class KeyValueCommunications:
         if self.open_messages[f"hello-{r}"].is_complete():
             return  # don't need to answer. Already received response
         self.open_messages[f"hello-{r}"].mark_done()
-        request_data = cast(dict[str, Any], self.open_message_data[f"hello-{r}"])
+        request_data = self.open_message_data[f"hello-{r}"]
         endpoint = request_data["query"]
 
         self.connected_sockets[endpoint].last_seen = time.time()
@@ -501,7 +494,7 @@ class KeyValueCommunications:
         rm = self.connected_sockets[endpoint].rsoc.add_message(pk.compile(), 10, 5)
         if rm is None:
             raise ValueError("RM none 2")
-        self.open_messages[f"state-{reply_id}"] = cast(ReliableMessage, rm)
+        self.open_messages[f"state-{reply_id}"] = rm
         return reply_id
 
     def __receive_state_request(self, msg: PeerKV, address: bytes):
@@ -553,7 +546,7 @@ class KeyValueCommunications:
         self.printf(f"Finish State Req. Recv'd response :{msg.get_r_identity()}")
         r = msg.get_r_identity()
         self.open_messages[f"state-{r}"].mark_done()
-        request_data = cast(dict[str, bool], self.open_message_data[f"state-{r}"])
+        request_data = self.open_message_data[f"state-{r}"]
         request_data["done"] = True
 
     def __send_request_connection(self, endpoint: str) -> int:
@@ -578,7 +571,7 @@ class KeyValueCommunications:
         rm = self.connected_sockets[endpoint].rsoc.add_message(pk.compile(), 10, 5)
         if rm is None:
             raise ValueError("Rm is none 545")
-        self.open_messages[f"send-request-{reply_id}"] = cast(ReliableMessage, rm)
+        self.open_messages[f"send-request-{reply_id}"] = rm
 
         return reply_id
 
@@ -627,9 +620,7 @@ class KeyValueCommunications:
         rm = self.connected_sockets[endpoint].rsoc.add_message(pk.compile(), 0.1, 5)
         if rm is None:
             raise ValueError("RM is none!")
-        self.open_messages[f"disconn-send-request-{reply_id}"] = cast(
-            ReliableMessage, rm
-        )
+        self.open_messages[f"disconn-send-request-{reply_id}"] = rm
         return reply_id
 
     def __receive_disconnect_request(self, msg: PeerKV, addr: bytes):
@@ -657,106 +648,97 @@ class KeyValueCommunications:
             return  # don't need to answer. Already received response
         self.open_messages[f"send-request-{r}"].mark_done()
         request_data = self.open_message_data[f"send-request-{r}"]
-        request_data = cast(dict[str, bool], request_data)
         self.printf(
             f"Finished Request for connection. Recv'ed response with r:{msg.get_r_identity()}"
         )
 
         request_data["done"] = True  # passes by ref.
 
-    def __is_alive(self, endpoint: str, address: Optional[bytes] = None, dealer=False):
-        """Update keyvalues to say endpoint/address is alive
+    def __is_alive_router(self, endpoint: str, address: bytes):
+        """Update keyvalues to say endpoint from router side is alive
 
         Args:
             endpoint (str): Endpoint
             address (bytes, optional): Address. Defaults to None.
-            dealer (bool, optional): True if Dealer. Defaults to False.
-
-        Raises:
-            ValueError: If no address is given in router mode
-                        (requires either endpoint or address)
 
         """
-        # outbound means from dealer
-        # update endpoint's TTL with new value.
-
-        if dealer and endpoint not in self.connected_peers:
-            self.printf("Isalive: Dealer got feedback while dealer never said hello!")
-            return
-
-        if not (dealer) and endpoint not in self.inbound_peers:
+        if endpoint not in self.inbound_peers:
             self.printf("Isalive: Client connected without saying hello first!")
             return
 
-        if not (dealer) and address is None:
-            raise ValueError("Require Address")
+        last_seen = self.inbound_peers[endpoint].last_seen
+        avg = self.inbound_peers[endpoint].avg
+        # self.printf(f"R - Last seen for {endpoint}: {datetime.datetime.fromtimestamp(last_seen)}")
+        # self.printf(f"R - Avg for {endpoint}: {avg}")
+        avg = (avg * 0.80) + (time.time() - last_seen) * 0.20
 
-        # self.printf("Running is alive")
+        self.inbound_peers[endpoint].last_seen = time.time()
+        self.inbound_peers[endpoint].avg = avg
 
-        ttl = DEFAULT_TTL + time.time()
-        if dealer:
-            last_seen = self.connected_sockets[endpoint].last_seen
-            avg = self.connected_sockets[endpoint].avg
-            avg = (avg * 0.30) + (time.time() - last_seen) * 0.70
-
-            # self.printf(f"D - Last seen for {endpoint}: {datetime.datetime.fromtimestamp(last_seen)}")
-            # self.printf(f"D - Avg for {endpoint}: {avg}")
-            self.connected_sockets[endpoint].last_seen = time.time()
-            self.connected_sockets[endpoint].avg = avg
-
-            a: float = 0
-            if avg > 3600:
-                a = 3600
-            else:
-                a = avg
-
-            multiplier = 60 * pow(2, -0.2 * avg) + 1
-
-            ttl = time.time() + a * multiplier
-
-            if ttl - time.time() > 86400:
-                ttl = time.time() + 86400
-            elif ttl - time.time() < 1:
-                ttl = time.time() + 2
-            # self.printf(f"Calc for ttl: {datetime.datetime.fromtimestamp(ttl)}")
-
+        a = 0.0
+        if avg > 3600.0:
+            a = 3600.0
         else:
-            address = cast(bytes, address)
-            last_seen = self.inbound_peers[endpoint].last_seen
-            avg = self.inbound_peers[endpoint].avg
-            # self.printf(f"R - Last seen for {endpoint}: {datetime.datetime.fromtimestamp(last_seen)}")
-            # self.printf(f"R - Avg for {endpoint}: {avg}")
-            avg = (avg * 0.80) + (time.time() - last_seen) * 0.20
+            a = avg
 
-            self.inbound_peers[endpoint].last_seen = time.time()
-            self.inbound_peers[endpoint].avg = avg
+        multiplier = 60 * pow(2, -0.2 * avg) + 1
 
-            a = 0
-            if avg > 3600:
-                a = 3600
-            else:
-                a = avg
+        ttl = time.time() + a * multiplier
 
-            multiplier = 60 * pow(2, -0.2 * avg) + 1
+        if ttl - time.time() > 86400:
+            ttl = time.time() + 86400
+        elif ttl - time.time() < 1:
+            ttl = time.time() + 2
+        # self.printf(f"Calc for ttl: {datetime.datetime.fromtimestamp(ttl)}")
 
-            ttl = time.time() + a * multiplier
-
-            if ttl - time.time() > 86400:
-                ttl = time.time() + 86400
-            elif ttl - time.time() < 1:
-                ttl = time.time() + 2
-            # self.printf(f"Calc for ttl: {datetime.datetime.fromtimestamp(ttl)}")
-
-            base = kv_key(IDENTITY_KEY, self.my_identity)
-            # self.printf(f"{ttl}, {time.time()}, {ttl - time.time()}, {kv_key(IP_KEY,endpoint)}")
-            self.set(
-                kv_key(base + ">", address.decode("utf-8")),
-                address.decode("utf-8") + " latency",
-                ttl,
-            )
+        base = kv_key(IDENTITY_KEY, self.my_identity)
+        # self.printf(f"{ttl}, {time.time()}, {ttl - time.time()}, {kv_key(IP_KEY,endpoint)}")
+        self.set(
+            kv_key(base + ">", address.decode("utf-8")),
+            address.decode("utf-8") + " latency",
+            ttl,
+        )
 
         self.set(kv_key(IP_KEY, endpoint), f"abc{time.time()}", ttl)
-        # self.printf("Finish keep alive")
+
+    def __is_alive_dealer(self, endpoint: str):
+        """Update keyvalues to say endpoint from dealer side is alive
+
+        Args:
+            endpoint (str): Endpoint
+
+        """
+
+        if endpoint not in self.connected_peers:
+            self.printf("Isalive: Dealer got feedback while dealer never said hello!")
+            return
+
+        last_seen = self.connected_sockets[endpoint].last_seen
+        avg = self.connected_sockets[endpoint].avg
+        avg = (avg * 0.30) + (time.time() - last_seen) * 0.70
+
+        # self.printf(f"D - Last seen for {endpoint}: {datetime.datetime.fromtimestamp(last_seen)}")
+        # self.printf(f"D - Avg for {endpoint}: {avg}")
+        self.connected_sockets[endpoint].last_seen = time.time()
+        self.connected_sockets[endpoint].avg = avg
+
+        a = 0.0
+        if avg > 3600.0:
+            a = 3600.0
+        else:
+            a = avg
+
+        multiplier = 60 * pow(2, -0.2 * avg) + 1
+
+        ttl = time.time() + a * multiplier
+
+        if ttl - time.time() > 86400:
+            ttl = time.time() + 86400
+        elif ttl - time.time() < 1:
+            ttl = time.time() + 2
+        # self.printf(f"Calc for ttl: {datetime.datetime.fromtimestamp(ttl)}")
+
+        self.set(kv_key(IP_KEY, endpoint), f"abc{time.time()}", ttl)
 
     def __send_update(self, key: str, data: DataTTL):
         """Send update of keyvalue to peers
@@ -774,15 +756,15 @@ class KeyValueCommunications:
 
             msg = PeerKV()
             msg.push_change(key, data, reply_id)
-            self.printf(
-                f"Post update r:{reply_id} of [{key}]={data.get_value_or_null()} Timeout: {datetime.datetime.fromtimestamp(data.get_timeout())}- send to {peer}"
-            )
+            out = f"Post update r:{reply_id} of [{key}]={data.get_value_or_null()} "
+            out += f"Timeout: {datetime.datetime.fromtimestamp(data.get_timeout())} - send to {peer}"
+            self.printf(out)
 
             rm = self.connected_sockets[peer].rsoc.add_message(msg.compile())
             if rm is None:
                 self.printf("None found -- skip")
                 continue
-            self.open_messages[f"update-{reply_id}"] = cast(ReliableMessage, rm)
+            self.open_messages[f"update-{reply_id}"] = rm
 
     def __receive_update(self, msg: PeerKV, address: bytes):
         """Receive update from address
@@ -947,7 +929,7 @@ class KeyValueCommunications:
         else:
 
             peer = self.inbound_peers_addr[addr].endpoint
-            self.__is_alive(peer, address=addr)
+            self.__is_alive_router(peer, address=addr)
 
             if data[0] == b"General":
                 pk = PeerKV()  # type: ignore
@@ -991,7 +973,7 @@ class KeyValueCommunications:
             self.__finish_hello(pk)
 
         elif msg[0] == b"General":
-            self.__is_alive(peer, dealer=True)
+            self.__is_alive_dealer(peer)
             pk = PeerKV()  # type: ignore
             pk.import_msg(msg)
             if pk.is_return_state():
@@ -1012,7 +994,7 @@ class KeyValueCommunications:
                 raise ValueError("Unknown message received from Dealer Socket")
 
         elif msg[0] == b"dummy":
-            self.__is_alive(peer, dealer=True)
+            self.__is_alive_dealer(peer)
             pk = BasicMultipartMessage()  # type: ignore
             pk.import_msg(msg)
             self.__receive_dummy_data(pk)
@@ -1064,8 +1046,6 @@ class KeyValueCommunications:
                 socket = self.connected_sockets[peer].out
                 if not (socket) in socket_receiving:
                     continue
-
-                socket = cast(zmq.Socket, socket)
 
                 msg = socket.recv_multipart()
                 self.__handle_receiving_dealer_socket(msg, peer)

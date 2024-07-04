@@ -9,7 +9,12 @@ from src.utils import dump, zpipe
 class ReliableMessage:
     """Reliable message struct"""
 
-    def __init__(self, data: Any, retry_gap: float, max_retry: Optional[int]):
+    def __init__(
+        self,
+        data: Any,
+        retry_gap: float,
+        max_retry: Optional[int],
+    ):
         """Create message
 
         Args:
@@ -39,7 +44,10 @@ class ReliabilityEngine:
     """Reliable "lazy-pirate" socket"""
 
     def __init__(
-        self, ctx: zmq.Context, socket: zmq.Socket, output: zmq.Socket
+        self,
+        ctx: zmq.Context,
+        socket: zmq.Socket,
+        output: zmq.Socket,
     ) -> None:
         """Create socket
 
@@ -77,7 +85,10 @@ class ReliabilityEngine:
         self.verified_peers = 0
 
     def __socket_management(
-        self, pipe: zmq.Socket, output: zmq.Socket, primary: zmq.Socket
+        self,
+        pipe: zmq.Socket,
+        output: zmq.Socket,
+        primary: zmq.Socket,
     ):
         """Thread managing socket
 
@@ -204,7 +215,11 @@ class ReliabilityEngine:
         return msg
 
     def add_message_delay(
-        self, message: List[bytes], delay=1, retry_gap: int = 10, max_retry=None
+        self,
+        message: List[bytes],
+        delay=1,
+        retry_gap: int = 10,
+        max_retry=None,
     ) -> Optional[ReliableMessage]:
         """Add message to internal queues with initial delay
 
