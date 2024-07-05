@@ -830,7 +830,8 @@ class KeyValueCommunications:
         """
         msg = BasicMultipartMessage()
         msg.set_val(command)
-
+        msg.set_topic("Dummy")
+        msg.set_subtopic("Command")
         self.connected_sockets[endpoint].rsoc.add_message(msg.compile(), 0, 1)
 
     def __receive_dummy(self, msg: BasicMultipartMessage, address: bytes):
@@ -851,6 +852,8 @@ class KeyValueCommunications:
         """
         addr = self.inbound_peers[endpoint].addr
         msg = BasicMultipartMessage()
+        msg.set_topic("Dummy")
+        msg.set_subtopic("Data")
         msg.set_val(data)
         lst = msg.compile_with_address(addr)
         lst.insert(0, b"R-Relay")
@@ -965,7 +968,7 @@ class KeyValueCommunications:
                     raise ValueError(
                         "Unknown message received from Query Router Socket"
                     )
-            elif data[0] == b"dummy":
+            elif data[0] == b"Dummy":
                 pk = BasicMultipartMessage()  # type: ignore
                 pk.import_msg(data)
                 self.__receive_dummy(pk, addr)
@@ -1014,7 +1017,7 @@ class KeyValueCommunications:
                 dump(msg)
                 raise ValueError("Unknown message received from Dealer Socket")
 
-        elif msg[0] == b"dummy":
+        elif msg[0] == b"Dummy":
             self.__is_alive_dealer(peer)
             pk = BasicMultipartMessage()  # type: ignore
             pk.import_msg(msg)
