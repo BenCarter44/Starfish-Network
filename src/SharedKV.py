@@ -80,7 +80,11 @@ class InboundPeers_Router:
 class KeyValueCommunications:
     """Main KeyValue Class - Manages all Shared K-V Memory and peer-to-peer connections"""
 
-    def __init__(self, serving_endpoint_query: str, my_identity: int):
+    def __init__(
+        self,
+        serving_endpoint_query: str,
+        my_identity: int,
+    ):
         """Create peer at endpoint with identity
 
         Args:
@@ -403,12 +407,14 @@ class KeyValueCommunications:
         # TODO: Design Decision. Currently, this will be sent to ALL connected peers (dealer socket)
         msg = PeerKV_Hello()
 
-        msg.create(reply_id, self.serving_endpoint_query)
+        msg.create(self.serving_endpoint_query)
         self.printf(
             f"Sending hello message with r:{reply_id}"
         )  # TODO. DEALER socket distributes requests... this means that it must be repeated.
 
-        rm = self.connected_sockets[endpoint].rsoc.add_message(msg.compile(), 10, 25)
+        rm = self.connected_sockets[endpoint].rsoc.add_message(
+            msg.compile(reply_id), 10, 25
+        )
         if rm is None:
             raise ValueError("RM is NONE!")  # todo here.
         self.open_messages[f"hello-{reply_id}"] = rm
@@ -416,6 +422,8 @@ class KeyValueCommunications:
 
     def __receiving_hello(self, msg: PeerKV_Hello, address: bytes):
         """Process received hello request
+
+        Router gets to set the graph. Data goes Router --> Dealer for graph
 
         Args:
             msg (PeerKV_Hello): Hello Message
@@ -429,10 +437,14 @@ class KeyValueCommunications:
 
         # doesn't matter for retries.
         pk_response = PeerKV_Hello()
-        pk_response.create_welcome(msg.get_r_identity())
+        pk_response.create_welcome()
 
         base = kv_key(IDENTITY_KEY, self.my_identity)
-        self.set(base, f"{self.my_identity} + LIMIT", ttl=IDENTITY_TTL + time.time())
+        self.set(
+            base,
+            f"{self.my_identity}'s metadata (available)",
+            ttl=IDENTITY_TTL + time.time(),
+        )
         self.set(
             kv_key(base + ">", address.decode("utf-8")),
             address.decode("utf-8") + " LAT",
@@ -443,10 +455,10 @@ class KeyValueCommunications:
         self.inbound_peers_addr[address] = self.inbound_peers[endpoint]
 
         self.printf(
-            f"Received hello. Send hello response to {endpoint} with r:{pk_response.get_r_identity()}"
+            f"Received hello. Send hello response to {endpoint} with r:{msg.get_reply_identity()}"
         )
         self.receive_query_socket.send_multipart(
-            pk_response.compile_with_address(address)
+            pk_response.compile_with_address(address, msg.get_reply_identity())
         )
 
     def __finish_hello(self, msg: PeerKV_Hello):
@@ -455,7 +467,7 @@ class KeyValueCommunications:
         Args:
             msg (PeerKV_Hello): ACK Message
         """
-        r = msg.get_r_identity()
+        r = msg.get_reply_identity()
         if self.open_messages[f"hello-{r}"].is_complete():
             return  # don't need to answer. Already received response
         self.open_messages[f"hello-{r}"].mark_done()
@@ -465,7 +477,7 @@ class KeyValueCommunications:
         self.connected_sockets[endpoint].last_seen = time.time()
         self.connected_peers.add(endpoint)
 
-        self.printf(f"Finished Hello. Recv'ed response with r:{msg.get_r_identity()}")
+        self.printf(f"Finished Hello. Recv'ed response with r:{r}")
 
         request_data["done"] = True  # passes by ref.
         if "next-state" in request_data:
@@ -489,9 +501,11 @@ class KeyValueCommunications:
 
         self.open_message_data[f"state-{reply_id}"] = {"done": False}
         pk = PeerKV()
-        pk.fetch_state_command(r_identity=reply_id)
+        pk.fetch_state_command()
         self.printf(f"Send State Request r:{endpoint}")
-        rm = self.connected_sockets[endpoint].rsoc.add_message(pk.compile(), 10, 5)
+        rm = self.connected_sockets[endpoint].rsoc.add_message(
+            pk.compile(reply_id), 10, 5
+        )
         if rm is None:
             raise ValueError("RM none 2")
         self.open_messages[f"state-{reply_id}"] = rm
@@ -504,7 +518,7 @@ class KeyValueCommunications:
             msg (PeerKV): Message
             address (bytes): Address
         """
-        self.printf(f"Received State Request r:{msg.get_r_identity()}")
+        self.printf(f"Received State Request r:{msg.get_reply_identity()}")
 
         pk_response = PeerKV()
         results = []
@@ -516,10 +530,10 @@ class KeyValueCommunications:
                 results.append((key, dat))
                 # print(key, ":", v, datetime.datetime.fromtimestamp(dat.get_timeout()))
 
-        self.printf(f"Send State Response to PEER r:{msg.get_r_identity()}")
-        pk_response.return_state_receipt(results, msg.get_r_identity())
+        self.printf(f"Send State Response to PEER r:{msg.get_reply_identity()}")
+        pk_response.return_state_receipt(results)
         self.receive_query_socket.send_multipart(
-            pk_response.compile_with_address(address)
+            pk_response.compile_with_address(address, msg.get_reply_identity())
         )
 
     def __finish_state_request(self, msg: PeerKV):
@@ -529,9 +543,9 @@ class KeyValueCommunications:
             msg (PeerKV): Message ACK message
         """
         state = msg.get_state_from_return()
-        if self.open_messages[f"state-{msg.get_r_identity()}"].is_complete():
+        if self.open_messages[f"state-{msg.get_reply_identity()}"].is_complete():
             self.printf(
-                f"Finish State Req - message already received. Drop r:{msg.get_r_identity()}"
+                f"Finish State Req - message already received. Drop r:{msg.get_reply_identity()}"
             )
             return  # don't need to answer. Already received response due to dealer.
 
@@ -543,8 +557,8 @@ class KeyValueCommunications:
             # print(key,":", val.get_value_or_null(), datetime.datetime.fromtimestamp(val.get_timeout()))
             self.endpoints_kv.merge(key, val)
 
-        self.printf(f"Finish State Req. Recv'd response :{msg.get_r_identity()}")
-        r = msg.get_r_identity()
+        self.printf(f"Finish State Req. Recv'd response :{msg.get_reply_identity()}")
+        r = msg.get_reply_identity()
         self.open_messages[f"state-{r}"].mark_done()
         request_data = self.open_message_data[f"state-{r}"]
         request_data["done"] = True
@@ -567,8 +581,10 @@ class KeyValueCommunications:
         self.printf(f"Sending a connection request to {endpoint} with r:{reply_id}")
         self.open_message_data[f"send-request-{reply_id}"] = {"done": False}
         pk = PeerKV()
-        pk.request_connection_cmd(reply_id)
-        rm = self.connected_sockets[endpoint].rsoc.add_message(pk.compile(), 10, 5)
+        pk.request_connection_cmd()
+        rm = self.connected_sockets[endpoint].rsoc.add_message(
+            pk.compile(reply_id), 10, 5
+        )
         if rm is None:
             raise ValueError("Rm is none 545")
         self.open_messages[f"send-request-{reply_id}"] = rm
@@ -582,7 +598,7 @@ class KeyValueCommunications:
             msg (PeerKV): Message
             address (bytes): Address of sender
         """
-        reply_identity = msg.get_r_identity()
+        reply_identity = msg.get_reply_identity()
         endpoint = self.inbound_peers_addr[address].endpoint
         self.printf(
             f"Received a connection request from {endpoint} with r:{reply_identity}"
@@ -592,8 +608,10 @@ class KeyValueCommunications:
         self.printf(
             f"Send response to connection request from {endpoint} with r:{reply_identity}"
         )
-        pk.request_connection_feedback(reply_identity)
-        self.receive_query_socket.send_multipart(pk.compile_with_address(address))
+        pk.request_connection_feedback()
+        self.receive_query_socket.send_multipart(
+            pk.compile_with_address(address, reply_identity)
+        )
 
         # connect to peer! Will take a second.... (async)
         self.connect_to_peer(endpoint, False)
@@ -616,8 +634,10 @@ class KeyValueCommunications:
         self.printf(f"Sending a disconnection request to {endpoint} with r:{reply_id}")
         self.open_message_data[f"disconn-send-request-{reply_id}"] = {"done": False}
         pk = PeerKV()
-        pk.request_disconnect(reply_id)
-        rm = self.connected_sockets[endpoint].rsoc.add_message(pk.compile(), 0.1, 5)
+        pk.request_disconnect()
+        rm = self.connected_sockets[endpoint].rsoc.add_message(
+            pk.compile(reply_id), 0.1, 5
+        )
         if rm is None:
             raise ValueError("RM is none!")
         self.open_messages[f"disconn-send-request-{reply_id}"] = rm
@@ -632,7 +652,7 @@ class KeyValueCommunications:
         """
         endpoint = self.inbound_peers_addr[addr].endpoint
         self.printf(
-            f"Received a disconnection request from {endpoint} with r:{msg.get_r_identity()}"
+            f"Received a disconnection request from {endpoint} with r:{msg.get_reply_identity()}"
         )
         self.disconnect_from_peer(endpoint, skip=True)
         del self.inbound_peers_addr[addr]
@@ -643,14 +663,12 @@ class KeyValueCommunications:
         Args:
             msg (PeerKV): ACK Message
         """
-        r = msg.get_r_identity()
+        r = msg.get_reply_identity()
         if self.open_messages[f"send-request-{r}"].is_complete():
             return  # don't need to answer. Already received response
         self.open_messages[f"send-request-{r}"].mark_done()
         request_data = self.open_message_data[f"send-request-{r}"]
-        self.printf(
-            f"Finished Request for connection. Recv'ed response with r:{msg.get_r_identity()}"
-        )
+        self.printf(f"Finished Request for connection. Recv'ed response with r:{r}")
 
         request_data["done"] = True  # passes by ref.
 
@@ -755,12 +773,12 @@ class KeyValueCommunications:
                 reply_id = random.randint(0, 32766)
 
             msg = PeerKV()
-            msg.push_change(key, data, reply_id)
+            msg.push_change(key, data)
             out = f"Post update r:{reply_id} of [{key}]={data.get_value_or_null()} "
             out += f"Timeout: {datetime.datetime.fromtimestamp(data.get_timeout())} - send to {peer}"
             self.printf(out)
 
-            rm = self.connected_sockets[peer].rsoc.add_message(msg.compile())
+            rm = self.connected_sockets[peer].rsoc.add_message(msg.compile(reply_id))
             if rm is None:
                 self.printf("None found -- skip")
                 continue
@@ -776,15 +794,15 @@ class KeyValueCommunications:
         pk_response = PeerKV()
         key, val = msg.get_push_key_val()
 
-        self.printf(f"Recv Update By Push - key:{key} r:{msg.get_r_identity()}")
+        self.printf(f"Recv Update By Push - key:{key} r:{msg.get_reply_identity()}")
 
         self.endpoints_kv.merge(key, val)
-        # self.printf(f"Send Update ACK - key:{key} with r:{msg.get_r_identity()}")
+        # self.printf(f"Send Update ACK - key:{key} with r:{msg.get_reply_identity()}")
 
-        pk_response.return_push_change(msg.get_r_identity())
+        pk_response.return_push_change()
 
         self.receive_query_socket.send_multipart(
-            pk_response.compile_with_address(address)
+            pk_response.compile_with_address(address, msg.get_reply_identity())
         )
 
     def __finish_update(self, msg: PeerKV):
@@ -793,7 +811,7 @@ class KeyValueCommunications:
         Args:
             msg (PeerKV): ACK Message
         """
-        r = msg.get_r_identity()
+        r = msg.get_reply_identity()
         if self.open_messages[f"update-{r}"].is_complete():
             # self.printf(f"Recv ACK on Push Change r:{r} - duplicate")
             return  # don't need to answer. Already received response due to dealer.
@@ -892,7 +910,7 @@ class KeyValueCommunications:
 
             # same as remove peer thread
             self.printf(f"Peer at {endpoint} disconnected (expired)! - Router")
-            del self.inbound_peers_addr[self.inbound_peers[endpoint]["addr"]]
+            del self.inbound_peers_addr[self.inbound_peers[endpoint].addr]
             rms.append(endpoint)
 
         for endpt in rms:
@@ -943,6 +961,7 @@ class KeyValueCommunications:
                 elif pk.is_requesting_disconnection():
                     self.__receive_disconnect_request(pk, addr)
                 else:
+                    dump(msg)
                     raise ValueError(
                         "Unknown message received from Query Router Socket"
                     )
@@ -951,6 +970,7 @@ class KeyValueCommunications:
                 pk.import_msg(data)
                 self.__receive_dummy(pk, addr)
             else:
+                dump(msg)
                 raise ValueError("Unknown message received from Query Router Socket")
 
     def __handle_receiving_dealer_socket(self, msg: list[bytes], peer: str):
@@ -967,7 +987,7 @@ class KeyValueCommunications:
         # dump(msg)
         # self.printf("---")
 
-        if msg[0] == b"Welcome":
+        if msg[0] == b"Welcome Home son!":
             pk = PeerKV_Hello()
             pk.import_msg(msg)
             self.__finish_hello(pk)
@@ -991,6 +1011,7 @@ class KeyValueCommunications:
                     self.__send_hello(peer)
                     # wait for the RE to then request it again.
             else:
+                dump(msg)
                 raise ValueError("Unknown message received from Dealer Socket")
 
         elif msg[0] == b"dummy":
@@ -1000,6 +1021,7 @@ class KeyValueCommunications:
             self.__receive_dummy_data(pk)
 
         else:
+            dump(msg)
             raise ValueError("Unknown message received from Dealer Socket")
 
     # to be run by a thread!
@@ -1046,7 +1068,6 @@ class KeyValueCommunications:
                 socket = self.connected_sockets[peer].out
                 if not (socket) in socket_receiving:
                     continue
-
                 msg = socket.recv_multipart()
                 self.__handle_receiving_dealer_socket(msg, peer)
 
