@@ -16,7 +16,7 @@ IP_KEY = ">ip>"
 IDENTITY_KEY = ">id_graph>"
 
 
-def kv_key(root: str, key: Any):
+def kv_key(root: str, key: str):
     """Concat key path to root
 
     Args:
@@ -26,7 +26,7 @@ def kv_key(root: str, key: Any):
     Returns:
         str: combined path
     """
-    return root + str(key)
+    return root + key
 
 
 class ConnectedPeers_Dealer:
@@ -260,8 +260,10 @@ class KeyValueCommunications:
         if not (skip):
             self.__send_disconnect_request(endpoint_query)
             time.sleep(0.1)
+
         self.connected_peers.remove(endpoint_query)
         self.connected_sockets[endpoint_query].rsoc.remove_peer(endpoint_query)
+        self.connected_sockets[endpoint_query].rsoc.stop()
         self.control_socket_outside.send_multipart(
             [b"disconnect", endpoint_query.encode("utf-8")]
         )
@@ -270,9 +272,10 @@ class KeyValueCommunications:
     def stop(self):
         """Stop thread and shutdown peer"""
         for peer in list(self.connected_peers):
-            self.disconnect_from_peer(peer, True)
+            self.disconnect_from_peer(peer, False)
         self.control_socket_outside.send_multipart([b"STOP"])
         self.th.join()
+        self.endpoints_kv.stop()  # stop the updating library script
 
     def endpoints_modified(self) -> bool:
         """Depreciated: flag if endpoints modified
@@ -346,14 +349,14 @@ class KeyValueCommunications:
         d = DataTTL(val, ttl)
         self.endpoints_kv.merge(key, d)
 
-    def get(self, key: str) -> Any:
+    def get(self, key: str) -> DataTTL:
         """Get value from key
 
         Args:
             key (str): Key
 
         Returns:
-            Any: Vale
+            Any: Value
 
         Raises:
             KeyError: If key not found
@@ -378,6 +381,50 @@ class KeyValueCommunications:
             dict_keys[str, DataWithTTL]: list of keys available
         """
         return self.endpoints_kv.get_keys()
+
+    def get_outbound_endpoints(self) -> list[DataTTL]:
+        """Returns all endpoints connected to OUTBOUND. On DEALER Socket
+
+        Returns:
+            list[DataTTL]: _description_
+        """
+        set_of_endpoints = self.connected_peers
+        out = []
+        for x in set_of_endpoints:
+            try:
+                out.append(self.get(kv_key(IP_KEY, x)))
+            except KeyError:
+                pass
+        return out
+
+    def get_inbound_connections(
+        self,
+    ) -> list[tuple[Optional[DataTTL], Optional[DataTTL]]]:
+        """Returns all endpoints/IPs as TTLs. Endpoints on inbound ROUTER Socket
+
+        Returns:
+            list[tuple[Optional[DataTTL], Optional[DataTTL]]]: _description_
+        """
+        out = []
+        for _, inbound in self.inbound_peers.items():
+            address: DataTTL | bytes | None = inbound.addr
+            endpoint: DataTTL | str | None = inbound.endpoint
+            # get the TTL
+            try:
+                endpoint = self.get(kv_key(IP_KEY, endpoint))  # type: ignore
+            except KeyError:
+                endpoint = None  # type: ignore
+            try:
+                address = self.get(kv_key(IDENTITY_KEY, address.decode("UTF-8")))  # type: ignore
+            except KeyError:
+                address = None  # type: ignore
+
+            if address is None and endpoint is None:
+                continue
+
+            out.append((endpoint, address))
+
+        return out
 
     # Protocol Methods -------------------------------- No blocking allowed in all finishes.
     # All finishes too must be idempotent (assume req's are replayed)
@@ -429,25 +476,26 @@ class KeyValueCommunications:
             msg (PeerKV_Hello): Hello Message
             address (bytes): Address of sender
         """
-        # store address/ip in lookup table for mark use
+        # store address/ip in lookup table for mark use.
+        # This is only needed so you can update TTLs.
         endpoint = msg.get_endpoint()
 
         # I now know endpoint!
-        self.set(kv_key(IP_KEY, endpoint), f"a{time.time()}")
+        self.set(kv_key(IP_KEY, endpoint), endpoint)
 
         # doesn't matter for retries.
         pk_response = PeerKV_Hello()
         pk_response.create_welcome()
 
-        base = kv_key(IDENTITY_KEY, self.my_identity)
-        self.set(
-            base,
-            f"{self.my_identity}'s metadata (available)",
-            ttl=IDENTITY_TTL + time.time(),
-        )
+        base = kv_key(IDENTITY_KEY, str(self.my_identity))
+        # self.set( # don't upload your own identity here.
+        #     base,
+        #     f"{self.my_identity}'s metadata (available)",
+        #     ttl=IDENTITY_TTL + time.time(),
+        # )
         self.set(
             kv_key(base + ">", address.decode("utf-8")),
-            address.decode("utf-8") + " LAT",
+            address.decode("utf-8"),
         )
 
         self.inbound_peers[endpoint] = InboundPeers_Router(address, endpoint)
@@ -616,6 +664,23 @@ class KeyValueCommunications:
         # connect to peer! Will take a second.... (async)
         self.connect_to_peer(endpoint, False)
 
+    def __finish_request_for_connection(self, msg: PeerKV):
+        """Finish request for connection sequence
+
+        Args:
+            msg (PeerKV): ACK Message
+        """
+        reply_id = msg.get_reply_identity()
+        if self.open_messages[f"send-request-{reply_id}"].is_complete():
+            return  # don't need to answer. Already received response
+        self.open_messages[f"send-request-{reply_id}"].mark_done()
+        request_data = self.open_message_data[f"send-request-{reply_id}"]
+        self.printf(
+            f"Finished Request for connection. Recv'ed response with r:{reply_id}"
+        )
+
+        request_data["done"] = True  # passes by ref.
+
     def __send_disconnect_request(self, endpoint: str):
         """Send disconnect request
 
@@ -657,21 +722,6 @@ class KeyValueCommunications:
         self.disconnect_from_peer(endpoint, skip=True)
         del self.inbound_peers_addr[addr]
 
-    def __finish_request_for_connection(self, msg: PeerKV):
-        """Finish request for connection sequence
-
-        Args:
-            msg (PeerKV): ACK Message
-        """
-        r = msg.get_reply_identity()
-        if self.open_messages[f"send-request-{r}"].is_complete():
-            return  # don't need to answer. Already received response
-        self.open_messages[f"send-request-{r}"].mark_done()
-        request_data = self.open_message_data[f"send-request-{r}"]
-        self.printf(f"Finished Request for connection. Recv'ed response with r:{r}")
-
-        request_data["done"] = True  # passes by ref.
-
     def __is_alive_router(self, endpoint: str, address: bytes):
         """Update keyvalues to say endpoint from router side is alive
 
@@ -709,15 +759,15 @@ class KeyValueCommunications:
             ttl = time.time() + 2
         # self.printf(f"Calc for ttl: {datetime.datetime.fromtimestamp(ttl)}")
 
-        base = kv_key(IDENTITY_KEY, self.my_identity)
+        base = kv_key(IDENTITY_KEY, str(self.my_identity))
         # self.printf(f"{ttl}, {time.time()}, {ttl - time.time()}, {kv_key(IP_KEY,endpoint)}")
         self.set(
             kv_key(base + ">", address.decode("utf-8")),
-            address.decode("utf-8") + " latency",
+            address.decode("utf-8"),
             ttl,
         )
 
-        self.set(kv_key(IP_KEY, endpoint), f"abc{time.time()}", ttl)
+        self.set(kv_key(IP_KEY, endpoint), endpoint, ttl)
 
     def __is_alive_dealer(self, endpoint: str):
         """Update keyvalues to say endpoint from dealer side is alive
@@ -756,7 +806,7 @@ class KeyValueCommunications:
             ttl = time.time() + 2
         # self.printf(f"Calc for ttl: {datetime.datetime.fromtimestamp(ttl)}")
 
-        self.set(kv_key(IP_KEY, endpoint), f"abc{time.time()}", ttl)
+        self.set(kv_key(IP_KEY, endpoint), endpoint, ttl)
 
     def __send_update(self, key: str, data: DataTTL):
         """Send update of keyvalue to peers
@@ -994,6 +1044,7 @@ class KeyValueCommunications:
             pk = PeerKV_Hello()
             pk.import_msg(msg)
             self.__finish_hello(pk)
+            self.__is_alive_dealer(peer)
 
         elif msg[0] == b"General":
             self.__is_alive_dealer(peer)
@@ -1041,11 +1092,9 @@ class KeyValueCommunications:
 
         while True:
             # tell people I'm alive
-            base = kv_key(IDENTITY_KEY, self.my_identity)
+            base = kv_key(IDENTITY_KEY, str(self.my_identity))
             # self.printf(f"{ttl}, {time.time()}, {ttl - time.time()}, {kv_key(IP_KEY,endpoint)}")
-            self.set(
-                base, f"{self.my_identity} + LIMIT", ttl=IDENTITY_TTL + time.time()
-            )
+            self.set(base, self.my_identity, ttl=IDENTITY_TTL + time.time())
 
             # wait
             socket_receiving = dict(poller.poll(5000))
@@ -1077,3 +1126,5 @@ class KeyValueCommunications:
             self.__prune(poller)
             self.__prune_inbound()
             self.__prune_kv()  # must go after the above.
+
+        # on quit, stop
