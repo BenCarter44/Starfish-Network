@@ -173,6 +173,8 @@ class DataTTL_Library:
         for d in delete:
             self.del_key(d)
 
+        return delete
+
     def stop(self):
         """Stop the updating thread. There is no going back!"""
         self.is_stop = True

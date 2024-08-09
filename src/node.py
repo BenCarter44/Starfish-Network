@@ -1,6 +1,11 @@
+import io
+import pickle
+from src.GraphEngine import auto_cutoff_recommend_random_path, recommend_random_path
 from .SharedKV import *
 
 CUSTOM_KEY = ">mem>"
+
+MAX_PACKET_SIZE = 56 * 1024
 
 
 class Node:
@@ -35,11 +40,15 @@ class Owned_Node(Node):
             endpoint (str): Endpoint serving
             identity (int): Identity of the user.
         """
-        super().__init__()
+        super().__init__(
+            endpoint=DataTTL(endpoint, timeout=DEFAULT_TTL + time.time()),
+            identity=DataTTL(identity, timeout=DEFAULT_TTL + time.time()),
+        )
 
         self.global_key_value = KeyValueCommunications(
             serving_endpoint_query=endpoint, my_identity=identity
         )
+        self.global_key_value.set_kv_raw(self.__kv_raw)
         self.receiving_queue: list[bytes] = []
 
     def connect_to_node(self, dest_node: Node):
@@ -68,6 +77,7 @@ class Owned_Node(Node):
         """Get global dictionary. TODO."""
 
         def blank(s: str, d: DataTTL):
+            """NOP"""
             pass
 
         return DataTTL_Library(blank)
@@ -134,6 +144,14 @@ class Owned_Node(Node):
 
         return out
 
+    def get_network_graph(self) -> nx.DiGraph:
+        """Get graph representing all network connections between nodes.
+
+        Returns:
+            nx.DiGraph: Directed NetworkX Graph
+        """
+        return self.global_key_value.get_graph()
+
     def debug_printf(self, msg, end: str = "\n"):
         """Debug print with color based on the identity.
 
@@ -160,25 +178,207 @@ class Owned_Node(Node):
 
     # =========== Data Passing ===========================
 
-    def send_data_to(self, dest_node: Node, data: bytes):
-        """Send data to node."""
-        # TODO.
+    def __kv_raw(
+        self,
+        dest: int,
+        dat: bytes,
+        c: int | None = None,
+        p: int = 1,
+        max_hop_count=10,
+        resend=False,
+        from_thread=False,
+    ):
+        """This function is to be a function pointer for the SharedKV engine.
+
+        This function allows sending messages between peers that are initated from the
+        SharedKV engine. Don't use this for anything else.
+
+        Args:
+            dest (int): Destination Node ID
+            dat (bytes): Data in Bytes (small)
+            c (int | None, optional): Communication ID. Defaults to Random ID.
+            p (int, optional): Packet Number. Defaults to 1 (first packet).
+            max_hop_count (int, optional): Max Hop Count. Defaults to 10.
+            resend (bool, optional): Resend Request Flag. Defaults to False.
+            from_thread (bool, optional): Flag from Thread Handling Receiving Communications. Defaults to False.
+        """
+        network = self.get_network_graph()
+        path = list(
+            auto_cutoff_recommend_random_path(
+                network,
+                self.identity.get_raw_val(),
+                dest,
+                max_hop_count,
+            )
+        )
+        if len(path) == 0:
+            return
+
+        if c is None:
+            # TODO: Do a better communication_identifier.
+            c = random.randint(1, 2**32 - 1)
+
+        self.debug_printf(f"PATH: {path}")
+        self.__send_raw(dat, path, c, p, resend=resend, from_thread=from_thread)
+
+    def send_data_to(
+        self,
+        dest_node: Node,
+        data: io.BytesIO | io.BufferedRandom,
+        max_hop_count: int = 10,
+        find_routes: int = 5,
+        resend: bool = False,
+    ):
+        """Send data to node using the node to node hops.
+
+        Allows for peer-to-peer communication over any BytesIO/File Like object.
+
+        Args:
+            dest_node (Node): Node ID of destination
+            data (io.BytesIO | io.BufferedRandom): File-Like Object
+            max_hop_count (int, optional): Max number of hops of route. Defaults to 10.
+            find_routes (int, optional): Min number of routes available. Defaults to 5.
+            resend (bool, optional): Resend Request Flag. Defaults to False.
+
+        Raises:
+            ValueError: _description_
+            ValueError: _description_
+        """
+
+        # First method:
+        # use IP Graph. Traverse graph "randomly" until it reaches dest_node
+        #
+        # Second method: (synchronous)
+        # Post Request For Data Send (Identity of dest, other stuff, session key)
+        # Dest peer will see request and respond
+
+        # The goal is to pick a set of identities and then pass packets through them
+
+        network = self.get_network_graph()
+        paths_raw: set[list[int]] = set()
+        watch_dog = 0
+        while len(paths_raw) < find_routes:
+            path = tuple(
+                auto_cutoff_recommend_random_path(
+                    network,
+                    self.identity.get_raw_val(),
+                    dest_node.identity.get_raw_val(),
+                    max_hop_count,
+                )
+            )
+            if len(path) == 0:
+                raise ValueError("Path Unreachable!")
+                return
+            paths_raw.add(path)  # type: ignore
+            watch_dog += 1
+            if watch_dog > find_routes * 20:
+                raise ValueError("Too Few Routes")
+
+        paths = list(paths_raw)
+        counter = 0
+
+        # TODO: Do a better communication_identifier.
+        communication_identifier = random.randint(1, 2**32 - 1)
+
+        inc = data.read(MAX_PACKET_SIZE)
+        while True:
+            if inc == b"":
+                break
+            counter += 1
+            subject_path = paths[counter % len(paths)]
+            self.debug_printf(f"Send on path {subject_path}: L: {len(inc)}")
+            inc_new = data.read(MAX_PACKET_SIZE)
+            self.__send_raw(
+                inc,
+                subject_path,
+                communication_identifier,
+                packet_number=counter,
+                resend=resend,
+                term=inc_new == b""
+                and not (resend),  # check if inc is the last packet.
+            )
+            # move read packet to forward.
+            inc = inc_new
+
+    def __send_raw(
+        self,
+        data: bytes,
+        path: list[int],
+        comm_id: int,
+        packet_number: int,
+        term: bool = False,
+        exp_len: Optional[int] = None,
+        resend: bool = False,
+        from_thread: bool = False,
+    ):
+        """Compile data into packet with destinations.
+
+        Args:
+            data (bytes): Packet data
+            path (list[int]): Node ID path
+            comm_id (_type_): Communication ID
+            packet_number (int): Packet number
+            term (bool, optional): Termination Flag. Defaults to False.
+            exp_len (int, optional): Expected Message Length in Bytes. Defaults to None.
+            resend (bool, optional): Resend Request Flag. Defaults to False.
+            from_thread (bool, optional): From Receiving Thread Flag. Defaults to False.
+        """
+        end_envelope = Datagram(
+            path[-1],
+            data,
+            comm_id,
+            packet_number,
+            author=self.identity.get_raw_val(),
+            resend=resend,
+        )
+        cursor = end_envelope
+
+        start = path[0]
+        initial_send = path[1]
+        for embed in reversed(path[2:]):
+            cursor = Datagram(
+                embed,
+                cursor,
+                comm_id=comm_id,
+                packet=packet_number,
+                term=term,
+                exp_len=exp_len,
+            )
+
+        self.global_key_value.send_data(
+            initial_send, cursor, data, from_thread=from_thread
+        )
+
+        # # For debugging!
+        # print(f"Send from {start} to {initial_send} the following: ")
+        # previous_node = path[1]
+        # nest = 0
+        # while True:
+        #     print(f"{' '*nest}{cursor.data[0]}")
+        #     if previous_node == cursor.get_to():
+        #         break
+        #     nest += 1
+        #     d = cursor.get_data()
+        #     previous_node = cursor.get_to()
+        #     cursor = d
 
     def receiving_is_available(self) -> bool:
         """Have I received any data?"""
-        return len(self.receiving_queue) > 0
+        inbox = self.global_key_value.get_inbox()
 
-    def receiving_read(self) -> bytes:
+        return len(inbox) > 0
+
+    def receiving_get_streams(self) -> dict[int, io.BytesIO | io.BufferedRandom]:
+        """Return all IO messages received. (IO streams)
+
+        Returns:
+            dict[int, io.BytesIO | io.BufferedRandom]: Either BytesIO if small, or File-like Object
+        """
+        return self.global_key_value.get_inbox()
+
+    def receiving_read(self, stream_id) -> io.BytesIO:
         """Returns the next in the queue if received data, else b''"""
-        if not (self.receiving_is_available()):
-            return b""
-        out = self.receiving_peek()
-        self.receiving_queue.pop(0)
-        return out
-
-    def receiving_peek(self) -> bytes:
-        """Same as read, but does not advance the Queue"""
-        return self.receiving_queue[0]
+        return self.global_key_value.get_inbox()[stream_id]
 
     # ========== File Support ============================
 

@@ -1,12 +1,16 @@
 import datetime
+import io
 import random
+import tempfile
 import threading
 import time
 from typing import Any
 import zmq
+import networkx as nx  # type: ignore
 
 from src.MessageFormats import *
 from src.ReliabilityEngine import *
+from src.LRU_Cache import LRUCache
 from src.ttl import DataTTL_Library, DataTTL
 
 DEFAULT_TTL = 5
@@ -27,6 +31,165 @@ def kv_key(root: str, key: str):
         str: combined path
     """
     return root + key
+
+
+class DatagramAssembler:
+    """Class to assemble a binary stream from out-of-order packets"""
+
+    def __init__(self):
+        """Create "inbox" for receiving messages"""
+        # communication_key --> packet --> data
+        self.incoming_data_partial: dict[int, dict[int, bytes]] = {}
+        self.incoming_data: dict[int, io.BytesIO | io.BufferedRandom] = {}
+        self.incoming_data_sizes: dict[int, int] = {}
+        self.incoming_data_complete: dict[int, int] = {}
+        self.terminated: dict[int, int] = {}
+        self.incoming_data_author: dict[int, int] = {}
+
+    def add_packet(self, dgram: Datagram):
+        """Add/Consume packet to assembler
+
+        Args:
+            dgram (Datagram): The Datagram to assemble
+        """
+        # print()
+        # print(dgram)
+        comm_num, packet_num = dgram.get_ids()
+        if comm_num is None or packet_num is None:
+            return  # discard
+
+        expected_length = dgram.get_expected_length()
+        if expected_length is not None and comm_num in self.incoming_data:
+            if self.incoming_data_sizes[comm_num] >= expected_length:
+                self.terminated[comm_num] = packet_num + 1  # next is EOF.
+                self.__merge()
+                return
+
+        if dgram.is_term():
+            self.terminated[comm_num] = packet_num
+
+        elif comm_num not in self.incoming_data_complete:
+            # First time!
+            self.incoming_data_partial[comm_num] = {packet_num: dgram.get_data()}
+            self.incoming_data_complete[comm_num] = 0
+            self.incoming_data[comm_num] = io.BytesIO()
+            self.incoming_data_sizes[comm_num] = 0
+            self.incoming_data_author[comm_num] = dgram.get_author()
+        elif comm_num in self.terminated and packet_num >= self.terminated[comm_num]:
+            pass  # if terminated and packet greater, drop packet.
+        elif packet_num > self.incoming_data_complete[comm_num]:
+            if packet_num not in self.incoming_data_partial[comm_num]:
+                self.incoming_data_partial[comm_num][packet_num] = dgram.get_data()
+            else:
+                pass  # drop known packet
+
+        self.__merge()
+
+    def __merge(self):
+        """Merge together incoming packets and push to stream"""
+        # print(
+        #     f"Merge: Complete: {self.incoming_data_complete}\nPartial: {self.incoming_data_partial}"
+        # )
+        # check if packet is 1 greater than complete, if so, delete
+        edited = False
+        for comm_num in self.incoming_data_partial:
+            complete = self.incoming_data_complete[comm_num]
+            if complete + 1 in self.incoming_data_partial[comm_num]:
+                # transfer to self.incoming_data, increment complete, delete from partial
+                data = self.incoming_data_partial[comm_num][complete + 1]
+                if isinstance(self.incoming_data[comm_num], io.BufferedRandom):
+                    self.incoming_data[comm_num].seek(0, io.SEEK_END)
+
+                self.incoming_data[comm_num].write(data)
+                self.incoming_data_sizes[comm_num] += len(data)
+                if (
+                    isinstance(self.incoming_data[comm_num], io.BytesIO)
+                    and self.incoming_data_sizes[comm_num] > 64 * 1024
+                ):
+                    t = tempfile.TemporaryFile()
+                    t.write(self.incoming_data[comm_num].getbuffer())
+                    self.incoming_data[comm_num].close()
+                    self.incoming_data[comm_num] = t
+                self.incoming_data_complete[comm_num] += 1
+                del self.incoming_data_partial[comm_num][complete + 1]
+                edited = True
+                # print(self.incoming_data[comm_num].getvalue())
+
+        if edited:
+            self.__merge()
+
+    def get_missing_packets(self, comm_num: int) -> set[int]:
+        """Return set with missing packet numbers for a communication ID
+
+        Args:
+            comm_num (int): Communication ID
+
+        Returns:
+            set[int]: set with the missing packet numbers
+        """
+
+        # get complete. Get max in partial. Return difference.
+        saved = self.incoming_data_complete[comm_num]
+        max_received = 0
+        for key in self.incoming_data_partial[comm_num]:
+            if key > max_received:
+                max_received = key
+
+        missing = set(range(saved + 1, max_received))
+        for key in self.incoming_data_partial[comm_num]:
+            if key in missing:
+                missing.remove(key)
+
+        return missing
+
+    def get_author_for_comm(self, comm_num: int) -> int:
+        """Get reply Node ID for a communication ID
+
+        Args:
+            comm_num (int): Communications ID
+
+        Returns:
+            int: Author ID
+        """
+        return self.incoming_data_author[comm_num]
+
+    def get_comm_data(self, comm: int) -> io.BytesIO | io.BufferedRandom | None:
+        """Get the bytes stream of the data from communication.
+
+        Buffered stream is edited in-place.
+
+        Args:
+            comm (int): _description_
+
+        Returns:
+            io.BytesIO | io.BufferedRandom | None: _description_
+        """
+        if comm not in self.incoming_data:
+            return None
+        return self.incoming_data[comm]
+
+    def get_inbox(self) -> dict[int, io.BytesIO | io.BufferedRandom]:
+        """Get available communication streams and IDs. Is a dictionary
+
+        Returns:
+            dict[int, io.BytesIO | io.BufferedRandom]: Dict of streams. Key is comm ID
+        """
+        return self.incoming_data
+
+    def remove(self, comm: int):
+        """Remove a stream from the assembler. This saves space
+
+        Args:
+            comm (int): Communication ID
+        """
+        if comm not in self.incoming_data:
+            return
+        del self.incoming_data[comm]
+        del self.incoming_data_partial[comm]
+        del self.incoming_data_complete[comm]
+        del self.incoming_data_sizes[comm]
+        # Keep author ID.
+        del self.incoming_data_author[comm]
 
 
 class ConnectedPeers_Dealer:
@@ -58,7 +221,7 @@ class InboundPeers_Router:
 
     def __init__(
         self,
-        addr: bytes,
+        addr: int,
         endpt: str,
         last_seen: float = time.time(),
         avg: float = DEFAULT_TTL,
@@ -92,12 +255,19 @@ class KeyValueCommunications:
             my_identity (int): identity
         """
         self.context = zmq.Context()
+        self.net_graph = nx.DiGraph()
         self.my_identity = my_identity
         self.serving_endpoint_query = serving_endpoint_query
         # self.ttl = 60 + time.time() # TODO: Implement heart beating and real TTLs.
         # sockets for binding to receive connections from peers
 
+        self.datagram_cache = LRUCache(9000)  # Store about 500MB max of packets
+        self.send_data_lock = threading.Lock()
+        # dict[tuple[int, int], Datagram] = {}
+        self.datagrams = DatagramAssembler()
+        self.count_r_miss: dict[int, int] = {}
         self.receive_query_socket = self.context.socket(zmq.ROUTER)
+        self.receive_query_socket.set_hwm(10000)  # 1000 msgs per data pass.
         self.receive_query_socket.bind(serving_endpoint_query)
 
         # # self.peer_subscribe_socket.setsockopt(zmq.IDENTITY,my_identity)
@@ -116,12 +286,14 @@ class KeyValueCommunications:
 
         # inbound connections!
         self.inbound_peers: dict[str, InboundPeers_Router] = {}
-        self.inbound_peers_addr: dict[bytes, InboundPeers_Router] = {}
+        self.inbound_peers_addr: dict[int, InboundPeers_Router] = {}
 
         self.new_data = False
         # do not add yourself, others will tell you the TTL.
 
-        self.control_socket_outside, inside_socket = zpipe(self.context)
+        self.control_socket_outside, inside_socket = zpipe(
+            self.context, hwm=100
+        )  # control can hold 100 relay messages before dropping (how many can be generated in one shot.)
 
         self.open_messages: dict[str, ReliableMessage] = {}
         self.open_message_data: dict[str, Any] = {}
@@ -206,8 +378,10 @@ class KeyValueCommunications:
 
         socket = self.context.socket(zmq.DEALER)
         socket.setsockopt(
-            zmq.IDENTITY, str(self.my_identity).encode("utf-8")
+            zmq.IDENTITY, int.to_bytes(self.my_identity, 4, "big")
         )  # TODO: Set ID as key.
+        socket.set_hwm(10000)  # 1000 msgs per data pass.
+
         output, b = zpipe(self.context)
         self.connected_sockets[endpoint_query] = ConnectedPeers_Dealer(
             ReliabilityEngine(self.context, socket, b), output
@@ -290,6 +464,10 @@ class KeyValueCommunications:
         """Depreciated: set flag to false for endpoint modification"""
         self.new_data = False
 
+    def get_inbox(self):
+        """Get all BytesIO from data recvs"""
+        return self.datagrams.get_inbox()
+
     def pretty_print_endpoint_kv(self, title="Endpoints:"):
         """Print key-value library to console
 
@@ -335,6 +513,29 @@ class KeyValueCommunications:
 
         return out_debug
 
+    def add_to_graph(self, key: str):
+        """Add Node ID to network graph for routing.
+
+        Args:
+            key (str -> int): Node ID
+        """
+        # automatically update graph.
+        if len(key) > 10 and key[:10] == ">id_graph>":
+            key = key[10:]
+            tokens = key.split(">")
+            if len(tokens) == 1:
+                try:
+                    self.net_graph.add_node(
+                        int(key)
+                    )  # TODO: All identities are INTs now
+                except ValueError:
+                    pass
+            else:
+                try:
+                    self.net_graph.add_edge(int(tokens[0]), int(tokens[1]))
+                except ValueError:
+                    pass
+
     def set(self, key: str, val: Any, ttl: Optional[float] = None):
         """Set key in library to a certain value
 
@@ -347,6 +548,8 @@ class KeyValueCommunications:
         if ttl is None:
             ttl = DEFAULT_TTL + time.time()
         d = DataTTL(val, ttl)
+
+        self.add_to_graph(key)
         self.endpoints_kv.merge(key, d)
 
     def get(self, key: str) -> DataTTL:
@@ -382,6 +585,14 @@ class KeyValueCommunications:
         """
         return self.endpoints_kv.get_keys()
 
+    def get_graph(self) -> nx.DiGraph:
+        """Get network graph. Snapshot of network.
+
+        Returns:
+            nx.DiGraph: Network
+        """
+        return self.net_graph
+
     def get_outbound_endpoints(self) -> list[DataTTL]:
         """Returns all endpoints connected to OUTBOUND. On DEALER Socket
 
@@ -407,7 +618,7 @@ class KeyValueCommunications:
         """
         out = []
         for _, inbound in self.inbound_peers.items():
-            address: DataTTL | bytes | None = inbound.addr
+            address: DataTTL | int | None = inbound.addr
             endpoint: DataTTL | str | None = inbound.endpoint
             # get the TTL
             try:
@@ -415,7 +626,7 @@ class KeyValueCommunications:
             except KeyError:
                 endpoint = None  # type: ignore
             try:
-                address = self.get(kv_key(IDENTITY_KEY, address.decode("UTF-8")))  # type: ignore
+                address = self.get(kv_key(IDENTITY_KEY, str(address)))  # type: ignore
             except KeyError:
                 address = None  # type: ignore
 
@@ -467,7 +678,7 @@ class KeyValueCommunications:
         self.open_messages[f"hello-{reply_id}"] = rm
         return reply_id
 
-    def __receiving_hello(self, msg: PeerKV_Hello, address: bytes):
+    def __receiving_hello(self, msg: PeerKV_Hello, address: int):
         """Process received hello request
 
         Router gets to set the graph. Data goes Router --> Dealer for graph
@@ -494,8 +705,8 @@ class KeyValueCommunications:
         #     ttl=IDENTITY_TTL + time.time(),
         # )
         self.set(
-            kv_key(base + ">", address.decode("utf-8")),
-            address.decode("utf-8"),
+            kv_key(base + ">", str(address)),
+            str(address),
         )
 
         self.inbound_peers[endpoint] = InboundPeers_Router(address, endpoint)
@@ -559,7 +770,7 @@ class KeyValueCommunications:
         self.open_messages[f"state-{reply_id}"] = rm
         return reply_id
 
-    def __receive_state_request(self, msg: PeerKV, address: bytes):
+    def __receive_state_request(self, msg: PeerKV, address: int):
         """Receive state request from address
 
         Args:
@@ -603,6 +814,9 @@ class KeyValueCommunications:
             key = state_val[0]
             val = state_val[1]
             # print(key,":", val.get_value_or_null(), datetime.datetime.fromtimestamp(val.get_timeout()))
+
+            # automatically update graph.
+            self.add_to_graph(key)
             self.endpoints_kv.merge(key, val)
 
         self.printf(f"Finish State Req. Recv'd response :{msg.get_reply_identity()}")
@@ -639,7 +853,7 @@ class KeyValueCommunications:
 
         return reply_id
 
-    def __receive_request_for_connection(self, msg: PeerKV, address: bytes):
+    def __receive_request_for_connection(self, msg: PeerKV, address: int):
         """Receive connection request
 
         Args:
@@ -708,7 +922,7 @@ class KeyValueCommunications:
         self.open_messages[f"disconn-send-request-{reply_id}"] = rm
         return reply_id
 
-    def __receive_disconnect_request(self, msg: PeerKV, addr: bytes):
+    def __receive_disconnect_request(self, msg: PeerKV, addr: int):
         """Receive disconnection request
 
         Args:
@@ -722,7 +936,7 @@ class KeyValueCommunications:
         self.disconnect_from_peer(endpoint, skip=True)
         del self.inbound_peers_addr[addr]
 
-    def __is_alive_router(self, endpoint: str, address: bytes):
+    def __is_alive_router(self, endpoint: str, address: int):
         """Update keyvalues to say endpoint from router side is alive
 
         Args:
@@ -759,11 +973,13 @@ class KeyValueCommunications:
             ttl = time.time() + 2
         # self.printf(f"Calc for ttl: {datetime.datetime.fromtimestamp(ttl)}")
 
+        # ttl = time.time() + 15
+
         base = kv_key(IDENTITY_KEY, str(self.my_identity))
         # self.printf(f"{ttl}, {time.time()}, {ttl - time.time()}, {kv_key(IP_KEY,endpoint)}")
         self.set(
-            kv_key(base + ">", address.decode("utf-8")),
-            address.decode("utf-8"),
+            kv_key(base + ">", str(address)),
+            str(address),
             ttl,
         )
 
@@ -800,6 +1016,8 @@ class KeyValueCommunications:
 
         ttl = time.time() + a * multiplier
 
+        # ttl = time.time() + 15
+
         if ttl - time.time() > 86400:
             ttl = time.time() + 86400
         elif ttl - time.time() < 1:
@@ -826,7 +1044,7 @@ class KeyValueCommunications:
             msg.push_change(key, data)
             out = f"Post update r:{reply_id} of [{key}]={data.get_value_or_null()} "
             out += f"Timeout: {datetime.datetime.fromtimestamp(data.get_timeout())} - send to {peer}"
-            self.printf(out)
+            # self.printf(out)
 
             rm = self.connected_sockets[peer].rsoc.add_message(msg.compile(reply_id))
             if rm is None:
@@ -834,7 +1052,7 @@ class KeyValueCommunications:
                 continue
             self.open_messages[f"update-{reply_id}"] = rm
 
-    def __receive_update(self, msg: PeerKV, address: bytes):
+    def __receive_update(self, msg: PeerKV, address: int):
         """Receive update from address
 
         Args:
@@ -844,8 +1062,8 @@ class KeyValueCommunications:
         pk_response = PeerKV()
         key, val = msg.get_push_key_val()
 
-        self.printf(f"Recv Update By Push - key:{key} r:{msg.get_reply_identity()}")
-
+        # self.printf(f"Recv Update By Push - key:{key} r:{msg.get_reply_identity()}")
+        self.add_to_graph(key)
         self.endpoints_kv.merge(key, val)
         # self.printf(f"Send Update ACK - key:{key} with r:{msg.get_reply_identity()}")
 
@@ -884,7 +1102,7 @@ class KeyValueCommunications:
         msg.set_subtopic("Command")
         self.connected_sockets[endpoint].rsoc.add_message(msg.compile(), 0, 1)
 
-    def __receive_dummy(self, msg: BasicMultipartMessage, address: bytes):
+    def __receive_dummy(self, msg: BasicMultipartMessage, address: int):
         """Receive dummy command from address
 
         Args:
@@ -908,6 +1126,130 @@ class KeyValueCommunications:
         lst = msg.compile_with_address(addr)
         lst.insert(0, b"R-Relay")
         self.control_socket_outside.send_multipart(lst)
+
+    def send_data(
+        self,
+        to_identity: int,
+        data: Datagram,
+        raw_data_for_cache: bytes,
+        from_thread=False,
+    ):
+        """Send data from router to device at identity.
+
+        Does not wait for response!
+
+        Args:
+            to_identity (int): dest identity
+            data (Datagram): The Datagram to send.
+        """
+        if to_identity not in self.inbound_peers_addr:
+            raise ValueError("Must send to peer only!")
+            return
+
+        # Store temporary in dict
+        c, p = data.get_ids()
+        if c is None or p is None:
+            return
+
+        if not (self.datagram_cache.contains((c, p))):
+            if raw_data_for_cache != b"":
+                self.datagram_cache.put((c, p), raw_data_for_cache)
+
+        self.printf(f"Sending to {to_identity} datagram: {data}")
+        msg = data.get_msg()
+        lst = msg.compile_with_address(to_identity)
+        lst.insert(0, b"R-Relay")
+
+        if to_identity not in self.inbound_peers_addr:
+            self.printf(f"Peer is not connected to! {to_identity}")
+            raise ValueError
+
+        if from_thread:
+            dat = lst[1:]
+            self.receive_query_socket.send_multipart(dat)
+        else:
+            self.control_socket_outside.send_multipart(lst)
+
+    def set_kv_raw(self, f):
+        """Internal use. Points to the __kv_raw() in the OwnedNode class.
+
+        Args:
+            f (_type_): _description_
+        """
+        self.kv_raw = f
+
+    def __receive_data(self, msg: BasicMultipartMessage):
+        """Receive data from the send_data command() - dealer, run from thread
+
+        Args:
+            msg (BasicMultipartMessage): _description_
+        """
+        dat_in = Datagram(0, None)
+        dat_in.parse_msg(msg)
+
+        # if random.random() < 0.2:
+        #     self.printf(f"Fake Drop! {dat_in}")
+        #     return
+
+        if dat_in.get_to() == self.my_identity:
+            self.printf(f"Received data! {dat_in}")
+
+            if dat_in.is_resend_request():
+                request = dill.loads(dat_in.get_data())
+                c = request[0]
+                p = request[1]
+                self.printf("Received resend request")
+                if not (self.datagram_cache.contains((c, p))):
+                    self.printf(f"Not in cache")
+                else:
+                    self.printf(f"Sending resend response for {c} {p}")
+                    self.kv_raw(
+                        dat_in.get_author(),
+                        self.datagram_cache.get((c, p)),
+                        c,
+                        p,
+                        from_thread=True,
+                    )
+                return
+
+            self.datagrams.add_packet(dat_in)
+            # if dat_in.is_term():
+            #     self.printf(f"Done with {dat_in.get_ids()[0]} (not including missing)")
+            #     self.printf(
+            #         f"Size: {self.datagrams.incoming_data_sizes[dat_in.get_ids()[0]]}"
+            #     )
+            # self.printf(f"{self.datagrams.incoming_data_sizes}")
+            return
+        try:
+            self.printf(f"Received {dat_in} from ?, Forwarding to {dat_in.get_to()}")
+            self.send_data(dat_in.get_to(), dat_in.get_data(), b"", from_thread=True)
+
+        except ValueError:
+            self.printf(f"Received {dat_in} from ?, can't send. Silently dropping.")
+
+    def __resolve_misses(self):
+        """Resolve missing packets by sending replay requests."""
+        streams = self.datagrams.get_inbox()
+        for stream in streams:
+            misses = self.datagrams.get_missing_packets(stream)
+            author = self.datagrams.get_author_for_comm(stream)
+            if len(misses) > 0:
+                self.printf(f"Missing: {self.datagrams.get_missing_packets(stream)}")
+            for miss in misses:
+                dat = dill.dumps((stream, miss))
+                self.printf(f"Sending resend request for  {stream} {miss}")
+                self.kv_raw(author, dat, resend=True, from_thread=True)
+
+                if (stream, miss) not in self.count_r_miss:
+                    self.count_r_miss[(stream, miss)] = 1
+                else:
+                    self.count_r_miss[(stream, miss)] += 1
+
+                if self.count_r_miss[(stream, miss)] > 200:
+                    # invalidate. Can't do the misses!
+                    self.datagrams.remove(stream)
+                    del self.count_r_miss[stream]
+                    break
 
     def __receive_dummy_data(self, msg: BasicMultipartMessage):
         """Receive Dummy Data - dealer
@@ -971,7 +1313,23 @@ class KeyValueCommunications:
 
     def __prune_kv(self):
         """Prune all expired records from library"""
-        self.endpoints_kv.prune()
+        deleted = self.endpoints_kv.prune()
+        # print(deleted)
+        # Remove from graph if needed.
+        for key in deleted:
+            if len(key) <= 10:
+                continue
+            if key[:10] != ">id_graph>":
+                continue
+            key = key[10:]
+            tokens = key.split(">")
+            try:
+                if len(tokens) == 1:
+                    self.net_graph.remove_node(key)
+                else:
+                    self.net_graph.remove_edge(tokens[0], tokens[1])
+            except nx.NetworkXError:
+                pass
 
     def __handle_receiving_socket(self, msg: list[bytes]):
         """Handle information incoming on the ROUTER socket
@@ -982,7 +1340,7 @@ class KeyValueCommunications:
         Raises:
             ValueError: Malformed message
         """
-        addr = msg[0]
+        addr = int.from_bytes(msg[0], "big")
         data = msg[1:]
 
         # self.printf("Received on router")
@@ -1036,6 +1394,7 @@ class KeyValueCommunications:
         Raises:
             ValueError: Malformed Message
         """
+
         # self.printf("Received on dealer")
         # dump(msg)
         # self.printf("---")
@@ -1068,6 +1427,12 @@ class KeyValueCommunications:
                 dump(msg)
                 raise ValueError("Unknown message received from Dealer Socket")
 
+        elif msg[0] == b"Datagram":
+            self.__is_alive_dealer(peer)
+            pk = BasicMultipartMessage()  # type: ignore
+            pk.import_msg(msg)
+            self.__receive_data(pk)
+
         elif msg[0] == b"Dummy":
             self.__is_alive_dealer(peer)
             pk = BasicMultipartMessage()  # type: ignore
@@ -1094,10 +1459,10 @@ class KeyValueCommunications:
             # tell people I'm alive
             base = kv_key(IDENTITY_KEY, str(self.my_identity))
             # self.printf(f"{ttl}, {time.time()}, {ttl - time.time()}, {kv_key(IP_KEY,endpoint)}")
-            self.set(base, self.my_identity, ttl=IDENTITY_TTL + time.time())
 
+            self.set(base, self.my_identity, ttl=IDENTITY_TTL + time.time())
             # wait
-            socket_receiving = dict(poller.poll(5000))
+            socket_receiving = dict(poller.poll(100))
             if status_socket in socket_receiving:
                 msg = status_socket.recv_multipart()
                 if msg[0] == b"STOP":
@@ -1123,8 +1488,72 @@ class KeyValueCommunications:
                 msg = socket.recv_multipart()
                 self.__handle_receiving_dealer_socket(msg, peer)
 
+            # if free time.
+            if len(socket_receiving) == 0:
+                self.__resolve_misses()
+
             self.__prune(poller)
             self.__prune_inbound()
             self.__prune_kv()  # must go after the above.
 
         # on quit, stop
+
+
+def main():
+    """Main testing function. Demonstrates the algorithm of packet disassembly and assembly"""
+    original = b"I like to eat pizza!"
+    data = io.BytesIO(original)
+
+    counter = 0
+
+    # TODO: Do a better communication_identifier.
+    communication_identifier = random.randint(1, 2**32 - 1)
+
+    dgrams = []
+
+    while True:
+        inc = data.read(2)
+        if inc == b"":
+            break
+        counter += 1
+        dgrams.append(
+            Datagram(1, inc, communication_identifier, counter, exp_len=len(original))
+        )
+
+    random.shuffle(dgrams)
+    da = DatagramAssembler()
+    for d in dgrams:
+        da.add_packet(d)
+
+    counter += 1
+    da.add_packet(
+        Datagram(
+            1,
+            b"",
+            comm_id=communication_identifier,
+            packet=counter,
+            exp_len=len(original),
+        )
+    )
+    counter += 1
+    da.add_packet(
+        Datagram(
+            1,
+            b"Apple!",
+            comm_id=communication_identifier,
+            packet=counter,
+            exp_len=len(original),
+        )
+    )
+
+    output = da.get_comm_data(communication_identifier)
+    if isinstance(output, io.BufferedRandom):
+        output.seek(0, 0)
+        with open(f"/tmp/{communication_identifier}.txt", "wb") as f:
+            f.write(output.read())
+    else:
+        print(output.getvalue())
+
+    missing = da.get_missing_packets(communication_identifier)
+    print(missing)
+    input("Exit")

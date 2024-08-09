@@ -7,7 +7,8 @@ from src.SharedKV import KeyValueCommunications
 from src.node import Owned_Node, Node
 from src.ttl import DataTTL
 from src.utils import zpipe
-
+from src.GraphEngine import display_graph
+import io
 
 # neighbors = {101:[102], 102:[103,104], 104:[105], 105:[103], 103:[101]}
 
@@ -81,6 +82,20 @@ def main_worker(identity, control: zmq.Socket):
                     my_node.debug_printf(
                         f"Global ID    | {peer.endpoint.get_value_or_null()} | {peer.identity.get_value_or_null()}"
                     )
+                my_node.debug_printf("===")
+                streams = my_node.receiving_get_streams()
+                for stream in streams:
+                    i = my_node.receiving_read(stream)
+                    if isinstance(i, io.BytesIO):
+                        my_node.debug_printf(f"{stream}    | {i.getvalue()!r}")
+                    else:
+                        i.seek(0, 0)
+                        with open(f"/tmp/{stream}.txt", "wb") as f:
+                            f.write(i.read())
+                        my_node.debug_printf(f"{stream}    | '/tmp/{stream}.txt'")
+
+                net_g = my_node.get_network_graph()
+                display_graph(net_g)
 
             if msg[0] == b"Disconnect":
                 requested_peer = msg[1].decode("utf-8")
@@ -134,10 +149,41 @@ def main_worker(identity, control: zmq.Socket):
                     )
                     raise NotImplementedError
 
-                my_node.send_data_to(send_peer, data)  # type: ignore
-                my_node.debug_printf(
-                    f"Test : Sent data from {identity} to {requested_peer}"
-                )
+                try:
+                    my_node.send_data_to(send_peer, io.BytesIO(data.encode()), find_routes=4)  # type: ignore
+                except ValueError as e:
+                    my_node.debug_printf(
+                        f"Test : Sent data from {identity} to {requested_peer} ERROR! {e}"
+                    )
+
+            if msg[0] == b"SendData-F":
+                requested_peer = int(msg[1].decode("utf-8"))  # type: ignore
+                data = msg[2].decode("utf-8")
+
+                f_data = open(data, "rb")
+
+                exists = False
+                send_peer: Optional[Node] = None
+                global_peers = my_node.get_global_node_network_by_identity()
+                for peer in global_peers:
+                    if requested_peer == peer.identity.get_value_or_null():  # type: ignore
+                        exists = True
+                        send_peer = peer
+                        break
+
+                if not (exists):
+                    my_node.debug_printf(
+                        f"Sending to peer {requested_peer} but it currently does not exist in global registry. Doing anyway. ERROR!"
+                    )
+                    raise NotImplementedError
+
+                try:
+                    my_node.send_data_to(send_peer, f_data, find_routes=4)  # type: ignore
+                except ValueError as e:
+                    my_node.debug_printf(
+                        f"Test : Sent data from {identity} to {requested_peer} ERROR! {e}"
+                    )
+                f_data.close()
 
             if msg[0] == b"set":
                 key = msg[1].decode("utf-8")
@@ -252,27 +298,47 @@ while True:
             print("Unknown peer")
         continue
 
-    if c.find("sendc") != -1:
+    # if c.find("sendc") != -1:
+    #     # first is node origin
+    #     # second is the node to connect to
+    #     c_tokens: list[int] = c.split(" ")  # type: ignore
+    #     try:
+    #         for x in range(1, len(c_tokens)):
+    #             c_tokens[x] = int(c_tokens[x])
+    #         if len(c_tokens) < 2:
+    #             raise ValueError
+    #     except:
+    #         print("Bad command")
+    #         continue
+    #     if c_tokens[1] in peers:
+    #         peers[c_tokens[1]]["soc"].send_multipart(
+    #             [b"SendData-C", int.to_bytes(int(c_tokens[2]), 1, "big")]
+    #         )
+    #     else:
+    #         print("Unknown peer")
+    #     continue
+
+    if c.find("fsend") != -1:
         # first is node origin
         # second is the node to connect to
-        c_tokens: list[int] = c.split(" ")  # type: ignore
+        c_tokens: list[int | str] = c.split(" ")  # type: ignore
         try:
-            for x in range(1, len(c_tokens)):
-                c_tokens[x] = int(c_tokens[x])
-            if len(c_tokens) < 2:
+            c_tokens[1] = int(c_tokens[1])
+            if len(c_tokens) < 4:
                 raise ValueError
         except:
             print("Bad command")
             continue
         if c_tokens[1] in peers:
+            inp = c_tokens[2]
             peers[c_tokens[1]]["soc"].send_multipart(
-                [b"SendData-C", int.to_bytes(int(c_tokens[2]), 1, "big")]
+                [b"SendData-F", inp.encode("utf-8"), c_tokens[3].encode("utf-8")]  # type: ignore
             )
         else:
             print("Unknown peer")
         continue
 
-    if c.find("sendd") != -1:
+    if c.find("send") != -1:
         # first is node origin
         # second is the node to connect to
         c_tokens: list[int | str] = c.split(" ")  # type: ignore

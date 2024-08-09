@@ -22,20 +22,21 @@ def dump(msg: list[bytes]) -> None:
             print(r"0x %s" % (binascii.hexlify(part, " ").decode("ascii")))
 
 
-def zpipe(ctx: zmq.Context) -> tuple[zmq.Socket, zmq.Socket]:
+def zpipe(ctx: zmq.Context, hwm: int = 1) -> tuple[zmq.Socket, zmq.Socket]:
     """build inproc pipe for talking to threads
 
     mimic pipe used in czmq zthread_fork.
 
     Args:
         ctx (zmq.Context): Context
+        hwm (int): High Water Mark. Defaults to 1.
     Returns:
         tuple[zmq.Socket, zmq.Socket]: Returns a pair of PAIRs connected via inproc
     """
     a = ctx.socket(zmq.PAIR)
     b = ctx.socket(zmq.PAIR)
     a.linger = b.linger = 0
-    a.hwm = b.hwm = 1
+    a.hwm = b.hwm = hwm
     iface = "inproc://%s" % binascii.hexlify(os.urandom(8)).decode("utf-8")
     a.bind(iface)
     b.connect(iface)

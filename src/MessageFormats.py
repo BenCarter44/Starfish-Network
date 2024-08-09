@@ -1,9 +1,11 @@
 import time
-from typing import List, Tuple
+from typing import Optional
+from typing_extensions import Any, List, Self, Tuple
 
 from src.ttl import DataTTL
 from src.utils import dump
 import struct
+import dill
 
 ALLOWED_TIME_OFFSET = 10.0
 
@@ -171,7 +173,7 @@ class BasicMultipartMessage:
 
         self.data = data_in
 
-    def compile_with_address(self, addr: bytes, reply_id: int = 0) -> list[bytes]:
+    def compile_with_address(self, addr: bytes | int, reply_id: int = 0) -> list[bytes]:
         """Return multipart message with address
 
         Args:
@@ -181,6 +183,8 @@ class BasicMultipartMessage:
         Returns:
             List[bytes]: multipart message
         """
+        if isinstance(addr, int):
+            addr = int.to_bytes(addr, 4, "big")
         d = self.compile(reply_id=reply_id)
         d.insert(0, addr)
         return d
@@ -435,3 +439,116 @@ class PeerKV_Hello(PeerKV):
             str: endpoint
         """
         return self.get_val().decode("utf-8")
+
+
+class Datagram:
+    """For Data Passing"""
+
+    def __init__(
+        self,
+        to: int,
+        data: Any | Self,
+        comm_id: Optional[int] = None,
+        packet: Optional[int] = None,
+        term: bool = False,
+        exp_len: Optional[int] = None,
+        author: Optional[int] = None,
+        resend: bool = False,
+    ):
+
+        d = b""
+        if isinstance(data, bytes):
+            d = data
+            t = b"0"
+        else:
+            d = dill.dumps(data)
+            t = b"1"
+
+        comm_bytes = b""
+        if comm_id is not None:
+            comm_bytes = int.to_bytes(comm_id, 4, "big")
+
+        packet_bytes = b""
+        if packet is not None:
+            packet_bytes = int.to_bytes(packet, 4, "big")
+
+        term_bytes = b"0"
+        if term:
+            term_bytes = b"1"
+
+        resend_bytes = b"0"
+        if resend:
+            resend_bytes = b"1"
+
+        exp_bytes = b""
+        if exp_len is not None:
+            exp_bytes = int.to_bytes(exp_len, 4, "big")
+
+        author_bytes = b""
+        if author is not None:
+            author_bytes = int.to_bytes(author, 4, "big")
+
+        self.data: list[bytes] = [
+            int.to_bytes(to, 4, "big"),
+            b"hash",
+            d,
+            t,
+            comm_bytes,
+            packet_bytes,
+            term_bytes,
+            exp_bytes,
+            author_bytes,
+            resend_bytes,
+        ]
+
+    def __str__(self):
+        c, p = self.get_ids()
+        return f"<Datagram: {c} #{p} - Carrying data: L: {len(self.data[2])}>"
+
+    def is_term(self):
+        return self.data[6] == b"1"
+
+    def get_data(self):
+        if self.data[3] == b"0":
+            return self.data[2]
+        else:
+            return dill.loads(self.data[2])
+
+    def get_author(self):
+        if self.data[8] != b"":
+            return int.from_bytes(self.data[8], "big")
+
+    def is_resend_request(self):
+        return self.data[9] == b"1"
+
+    def get_to(self):
+        return int.from_bytes(self.data[0], "big")
+
+    def get_expected_length(self):
+        if self.data[7] != b"":
+            return int.from_bytes(self.data[7], "big")
+
+    def get_msg(self) -> BasicMultipartMessage:
+        m = BasicMultipartMessage()
+        m.set_topic("Datagram")
+        m.set_subtopic("")
+        m.set_val_multiple(self.data)
+        return m
+
+    def parse_msg(self, m: BasicMultipartMessage):
+        self.data = m.get_multiple_values()
+
+    def get_ids(self) -> tuple[Optional[int], Optional[int]]:
+        comm: Optional[bytes | int] = self.data[4]
+        packet: Optional[bytes | int] = self.data[5]
+
+        if comm == b"":
+            comm = None
+        else:
+            comm = int.from_bytes(comm, "big")  # type: ignore
+        if packet == b"":
+            packet = None
+        else:
+            packet = int.from_bytes(packet, "big")  # type: ignore
+
+        return comm, packet
