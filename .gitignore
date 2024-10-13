@@ -7,6 +7,10 @@
 node_modules/
 dist/
 scratchwork/
+src/star/scratchwork/
+*.out
+*.star
+src/star/.vscode/
 
 # Compiled Java class files
 *.class
