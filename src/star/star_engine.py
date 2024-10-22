@@ -9,7 +9,7 @@ import star_components as star
 import asyncio
 import time
 
-DEBUG = False
+DEBUG = True
 
 
 def debug_print(a):
@@ -30,7 +30,7 @@ class ProgramExecutor:
         self.start_target = start_target
 
 
-class Node:
+class NodeEngine:
     def __init__(self):
         """Create Node with compute workers and engine units."""
         self.total_engine_units = 1000
@@ -347,8 +347,10 @@ class Node:
     async def start_loops(self):
         """ASYNC COROUTINE. Start the various ASYNC Tasks"""
         debug_print("D: Start Loops")
-        executor_loop_t = asyncio.create_task(self.executor_loop())
-        output_loop_t = asyncio.create_task(self.output_loop())
+        executor_loop_t = asyncio.create_task(
+            self.executor_loop(), loop=self.async_loop
+        )
+        output_loop_t = asyncio.create_task(self.output_loop(), loop=self.async_loop)
         # debug_loop_t = asyncio.create_task(self.debug_loop())
         self.async_tasks.add(executor_loop_t)
         self.async_tasks.add(output_loop_t)
@@ -392,7 +394,7 @@ class Node:
 ############################### LOAD PROGRAM
 
 
-pgrm = star.Program(read_pgrm="my_list_program.star")
+pgrm = star.Program(read_pgrm="my_program.star")
 print(
     f"I: Opening program '{pgrm.saved_data['pgrm_name']}' from {pgrm.saved_data['date_compiled']}\n"
 )

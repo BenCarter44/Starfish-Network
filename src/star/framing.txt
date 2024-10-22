@@ -1,0 +1,37 @@
+
+Struct:
+    # Comment
+
+    Data_Field: KEY
+        Required_Data_Field: KEY
+
+    OR (on new lines)
+
+
+Node_Request:
+    # Used for sending info to node manager
+
+    Routing: SOURCE ("SERVER") # "server" or "client"
+        Routing: ADDR
+        Routing: CONN_ID
+        Routing: TP_ID
+    
+    Routing: SOURCE ("CLIENT")
+        Routing: ORIGINAL # routing of original response object.
+        Routing: ADDR
+        Routing: TP_ID
+
+Node_Response:
+    # Used for replies coming from node manager
+
+    Routing: SYSTEM "CONNECT"
+        Routing: DEST
+    
+    Routing: SYSTEM "FEEDBACK" # for server only!
+        Routing: ORIGINAL # routing of the original request object
+
+    
+    -----------------
+
+    Headers: METHOD ("PING")
+    Headers: X-LEN  # to add later.
