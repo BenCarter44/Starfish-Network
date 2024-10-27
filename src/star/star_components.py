@@ -5,8 +5,11 @@ import functools
 import time
 from typing import Any, Optional, Callable
 from typing_extensions import Self
-import dill  # typing: ignore
+import dill  # type: ignore
 import uuid
+import logging
+
+logger = logging.getLogger(__name__)
 
 # Currently global for program.
 task_list: dict["TaskIdentifier", tuple[Callable, bool]] = {}
@@ -27,7 +30,6 @@ class TaskIdentifier:
             task_name (str): Name of task. Name used in .set_target()
             condition_func (Callable, optional): Condition function for task. Defaults to None.
         """
-        self.hash = hash((task_name, condition_func))
         self.name = task_name
         self.condition = condition_func
 
@@ -37,7 +39,10 @@ class TaskIdentifier:
         Returns:
             int: hash(self)
         """
-        return self.hash
+        return hash((self.name, self.condition))
+
+    def __repr__(self):
+        return f"<{self.name} - Cond: {self.condition}>"
 
     def __eq__(self, other: object) -> bool:
         """Compare if some task refers to this one.
@@ -51,7 +56,7 @@ class TaskIdentifier:
         if not (isinstance(other, TaskIdentifier)):
             return False
         return (
-            self.hash == other.hash
+            self.__hash__() == other.__hash__()
             and self.name == other.name
             and self.condition
             == other.condition  # Not perfect. This can be None == None
@@ -292,7 +297,7 @@ class Program:
             save_data["task_list"] = self.task_list  # type: ignore
             save_data["start"] = self.start  # type: ignore
             save_data["pgrm_name"] = fname  # type: ignore
-            dill.dump(save_data, f, fmode=dill.CONTENTS_FMODE)
+            dill.dump(save_data, f, fmode=dill.FILE_FMODE, recurse=True)
 
     def read_program(self, fname: str):
         """Read program from binary program package
@@ -302,7 +307,7 @@ class Program:
         """
         with open(fname, "rb") as f:
             dat = dill.load(f)
-            # print(f"Opened program compiled on {dat['date_compiled']}")
+            # logger.info(f"Opened program compiled on {dat['date_compiled']}")
             self.task_list = dat["task_list"]
             self.saved_data = dat
 
@@ -331,7 +336,7 @@ def task(name: str, condition: Optional[Callable] = None, pass_task_id=False):
         task_condition = TaskIdentifier(name, condition)
 
         task_list[task_condition] = (f_wrap, pass_task_id)
-        print(
+        logger.info(
             f"Registered task {name} with condition {condition} with ID: {hash(task_condition)}"
         )
 

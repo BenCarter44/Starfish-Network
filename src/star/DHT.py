@@ -1,8 +1,12 @@
 import random
 from typing import Any
 import numpy as np
-import dill
+import dill  # type: ignore
 import hashlib
+import star_components as star
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 def xor(a: bytes, b: bytes) -> bytes:
@@ -20,7 +24,6 @@ def xor(a: bytes, b: bytes) -> bytes:
 
 
 def hash_func(data: Any) -> bytes:
-
     return hashlib.sha256(dill.dumps(data)).digest()
 
     hsh = abs(hash(data))  # need a better one!
@@ -68,10 +71,10 @@ class DHT:
 
         closest = sorted(self.addr, key=diff_hash)  # sort by hash.
 
-        print(f"{'00'*32} - {key_hsh.hex()} - MAIN KEY {key}")
+        logger.debug(f"{'00'*32} - {key_hsh.hex()} - MAIN KEY {key}")
         for x in closest:
             obj_hsh = hash_func(x)
-            print(f"{diff_hash(x).hex()} - {obj_hsh.hex()} - {x}")
+            logger.debug(f"{diff_hash(x).hex()} - {obj_hsh.hex()} - {x}")
 
         if len(closest) < neighbors:
             close_neighbors = closest
@@ -84,12 +87,11 @@ class DHT:
         self.data[key] = val
         self.cached_data.add(key)
 
-    def set(self, key, val, neighbors=3) -> DHT_Response:
+    def set(self, key, val, neighbors=3, dry_run=False) -> DHT_Response:
         # store in myself. Then, see if there are any closer people to also send to.
-        self.data[key] = val
 
         key_hsh = hash_func(key)
-        print(f"Key HSH: {key_hsh.hex()}")
+        logger.debug(f"Key HSH: {key_hsh.hex()}")
 
         # convert
         def diff_hash(obj):
@@ -98,10 +100,10 @@ class DHT:
 
         closest = sorted(self.addr, key=diff_hash)  # sort by hash.
 
-        print(f"{'00'*32} - {key_hsh.hex()} - MAIN KEY {key}")
+        logger.debug(f"{'00'*32} - {key_hsh.hex()} - MAIN KEY {key}")
         for x in closest:
             obj_hsh = hash_func(x)
-            print(f"{diff_hash(x).hex()} - {obj_hsh.hex()} - {x}")
+            logger.debug(f"{diff_hash(x).hex()} - {obj_hsh.hex()} - {x}")
 
         if len(closest) < neighbors:
             close_neighbors = closest
@@ -111,17 +113,30 @@ class DHT:
         if self.my_address not in close_neighbors:
             # My node isn't in the close neighbors, so it's supposed to be
             # owned by another closer node.
-            self.cached_data.add(key)
+            if not (dry_run):
+                self.cached_data.add(key)
+                self.data[key] = val
             return DHT_Response("NEIGHBOR_UPDATE_CACHE", (key, val), close_neighbors)
 
         # if random.random() < 0.5:  # For testing the children update feature.
         #     self.cached_data.add(key)
         #     return DHT_Response("NEIGHBOR_UPDATE_CACHE", (key, val), [closest[-1]])
-
+        self.data[key] = val
         return DHT_Response("NEIGHBOR_UPDATE_AND_OWN", (key, val), close_neighbors)
 
 
 if __name__ == "__main__":
+
+    a = star.TaskIdentifier("input", lambda evt: evt.total % 2 == 0)
+    print(hash_func(a).hex())
+    evt = star.Event(0, 0)
+    evt.set_target("input")
+    ti = star.TaskIdentifier(
+        evt.target, None  # type: ignore
+    )  # don't support conditions right now
+    print(hash_func(ti).hex())
+
+    exit()
 
     addresses = [b"Address One", b"Address Two", b"Address Three"]
     dht_address_1 = DHT(addresses[0])

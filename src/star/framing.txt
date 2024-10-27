@@ -35,3 +35,13 @@ Node_Response:
 
     Headers: METHOD ("PING")
     Headers: X-LEN  # to add later.
+
+    Headers: METHOD ("TASK_ALLOCATE")
+        Headers: DHT_NODE_IGNORE <input>
+        Headers: DHT_KEY  <input> 
+        Headers: CODE <output>
+            CODE: ("NO_ROUTES_AVAILABLE")
+            CODE: ("SUCCESS_OWNED_BY_CHILD")
+                OWNED: found_addrs
+            CODE: ("SUCCESS_OWNED")
+            Headers: CHAIN: [ignore_nodes]

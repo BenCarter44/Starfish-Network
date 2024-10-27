@@ -1,10 +1,13 @@
 import asyncio
 from typing import cast
 import dill  # type: ignore
-
+import logging
 from node_queue_interface import Node_Request, Node_Response
 
+logger = logging.getLogger(__name__)
+
 connection_counter = 0
+logger.info("HI!")
 
 
 class Star_Address:
@@ -60,7 +63,7 @@ async def TCP_Server(
     connection_ID = connection_counter
     internal_server_queues[connection_ID] = asyncio.Queue()
     connection_counter += 1
-    print("Transport: Got connection!")
+    logger.debug("Transport: Got connection!")
 
     # Obtain REQUEST
     request_data = await reader.read()
@@ -127,6 +130,7 @@ async def TCP_Client(
     # original_data_request.connID = connection_counter
 
     # REQUEST (a response from NodeComm)
+    logger.debug(f"SEND OUT: {data_request}")
     out_data = dill.dumps((data_request.headers, data_request.body))
     writer.write(out_data)
     writer.write_eof()
@@ -197,37 +201,46 @@ class Generic_TCP:
     async def handle_receiving_queue(self):
         """ASYNC TASK. Handle receiving queue."""
         while True:
-            item = await self.receiving_queue.get()
-            x_system = item.routing.get("SYSTEM")
-            if x_system is None:
-                print("No SYSTEM header defined!")
-                continue
+            try:
+                logger.debug(f"Wait... {id(self.receiving_queue)}")
+                item = await self.receiving_queue.get()
 
-            # when node wants new connection.
-            if x_system == "CONNECT":
-                x_system_dest = item.routing.get("DEST")
-                if x_system_dest is None:
-                    print("No DEST header defined on CONNECT!")
-                    continue
-                addr: Star_Address = x_system_dest
-                await self.open_connection(addr, item)
-
-            if x_system == "FEEDBACK":
-                x_system_origin = item.routing.get("ORIGINAL")
-                if x_system_origin is None:
-                    print("No ORIGINAL header defined on FEEDBACK!")
-                    continue
-                is_to_server = x_system_origin.get("SOURCE")
-                if is_to_server == "CLIENT":
-                    print("Cannot send data from client! Use connect_to()")
+                logger.debug(f"Recv {item}")
+                x_system = item.routing.get("SYSTEM")
+                if x_system is None:
+                    logger.warning("No SYSTEM header defined!")
                     continue
 
-                x_system_origin_conn = x_system_origin.get("CONN_ID")
-                if x_system_origin_conn is None:
-                    print("No CONN_ID in ORIGINAL")
-                    continue
-                assert x_system_origin_conn in self.internal_to_server_queue
-                await self.internal_to_server_queue[x_system_origin_conn].put(item)
+                # when node wants new connection.
+                if x_system == "CONNECT":
+                    x_system_dest = item.routing.get("DEST")
+                    if x_system_dest is None:
+                        logger.warning("No DEST header defined on CONNECT!")
+                        continue
+                    addr: Star_Address = x_system_dest
+                    asyncio.create_task(
+                        self.open_connection(addr, item)
+                    )  # non blocking!
+
+                if x_system == "FEEDBACK":
+                    x_system_origin = item.routing.get("ORIGINAL")
+                    if x_system_origin is None:
+                        logger.warning("No ORIGINAL header defined on FEEDBACK!")
+                        continue
+                    is_to_server = x_system_origin.get("SOURCE")
+                    if is_to_server == "CLIENT":
+                        logger.warning("Cannot send data from client! Use connect_to()")
+                        continue
+
+                    x_system_origin_conn = x_system_origin.get("CONN_ID")
+                    if x_system_origin_conn is None:
+                        logger.warning("No CONN_ID in ORIGINAL")
+                        continue
+                    assert x_system_origin_conn in self.internal_to_server_queue
+                    await self.internal_to_server_queue[x_system_origin_conn].put(item)
+
+            except Exception as e:
+                logger.critical(e)
 
     async def open_connection(self, addr: Star_Address, data_item: Node_Response):
         """ASYNC. Open connection out to address
