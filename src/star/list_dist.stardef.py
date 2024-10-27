@@ -1,9 +1,13 @@
 import time
 import star_components as star
 import star_os
+import logging
+import sys
+
+logger = logging.getLogger(__name__)
 
 
-@star.task("input", condition=None, pass_task_id=True)
+@star.task("input", pass_task_id=True)
 def input_event(evt: star.Event, task_id: star.TaskIdentifier):
     a = input("Type in a number: ")
     b = input("Type in a second number: ")
@@ -22,7 +26,7 @@ def input_event(evt: star.Event, task_id: star.TaskIdentifier):
     return evt_new
 
 
-@star.task("cast_numbers", condition=None)
+@star.task("cast_numbers")
 def cast_numbers(evt):
 
     evt.a = int(evt.a)
@@ -31,7 +35,7 @@ def cast_numbers(evt):
     return evt
 
 
-@star.task("run_total", condition=None)
+@star.task("run_total")
 def run_total(evt):
     total = evt.a + evt.b
 
@@ -55,7 +59,7 @@ def run_total(evt):
 
 
 # Condition: total % 2 == 0
-@star.task("print_conditional", condition=lambda evt: evt.total % 2 == 0)
+@star.conditional_task("print_conditional", condition="lambda evt: evt.total % 2 == 0")
 def print_even(evt):
     print(f"The total is even! {evt.total}")
 
@@ -67,7 +71,7 @@ def print_even(evt):
 
 
 # Condition: total % 2 == 1
-@star.task("print_conditional", condition=lambda evt: evt.total % 2 == 1)
+@star.conditional_task("print_conditional", condition="lambda evt: evt.total % 2 == 1")
 def print_odd(evt):
     print(f"The total is odd! {evt.total}")
 
@@ -78,14 +82,14 @@ def print_odd(evt):
     return evt_new
 
 
-@star.task("to_capital", condition=None)
+@star.task("to_capital")
 def to_cap(evt: star.Event):
     evt.b = evt.b.upper()
     return evt
 
 
 # Condition: None
-@star.task("list_intro", condition=None, pass_task_id=True)
+@star.task("list_intro", pass_task_id=True)
 def list_intro(evt, task_id: star.TaskIdentifier):
     i = input("Please type a string: ")
 
@@ -111,6 +115,36 @@ def list_intro(evt, task_id: star.TaskIdentifier):
 
 
 if __name__ == "__main__":
+
+    class CustomFormatter(logging.Formatter):
+        grey_dark = "\x1b[38;5;7m"
+        grey = "\x1b[38;5;123m"
+        yellow = "\x1b[33;20m"
+        red = "\x1b[31;20m"
+        bold_red = "\x1b[1m\x1b[38;5;9m"
+        reset = "\x1b[0m"
+        format = "%(asctime)s - %(name)s - %(levelname)s - %(message)s (%(filename)s:%(lineno)d)"  # type: ignore
+
+        FORMATS = {
+            logging.DEBUG: grey_dark + format + reset,  # type: ignore
+            logging.INFO: grey + format + reset,  # type: ignore
+            logging.WARNING: yellow + format + reset,  # type: ignore
+            logging.ERROR: red + format + reset,  # type: ignore
+            logging.CRITICAL: bold_red + format + reset,  # type: ignore
+        }
+
+        def format(self, record):  # type: ignore
+            log_fmt = self.FORMATS.get(record.levelno)
+            formatter = logging.Formatter(log_fmt)
+            return formatter.format(record)
+
+    ch = logging.StreamHandler(sys.stdout)
+    ch.setLevel(logging.DEBUG)
+    ch.setFormatter(CustomFormatter())
+    logging.basicConfig(handlers=[ch], level=logging.INFO)
+
+    logger.info("Compiler start")
+
     start_event = star.Event(1, 2)
     start_event.set_target("input")
     pgrm = star.compile(start_event=start_event)

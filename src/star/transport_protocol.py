@@ -86,6 +86,7 @@ async def TCP_Server(
     writer.write_eof()
     await writer.drain()
 
+    await asyncio.sleep(0.1)  # TODO: delay for peer to read all the data.
     writer.close()
     await writer.wait_closed()
 
@@ -140,6 +141,9 @@ async def TCP_Client(
     read_data = await reader.read()
     response_headers, response_body = dill.loads(read_data)
 
+    writer.close()
+    await writer.wait_closed()
+
     response_routing = {
         "SOURCE": "CLIENT",
         "ORIGINAL": data_request.routing,
@@ -150,9 +154,6 @@ async def TCP_Client(
     )
     if response_headers.get("METHOD") != "CLOSE":
         await output_queue.put(resp)  # blank response. don't bother node comm.
-
-    writer.close()
-    await writer.wait_closed()
 
 
 class Generic_TCP:

@@ -72,17 +72,18 @@ class Node:
 
         # self.clear_cache()  # for now, to force the distributed nature.
 
+    async def start_program(self, program: star.Program):
+        await self.send_event(program.start)
+
     async def engine_allocate(self, key, body):
         # key is TaskIdentifier
         # body is (func,bool)
         key = cast(star.TaskIdentifier, key)
-        logger.info(f"{self.bin_addr} | Task key: {key.name} Allocated!")
+        logger.info(f"Task {key} Allocated! on {self.bin_addr}")
         self.engine.import_task(key, body[0], body[1])
 
     async def send_event(self, evt: star.Event):
-        ti = star.TaskIdentifier(
-            evt.target, None  # type: ignore
-        )  # don't support conditions right now
+        ti = evt.target
 
         storage_address = await self.search_task(self.default_tp, ti)
         if storage_address is None:
@@ -579,7 +580,7 @@ if __name__ == "__main__":
             logging.CRITICAL: bold_red + format + reset,  # type: ignore
         }
 
-        def format(self, record):
+        def format(self, record):  # type: ignore
             log_fmt = self.FORMATS.get(record.levelno)
             formatter = logging.Formatter(log_fmt)
             return formatter.format(record)
@@ -641,9 +642,7 @@ if __name__ == "__main__":
             )
             await node_1.import_program(pgrm, tcp_ip_interface1)
             await asyncio.sleep(1)
-            evt = star.Event(0, 0)
-            evt.set_target("input")
-            await node_1.send_event(evt)
+            await node_1.start_program(pgrm)
 
         # for x in range(1, 100):
         #     name = await asyncio.to_thread(input, "Wait......  1 \n")

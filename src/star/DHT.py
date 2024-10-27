@@ -43,10 +43,10 @@ class DHT_Response:
 
 class DHT:
     def __init__(self, my_address: bytes):
-        self.data = {}
-        self.addr = []
+        self.data: dict[Any, Any] = {}
+        self.addr: list[bytes] = []
         # for holding data that isn't supposed to be in the dictionary.
-        self.cached_data = set()
+        self.cached_data: set[Any] = set()
         self.my_address: bytes = my_address
 
     def clear_cache(self):
@@ -103,7 +103,7 @@ class DHT:
         logger.debug(f"{'00'*32} - {key_hsh.hex()} - MAIN KEY {key}")
         for x in closest:
             obj_hsh = hash_func(x)
-            logger.debug(f"{diff_hash(x).hex()} - {obj_hsh.hex()} - {x}")
+            logger.debug(f"{diff_hash(x).hex()} - {obj_hsh.hex()} - {x!r}")
 
         if len(closest) < neighbors:
             close_neighbors = closest
@@ -127,13 +127,9 @@ class DHT:
 
 if __name__ == "__main__":
 
-    a = star.TaskIdentifier("input", lambda evt: evt.total % 2 == 0)
+    a = star.TaskIdentifier("input", condition_func="lambda evt: evt.total % 2 == 0")
     print(hash_func(a).hex())
-    evt = star.Event(0, 0)
-    evt.set_target("input")
-    ti = star.TaskIdentifier(
-        evt.target, None  # type: ignore
-    )  # don't support conditions right now
+    ti = star.TaskIdentifier("input", condition_func="lambda evt: evt.total % 2 == 0")  # type: ignore
     print(hash_func(ti).hex())
 
     exit()

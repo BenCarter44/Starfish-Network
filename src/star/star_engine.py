@@ -35,7 +35,6 @@ class NodeEngine:
             "test": {"task": (print, False), "count": asyncio.Semaphore(20)}  # type: ignore
         }
         self.hosted_tasks = {}
-        self.hosted_tasks_names: dict[str, list[star.TaskIdentifier]] = {}
 
         self.out_unified_queue: asyncio.Queue[star.Event] = asyncio.Queue()
         self.executor_queue: asyncio.Queue[Any] = asyncio.Queue()
@@ -45,6 +44,9 @@ class NodeEngine:
             tuple[uuid.UUID, star.TaskIdentifier],
             dict[str, threading.Event | star.Event | None],
         ] = {}
+
+        star.IS_ENGINE = True
+        star.BINDINGS = self.return_component_bindings()
 
         # asyncio loop
         self.async_tasks = set()
@@ -70,11 +72,6 @@ class NodeEngine:
             "task_id": task_id,
         }
 
-        if task_id.name not in self.hosted_tasks_names:
-            self.hosted_tasks_names[task_id.name] = [task_id]
-        else:
-            self.hosted_tasks_names[task_id.name].append(task_id)
-
     def start_program(self, pgrm_exc: ProgramExecutor, local=False):
         """Start program in engine by firing the start event from program.
 
@@ -92,78 +89,20 @@ class NodeEngine:
     ########################## Engine.
 
     async def recv_event_coro(
-        self, evt: star.Event, task_id_input: Optional[star.TaskIdentifier] = None
+        self, evt: star.Event, task_id_input: star.TaskIdentifier
     ):
-        """ASYNC COROUTINE. Consume a receiving event.
+        """ASYNC COROUTINE. Consume a receiving event. Send event to the task.
 
         Args:
             evt (star.Event): Receiving event.
         """
+        if evt.target != task_id_input:
+            logger.error("TaskID different than evt.target!")
 
-        if task_id_input is not None:
-
-            host_information = self.hosted_tasks.get(task_id_input)
-            if host_information is None:
-                print("Passed in task ID but not hosting!")
-                raise ValueError("Passed in task ID but not hosting!")
-
-            if cast(asyncio.Semaphore, host_information["count"]).locked():
-                # no resources left!
-                logger.info(
-                    f"Received event: {evt.target}. No compute units left! Send to network"
-                )
-                await self.out_unified_queue.put(evt)
-                return
-
-            logger.info(f"Received event: {evt.target}. Waiting....")
-            await cast(
-                asyncio.Semaphore, host_information["count"]
-            ).acquire()  # acquire sem
-            logger.info(f"Done Waiting.... Put in Execution Queue")
-            await self.executor_queue.put((host_information, evt))
-            return
-
-        logger.info(f"Recv: {evt.target}")
-        # logger.info("Recv Sys: ", evt.system)
-        if (
-            evt.system is not None
-            and evt.system["await"]
-            and not (evt.system["initial"])
-        ):
-            logger.debug("Received sys callback")
-            await self.await_recv(evt)
-            return
-
-        # check to see if event is in the current task list
-        if evt.target not in self.hosted_tasks_names:
-            logger.info(
-                f"Received event: {evt.target}. Target not in hosted tasks. Send to network"
-            )
-            await self.out_unified_queue.put(evt)
-            return
-
-        # get all tasks with the specific name
-        tasks: list[star.TaskIdentifier] = self.hosted_tasks_names[evt.target]
-        # find the one that matches the condition.
-        correct = None
-        for t in tasks:
-            if t.condition is None:
-                correct = t
-                break
-            check = t.condition(evt)
-            if check:
-                correct = t
-                break
-
-        if correct is None:
-            logger.info(
-                f"Received event: {evt.target}. Target condition not in hosted tasks. Send to network"
-            )
-            await self.out_unified_queue.put(evt)
-            return
-
-        # is currently being hosted.
-        host_information = self.hosted_tasks[cast(star.TaskIdentifier, correct)]
+        host_information = self.hosted_tasks.get(task_id_input)
+        if host_information is None:
+            logger.error("Passed in task ID but not hosting!")
+            raise ValueError("Passed in task ID but not hosting!")
 
         if cast(asyncio.Semaphore, host_information["count"]).locked():
             # no resources left!
@@ -181,9 +120,7 @@ class NodeEngine:
         await self.executor_queue.put((host_information, evt))
         return
 
-    def recv_event(
-        self, evt: star.Event, task_id: Optional[star.TaskIdentifier] = None
-    ):
+    def recv_event(self, evt: star.Event, task_id: star.TaskIdentifier):
         """OUTSIDE API. Consume a receiving event.
 
         Args:
@@ -241,7 +178,12 @@ class NodeEngine:
         logger.info(
             f"EX Done. Send Target: {evt.target}. Now, remaining compute units: {sem._value}."
         )
-        self.recv_event(evt)
+
+        # assume the condition is none. It will already have condition or not
+        async def send_quick(evt):
+            await self.out_unified_queue.put(evt)
+
+        asyncio.run_coroutine_threadsafe(send_quick(evt), loop=asyncio.get_event_loop())
 
     async def output_loop(self):
         """ASYNC TASK. Send output events."""
