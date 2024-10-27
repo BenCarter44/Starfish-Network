@@ -32,6 +32,9 @@ class Star_Address:
     def __str__(self):
         return f"{self.protocol}://{self.host}:{self.port}"
 
+    def __repr__(self):
+        return self.__str__()
+
 
 async def TCP_Server(
     reader: asyncio.StreamReader,
@@ -75,7 +78,6 @@ async def TCP_Server(
 
     # RESPONSE
     item = await internal_server_queues[connection_ID].get()
-
     out_data = dill.dumps((item.headers, item.body))
     writer.write(out_data)
     writer.write_eof()

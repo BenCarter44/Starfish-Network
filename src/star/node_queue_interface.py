@@ -26,6 +26,11 @@ class Node_Request:
         self.headers = headers
         self.body = body
 
+    def __str__(self):
+        return str(
+            {"ROUTING": self.routing, "HEADERS": self.headers, "BODY": self.body}
+        )
+
 
 class Node_Response:
     """Represents responses GOING OUT from the node communication manager"""
@@ -47,3 +52,8 @@ class Node_Response:
         self.routing = routing
         self.headers = headers
         self.body = body
+
+    def __str__(self):
+        return str(
+            {"ROUTING": self.routing, "HEADERS": self.headers, "BODY": self.body}
+        )
