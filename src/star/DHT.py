@@ -46,12 +46,18 @@ class DHT:
         self.cached_data = set()
         self.my_address: bytes = my_address
 
+    def clear_cache(self):
+        for i in self.cached_data:
+            del self.data[i]
+
+        self.cached_data.clear()
+
     def update_addresses(self, addr):
         self.addr = addr
 
     def get(self, key, neighbors=3):
         if key in self.data:
-            return DHT_Response(self, "SELF_FOUND", self.data[key], [])
+            return DHT_Response("SELF_FOUND", self.data[key], [])
         # Not found, key probably on another node?
 
         key_hsh = hash_func(key)
@@ -73,6 +79,10 @@ class DHT:
             close_neighbors = closest[:neighbors]
 
         return DHT_Response("NOT_FOUND", None, close_neighbors)
+
+    def set_cache(self, key, val):
+        self.data[key] = val
+        self.cached_data.add(key)
 
     def set(self, key, val, neighbors=3) -> DHT_Response:
         # store in myself. Then, see if there are any closer people to also send to.

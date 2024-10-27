@@ -127,7 +127,6 @@ async def TCP_Client(
     # original_data_request.connID = connection_counter
 
     # REQUEST (a response from NodeComm)
-
     out_data = dill.dumps((data_request.headers, data_request.body))
     writer.write(out_data)
     writer.write_eof()
