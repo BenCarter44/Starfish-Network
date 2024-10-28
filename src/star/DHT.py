@@ -10,6 +10,17 @@ logger = logging.getLogger(__name__)
 
 
 def xor(a: bytes, b: bytes) -> bytes:
+    """Calculate XOR of bytes
+
+    Padded with 0's for longest
+
+    Args:
+        a (bytes): bytes
+        b (bytes): bytes
+
+    Returns:
+        bytes: a ^ b
+    """
     a_buf = np.frombuffer(a, dtype=np.uint8)
     b_buf = np.frombuffer(b, dtype=np.uint8)
     a_len = a_buf.shape[0]
@@ -24,6 +35,14 @@ def xor(a: bytes, b: bytes) -> bytes:
 
 
 def hash_func(data: Any) -> bytes:
+    """Hash object into bytes
+
+    Args:
+        data (Any): Object to hash
+
+    Returns:
+        bytes: hash
+    """
     return hashlib.sha256(dill.dumps(data)).digest()
 
     hsh = abs(hash(data))  # need a better one!
@@ -33,6 +52,13 @@ def hash_func(data: Any) -> bytes:
 
 class DHT_Response:
     def __init__(self, response_code: str, data: Any, addrs: list[bytes]):
+        """Response from DHT class
+
+        Args:
+            response_code (str): Response code
+            data (Any): Value stored at hash table (or None if not found)
+            addrs (list[bytes]): neighbor addresses
+        """
         self.response_code = response_code
         self.data = data
         self.neighbor_addrs = addrs
@@ -43,6 +69,11 @@ class DHT_Response:
 
 class DHT:
     def __init__(self, my_address: bytes):
+        """Create a DHT
+
+        Args:
+            my_address (bytes): Address of owner
+        """
         self.data: dict[Any, Any] = {}
         self.addr: list[bytes] = []
         # for holding data that isn't supposed to be in the dictionary.
