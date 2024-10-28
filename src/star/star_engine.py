@@ -3,24 +3,16 @@ import concurrent.futures
 import functools
 from threading import Thread
 import threading
-from typing import Any, Callable, cast
+from typing import Any, Callable, Optional, cast
 import uuid
 import star_components as star
 import asyncio
 import time
+import logging
 
-DEBUG = False
+logger = logging.getLogger(__name__)
 
-
-def debug_print(a):
-    """Print a if DEBUG is True
-
-    Args:
-        a (any): Print Me
-    """
-    if not (DEBUG):
-        return
-    print(a)
+DEBUG = True
 
 
 class ProgramExecutor:
@@ -30,7 +22,7 @@ class ProgramExecutor:
         self.start_target = start_target
 
 
-class Node:
+class NodeEngine:
     def __init__(self):
         """Create Node with compute workers and engine units."""
         self.total_engine_units = 1000
@@ -43,7 +35,6 @@ class Node:
             "test": {"task": (print, False), "count": asyncio.Semaphore(20)}  # type: ignore
         }
         self.hosted_tasks = {}
-        self.hosted_tasks_names: dict[str, list[star.TaskIdentifier]] = {}
 
         self.out_unified_queue: asyncio.Queue[star.Event] = asyncio.Queue()
         self.executor_queue: asyncio.Queue[Any] = asyncio.Queue()
@@ -54,47 +45,32 @@ class Node:
             dict[str, threading.Event | star.Event | None],
         ] = {}
 
-        # asyncio loop
-        self.async_loop = asyncio.new_event_loop()
-        self.async_tasks = set()
-        self.run_thread = self.run()
-        while len(self.async_tasks) < 2:
-            time.sleep(0.01)
-            pass  # wait for the two async tasks to start
+        star.IS_ENGINE = True
+        star.BINDINGS = self.return_component_bindings()
 
-    def import_program(self, pgrm: star.Program) -> ProgramExecutor:
-        """Import program into engine.
+        # asyncio loop
+        self.async_tasks = set()
+        self.send_event_handler = lambda evt: evt  # replaced by Node.
+
+    def import_task(self, task_id: star.TaskIdentifier, func: Callable, give_id=False):
+        """Import task into engine.
 
         Args:
-            pgrm (star.Program): Program to import
+            task_id (star.TaskIdentifier): Task ID
+            func (Callable): Task function
+            give_id (bool): Pass ID or not (default: False)
 
-        Raises:
-            ValueError: If program has no tasks, raise ValueError
-
-        Returns:
-            ProgramExecutor: Program Executor Object
         """
-        task_list = pgrm.task_list
-        if task_list is None:
-            raise ValueError("No Tasks!")
+        if task_id in self.hosted_tasks:
+            return
 
-        self.count_host += len(task_list)
+        self.count_host += 1
 
-        for task_id, func_pair in task_list.items():
-            m = (self.total_engine_units // self.count_host) + 1
-            debug_print(f"I: {hash(task_id)}: {func_pair} - Count: {m}")
-            self.hosted_tasks[task_id] = {
-                "task": func_pair,
-                "count": asyncio.Semaphore(m),
-                "task_id": task_id,
-            }
-
-            if task_id.name not in self.hosted_tasks_names:
-                self.hosted_tasks_names[task_id.name] = [task_id]
-            else:
-                self.hosted_tasks_names[task_id.name].append(task_id)
-
-        return ProgramExecutor(pgrm.saved_data["start"])
+        self.hosted_tasks[task_id] = {
+            "task": (func, give_id),
+            "count": asyncio.Semaphore(1000),
+            "task_id": task_id,
+        }
 
     def start_program(self, pgrm_exc: ProgramExecutor, local=False):
         """Start program in engine by firing the start event from program.
@@ -106,87 +82,58 @@ class Node:
         # if local is True, keep tasks on this machine only (like console)
         # if local is False, distribute tasks across network.
 
-        debug_print("D: Start pgrm")
+        logger.debug("Start pgrm")
         start_event = pgrm_exc.start_target
         self.recv_event(start_event)
 
     ########################## Engine.
 
-    async def recv_event_coro(self, evt: star.Event):
-        """ASYNC COROUTINE. Consume a receiving event.
+    async def recv_event_coro(
+        self, evt: star.Event, task_id_input: star.TaskIdentifier
+    ):
+        """ASYNC COROUTINE. Consume a receiving event. Send event to the task.
 
         Args:
             evt (star.Event): Receiving event.
         """
-        debug_print(f"I: Recv: {evt.target}")
-        # debug_print("I: Recv Sys: ", evt.system)
-        if (
-            evt.system is not None
-            and evt.system["await"]
-            and not (evt.system["initial"])
-        ):
-            debug_print("I: Received sys callback")
-            await self.await_recv(evt)
-            return
+        if evt.target != task_id_input:
+            logger.error("TaskID different than evt.target!")
 
-        # check to see if event is in the current task list
-        if evt.target not in self.hosted_tasks_names:
-            debug_print(
-                f"I: Received event: {evt.target}. Target not in hosted tasks. Send to network"
-            )
-            await self.out_unified_queue.put(evt)
-            return
-
-        # get all tasks with the specific name
-        tasks: list[star.TaskIdentifier] = self.hosted_tasks_names[evt.target]
-        # find the one that matches the condition.
-        correct = None
-        for t in tasks:
-            if t.condition is None:
-                correct = t
-                break
-            check = t.condition(evt)
-            if check:
-                correct = t
-                break
-
-        if correct is None:
-            debug_print(
-                f"I: Received event: {evt.target}. Target condition not in hosted tasks. Send to network"
-            )
-            await self.out_unified_queue.put(evt)
-            return
-
-        # is currently being hosted.
-        host_information = self.hosted_tasks[cast(star.TaskIdentifier, correct)]
+        host_information = self.hosted_tasks.get(task_id_input)
+        if host_information is None:
+            logger.error("Passed in task ID but not hosting!")
+            raise ValueError("Passed in task ID but not hosting!")
 
         if cast(asyncio.Semaphore, host_information["count"]).locked():
             # no resources left!
-            debug_print(
-                f"I: Received event: {evt.target}. No compute units left! Send to network"
+            logger.info(
+                f"Received event: {evt.target}. No compute units left! Send to network"
             )
             await self.out_unified_queue.put(evt)
             return
 
-        debug_print(f"I: Received event: {evt.target}. Waiting....")
+        logger.info(f"Received event: {evt.target}. Waiting....")
         await cast(
             asyncio.Semaphore, host_information["count"]
         ).acquire()  # acquire sem
-        debug_print(f"I: Done Waiting.... Put in Execution Queue")
+        logger.info(f"Done Waiting.... Put in Execution Queue")
         await self.executor_queue.put((host_information, evt))
         return
 
-    def recv_event(self, evt: star.Event):
+    def recv_event(self, evt: star.Event, task_id: star.TaskIdentifier):
         """OUTSIDE API. Consume a receiving event.
 
         Args:
             evt (star.Event): Receiving event.
         """
         assert isinstance(evt, star.Event)
-        f = asyncio.run_coroutine_threadsafe(self.recv_event_coro(evt), self.async_loop)
+        f = asyncio.run_coroutine_threadsafe(
+            self.recv_event_coro(evt, task_id), asyncio.get_event_loop()
+        )
 
     async def executor_loop(self):
         """ASYNC TASK. Handle the executor queue and pool"""
+        logger.debug("Executor Loop Running")
         with concurrent.futures.ThreadPoolExecutor() as pool:
             while True:
                 item = await self.executor_queue.get()
@@ -195,16 +142,17 @@ class Node:
                 task_id = item[0]["task_id"]
                 evt = item[1]
 
-                debug_print(
-                    f"I: EX Queue: {evt.target}. Remaining tast compute units: {sem._value}. Total Across All Tasks Queue: {pool._work_queue.qsize()}. Total Workers Alloc: {len(pool._threads)} Total Workers: {pool._max_workers}."
+                logger.info(
+                    f"EX Queue: {evt.target}. Remaining tast compute units: {sem._value}. Total Across All Tasks Queue: {pool._work_queue.qsize()}. Total Workers Alloc: {len(pool._threads)} Total Workers: {pool._max_workers}."
                 )
+                logger.debug(f"{func}")
 
                 if not (requires_task_id):
-                    out_future = self.async_loop.run_in_executor(
+                    out_future = asyncio.get_event_loop().run_in_executor(
                         pool, functools.partial(func, evt)
                     )
                 else:
-                    out_future = self.async_loop.run_in_executor(
+                    out_future = asyncio.get_event_loop().run_in_executor(
                         pool, functools.partial(func, evt, task_id)
                     )
 
@@ -227,22 +175,28 @@ class Node:
             evt.system["initial"] = False
 
         sem.release()
-        debug_print(
-            f"I: EX Done. Send Target: {evt.target}. Now, remaining compute units: {sem._value}."
+        logger.info(
+            f"EX Done. Send Target: {evt.target}. Now, remaining compute units: {sem._value}."
         )
-        self.recv_event(evt)
+
+        # assume the condition is none. It will already have condition or not
+        async def send_quick(evt):
+            await self.out_unified_queue.put(evt)
+
+        asyncio.run_coroutine_threadsafe(send_quick(evt), loop=asyncio.get_event_loop())
 
     async def output_loop(self):
         """ASYNC TASK. Send output events."""
         while True:
-            item = await self.out_unified_queue.get()
-            debug_print("I: SENDING: ", item)
+            item: star.Event = await self.out_unified_queue.get()
+            logger.debug(f"SENDING: {item}")
+            await self.send_event_handler(item)
 
     async def debug_loop(self):
         """ASYNC TASK. Is Alive Debug Loop"""
         while True:
             print(".")
-            await asyncio.sleep(1)
+            await self.async_loop.sleep(1)
 
     async def await_recv(self, evt: star.Event) -> None:
         """ASYNC COROUTINE. Handle system await events generated by AwaitEvent()
@@ -259,7 +213,7 @@ class Node:
 
         # see if event is for matching function!
         if evt.target != evt.system["previous"].target:
-            debug_print("I: Drop Await return. Event is for different target")
+            logger.warning("Drop Await return. Event is for different target")
             return  # Drop. Event is for different target.
 
         trigger = evt.system["trigger"]
@@ -288,8 +242,8 @@ class Node:
         Returns:
             star.Event: event.
         """
-        debug_print(
-            f"D: Trigger created: {cast(threading.Event, self.await_triggers[trigger]['alert']).is_set()}"
+        logger.info(
+            f"Trigger created: {cast(threading.Event, self.await_triggers[trigger]['alert']).is_set()}"
         )
         i = cast(threading.Event, self.await_triggers[trigger]["alert"]).wait(
             timeout=timeout
@@ -346,7 +300,7 @@ class Node:
 
     async def start_loops(self):
         """ASYNC COROUTINE. Start the various ASYNC Tasks"""
-        debug_print("D: Start Loops")
+        logger.info("Start Loops")
         executor_loop_t = asyncio.create_task(self.executor_loop())
         output_loop_t = asyncio.create_task(self.output_loop())
         # debug_loop_t = asyncio.create_task(self.debug_loop())
@@ -354,23 +308,12 @@ class Node:
         self.async_tasks.add(output_loop_t)
         # self.async_tasks.add(debug_loop_t)
 
-    def _run_thread(self):
-        """Run the asyncio event loop here."""
-        debug_print("D: Running")
-        asyncio.set_event_loop(self.async_loop)
-        self.async_loop.set_debug(True)
-        self.async_loop.run_forever()
-
-    def run(self) -> Thread:
-        """Create the running thread and start it.
-
-        Returns:
-            Thread: Event loop thread.
-        """
-        self.async_engine = Thread(target=self._run_thread)
-        self.async_engine.start()
-        asyncio.run_coroutine_threadsafe(self.start_loops(), self.async_loop)
-        return self.async_engine
+    # def _run_thread(self):
+    #     """Run the asyncio event loop here."""
+    #     logger.info("Running")
+    #     # asyncio.set_event_loop(self.async_loop)
+    #     self.async_loop.set_debug(True)
+    #     self.async_loop.run_forever()
 
     def return_component_bindings(self) -> dict:
         """Return function bindings for star.components
@@ -391,16 +334,16 @@ class Node:
 
 ############################### LOAD PROGRAM
 
+if __name__ == "__main__":
+    pgrm = star.Program(read_pgrm="my_program.star")
+    print(
+        f"Opening program '{pgrm.saved_data['pgrm_name']}' from {pgrm.saved_data['date_compiled']}\n"
+    )
 
-pgrm = star.Program(read_pgrm="my_list_program.star")
-print(
-    f"I: Opening program '{pgrm.saved_data['pgrm_name']}' from {pgrm.saved_data['date_compiled']}\n"
-)
+    compute_node = NodeEngine()
+    star.IS_ENGINE = True
+    star.BINDINGS = compute_node.return_component_bindings()
+    # exc = compute_node.import_program(pgrm)
+    # compute_node.start_program(exc, local=True)
 
-compute_node = Node()
-star.IS_ENGINE = True
-star.BINDINGS = compute_node.return_component_bindings()
-exc = compute_node.import_program(pgrm)
-compute_node.start_program(exc, local=True)
-
-compute_node.run_thread.join()
+    # compute_node.run_thread.join()

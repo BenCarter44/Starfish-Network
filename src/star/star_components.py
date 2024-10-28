@@ -1,12 +1,16 @@
 # Register tasks (hash: name, condition)
 
+import copy
 import datetime
 import functools
 import time
 from typing import Any, Optional, Callable
 from typing_extensions import Self
-import dill  # typing: ignore
+import dill  # type: ignore
 import uuid
+import logging
+
+logger = logging.getLogger(__name__)
 
 # Currently global for program.
 task_list: dict["TaskIdentifier", tuple[Callable, bool]] = {}
@@ -19,17 +23,23 @@ class TaskIdentifier:
     """Struct representing unique task with name and condition function"""
 
     def __init__(
-        self, task_name: str, condition_func: Optional[Callable] = None
+        self,
+        task_name: str,
+        *,
+        condition_func: Optional[str] = None,
+        decision_label: Optional[int] = None,
+        decision_tree=False,
     ) -> None:
         """Create task identifier given name and condition function
 
         Args:
             task_name (str): Name of task. Name used in .set_target()
-            condition_func (Callable, optional): Condition function for task. Defaults to None.
+            condition_func (str, optional): Condition function for task. Defaults to None.
         """
-        self.hash = hash((task_name, condition_func))
         self.name = task_name
         self.condition = condition_func
+        self.is_decision_func = decision_tree
+        self.decision_label = decision_label
 
     def __hash__(self):
         """Compute hash equivalent of task.
@@ -37,7 +47,15 @@ class TaskIdentifier:
         Returns:
             int: hash(self)
         """
-        return self.hash
+        return hash(
+            (self.name, self.condition, self.is_decision_func, self.decision_label)
+        )
+
+    def __repr__(self):
+        if self.is_decision_func:
+            return f"<{self.name} - Cond: {self.condition} - D:MASTER>"
+        else:
+            return f"<{self.name} - Cond: {self.condition} - D:{self.decision_label}>"
 
     def __eq__(self, other: object) -> bool:
         """Compare if some task refers to this one.
@@ -51,10 +69,12 @@ class TaskIdentifier:
         if not (isinstance(other, TaskIdentifier)):
             return False
         return (
-            self.hash == other.hash
+            self.__hash__() == other.__hash__()
             and self.name == other.name
             and self.condition
             == other.condition  # Not perfect. This can be None == None
+            and self.is_decision_func == other.is_decision_func
+            and self.decision_label == other.decision_label
         )
 
 
@@ -81,13 +101,29 @@ class Event:
         """Set system parameters to empty dictionary"""
         self.system = {}
 
-    def set_target(self, target: str) -> None:
+    def set_target(self, target: TaskIdentifier | str) -> None:
         """Set target task of event.
 
         Args:
             target (str): Label for task.
         """
-        self.target = target  # for routing
+        if isinstance(target, str):
+            self.target = TaskIdentifier(target, decision_tree=False)
+        else:
+            self.target = target  # for routing
+
+    def set_conditional_target(self, target: TaskIdentifier | str) -> None:
+        """Set target task of event.
+
+        Args:
+            target (str): Label for task.
+        """
+        if isinstance(target, str):
+            self.target = TaskIdentifier(
+                target, decision_tree=True
+            )  # goes to master condition tree.
+        else:
+            self.target = target  # for routing
 
 
 class AwaitGroup:
@@ -245,15 +281,6 @@ def dispatch_event(evt: Event) -> None:
     return f(evt)
 
 
-class Task:
-    """A Task Struct"""
-
-    def __init__(self, task_id: TaskIdentifier, func):
-        self.task_id = task_id
-        self.func = func
-        self.name = task_id.name
-
-
 class Program:
     """A program struct"""
 
@@ -267,18 +294,18 @@ class Program:
         """Create Program Object
 
         Args:
-            task_list (Optional[dict[TaskIdentifier, tuple[Callable, bool]]], optional): Task list. Generated from decorator. Defaults to None.
+            task_list (Optional[dict[TaskIdentifier, tuple[str, bool]]], optional): Task list. Generated from decorator. Defaults to None.
             read_pgrm (Optional[str], optional): String of binary program package. Defaults to None.
             start_event (Optional[Event], optional): Initial Event When Program Loaded. Defaults to None.
         """
         self.task_list = task_list
-        self.saved_data: dict[str, Any] = {}
-        if read_pgrm is not None:
-            self.read_program(read_pgrm)
-
         self.start = None
         if start_event is not None:
             self.start = start_event
+
+        self.saved_data: dict[str, Any] = {}
+        if read_pgrm is not None:
+            self.read_program(read_pgrm)
 
     def save(self, fname: str):
         """Save program as binary program package
@@ -292,7 +319,7 @@ class Program:
             save_data["task_list"] = self.task_list  # type: ignore
             save_data["start"] = self.start  # type: ignore
             save_data["pgrm_name"] = fname  # type: ignore
-            dill.dump(save_data, f, fmode=dill.CONTENTS_FMODE)
+            dill.dump(save_data, f, fmode=dill.FILE_FMODE, recurse=True)
 
     def read_program(self, fname: str):
         """Read program from binary program package
@@ -302,20 +329,21 @@ class Program:
         """
         with open(fname, "rb") as f:
             dat = dill.load(f)
-            # print(f"Opened program compiled on {dat['date_compiled']}")
+            # logger.info(f"Opened program compiled on {dat['date_compiled']}")
             self.task_list = dat["task_list"]
             self.saved_data = dat
+            self.start = dat["start"]
 
 
 ############################################################
 
 
-def task(name: str, condition: Optional[Callable] = None, pass_task_id=False):
+def task(name: str, pass_task_id=False):
     """Decorator for building a task
 
     Args:
         name (str): Name of task. Can use in star.Event().set_target()
-        condition (Optional[Callable], optional): Function that returns bool to select task. Defaults to None (no condition)
+        condition (Optional[str], optional): Function that returns bool to select task. Defaults to None (no condition)
         pass_task_id (bool, optional): Pass TaskID when engine runs it. Defaults to False.
     """
 
@@ -328,10 +356,40 @@ def task(name: str, condition: Optional[Callable] = None, pass_task_id=False):
             )  # do not pass arguments. Do func(*args, **kwargs) if want args.
 
         # Register Task with function=wrap, name=name, condition=condition
-        task_condition = TaskIdentifier(name, condition)
+        task_condition = TaskIdentifier(name, condition_func=None)
 
         task_list[task_condition] = (f_wrap, pass_task_id)
-        print(
+        logger.info(
+            f"Registered task {name} with no condition with ID: {hash(task_condition)}"
+        )
+
+        return f_wrap
+
+    return wrap
+
+
+def conditional_task(name: str, condition: str, pass_task_id=False):
+    """Decorator for building a task
+
+    Args:
+        name (str): Name of task. Can use in star.Event().set_target()
+        condition (Optional[str], optional): Function that returns bool to select task. Defaults to None (no condition)
+        pass_task_id (bool, optional): Pass TaskID when engine runs it. Defaults to False.
+    """
+
+    def wrap(func):
+        # @functools.wraps(func)
+        def f_wrap(*args, **kwargs):
+            # func(*args, **kwargs)
+            return func(
+                *args, **kwargs
+            )  # do not pass arguments. Do func(*args, **kwargs) if want args.
+
+        # Register Task with function=wrap, name=name, condition=condition
+        task_condition = TaskIdentifier(name, condition_func=condition)
+
+        task_list[task_condition] = (f_wrap, pass_task_id)
+        logger.info(
             f"Registered task {name} with condition {condition} with ID: {hash(task_condition)}"
         )
 
@@ -349,6 +407,65 @@ def compile(start_event: Event) -> Program:
     Returns:
         Program: Program Object
     """
-    program = Program(task_list=task_list, start_event=start_event)
+
+    # go through each task. See the condition. If multiple, create a decision event
+    dup_cvt: dict[str, dict[str, tuple[Callable, bool]]] = {}
+    for task, func_pair in task_list.items():
+        if task.condition is not None:
+            if task.name not in dup_cvt:
+                dup_cvt[task.name] = {}
+            dup_cvt[task.name][task.condition] = func_pair
+
+    processed = set()
+    new_task_list = {}
+    for task, func_pair in task_list.items():
+        if task.name not in dup_cvt:
+            new_task_list[task] = func_pair
+            continue
+        if task.name in processed:
+            continue
+        processed.add(task.name)
+
+        # duplicate tasks or has condition. Requires a
+        conditions = dup_cvt[task.name]
+
+        decision_tasks: dict[TaskIdentifier, tuple[Callable, bool]] = {}
+        decision_label = 0
+        for condition in conditions:
+            decision_label += 1
+            decision_tasks[
+                TaskIdentifier(
+                    task.name, condition_func=condition, decision_label=decision_label
+                )
+            ] = conditions[condition]
+
+        def build_func(conditions):
+            conditions_tmp = {}
+            for ti in decision_tasks:
+                condition_str = ti.condition
+                conditions_tmp[ti] = eval(condition_str, {}, {})
+
+                # decision task --> lambda
+
+            def custom_decision_tree(evt):
+                e = evt
+                for task_id_out, lambda_condition in conditions_tmp.items():
+                    if lambda_condition(evt):
+                        e.set_target(task_id_out)
+                        break
+                return e
+
+            return custom_decision_tree
+
+        new_task = TaskIdentifier(task.name, decision_tree=True)
+        new_task_list[new_task] = (build_func(conditions), False)
+
+        for decision, func_pair2 in decision_tasks.items():
+            new_task_list[decision] = func_pair2
+
+    for task in new_task_list:
+        logger.info(f"Registered {task} with function {new_task_list[task]}")
+
+    program = Program(task_list=new_task_list, start_event=start_event)
     # program.show_dependencies()
     return program
