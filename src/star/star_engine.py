@@ -23,54 +23,47 @@ class ProgramExecutor:
 
 
 class NodeEngine:
-    def __init__(self):
+    def __init__(self, node_id):
         """Create Node with compute workers and engine units."""
         self.total_engine_units = 1000
         self.count_host = 0
 
         self.hosted_tasks: dict[
-            star.TaskIdentifier,
-            dict[str, tuple[Callable, bool] | asyncio.Semaphore | star.TaskIdentifier],
-        ] = {
-            "test": {"task": (print, False), "count": asyncio.Semaphore(20)}  # type: ignore
-        }
-        self.hosted_tasks = {}
+            star.StarTask, tuple[star.StarTask, asyncio.Semaphore]
+        ] = {}
 
         self.out_unified_queue: asyncio.Queue[star.Event] = asyncio.Queue()
-        self.executor_queue: asyncio.Queue[Any] = asyncio.Queue()
+        self.executor_queue: asyncio.Queue[tuple[star.StarTask, star.Event]] = (
+            asyncio.Queue()
+        )
 
-        self.node_id = uuid.uuid4()
+        self.node_id = node_id
         self.await_triggers: dict[
-            tuple[uuid.UUID, star.TaskIdentifier],
+            tuple[uuid.UUID, star.StarTask],
             dict[str, threading.Event | star.Event | None],
         ] = {}
 
         star.IS_ENGINE = True
-        star.BINDINGS = self.return_component_bindings()
 
         # asyncio loop
         self.async_tasks = set()
         self.send_event_handler = lambda evt: evt  # replaced by Node.
+        self.loop = asyncio.get_event_loop()
+        star.BINDINGS = self.return_component_bindings()
 
-    def import_task(self, task_id: star.TaskIdentifier, func: Callable, give_id=False):
+    def import_task(self, task: star.StarTask):
         """Import task into engine.
 
         Args:
-            task_id (star.TaskIdentifier): Task ID
-            func (Callable): Task function
-            give_id (bool): Pass ID or not (default: False)
+            task: (star.StarTask) Task to allocate
 
         """
-        if task_id in self.hosted_tasks:
+        if task in self.hosted_tasks:
             return
 
         self.count_host += 1
 
-        self.hosted_tasks[task_id] = {
-            "task": (func, give_id),
-            "count": asyncio.Semaphore(1000),
-            "task_id": task_id,
-        }
+        self.hosted_tasks[task] = (task, asyncio.Semaphore(1000))
 
     def start_program(self, pgrm_exc: ProgramExecutor, local=False):
         """Start program in engine by firing the start event from program.
@@ -88,81 +81,86 @@ class NodeEngine:
 
     ########################## Engine.
 
-    async def recv_event_coro(
-        self, evt: star.Event, task_id_input: star.TaskIdentifier
-    ):
+    async def recv_event_coro(self, evt: star.Event):
         """ASYNC COROUTINE. Consume a receiving event. Send event to the task.
 
         Args:
             evt (star.Event): Receiving event.
         """
-        if evt.target != task_id_input:
-            logger.error("TaskID different than evt.target!")
 
-        host_information = self.hosted_tasks.get(task_id_input)
-        if host_information is None:
-            logger.error("Passed in task ID but not hosting!")
-            raise ValueError("Passed in task ID but not hosting!")
+        # go here. Now, the event will have an empty user and process bytes. (if from engine)
+        # if from network, it will have filled out user and process bytes
 
-        if cast(asyncio.Semaphore, host_information["count"]).locked():
+        if (
+            evt.system is not None
+            and evt.system["await"]
+            and not (evt.system["initial"])
+        ):
+            logger.info("Received sys callback")
+            await self.await_recv(evt)
+            return
+
+        incoming_target = evt.target
+
+        if incoming_target not in self.hosted_tasks:
+            logger.debug("Passed in task ID but not hosting. Forwarding")
+            await self.out_unified_queue.put(evt)
+            return
+
+        if self.hosted_tasks[incoming_target][1].locked():
             # no resources left!
             logger.info(
-                f"Received event: {evt.target}. No compute units left! Send to network"
+                f"Received event: {evt.target}. {self.node_id} No compute units left! Send to network"
             )
             await self.out_unified_queue.put(evt)
             return
 
-        logger.info(f"Received event: {evt.target}. Waiting....")
-        await cast(
-            asyncio.Semaphore, host_information["count"]
-        ).acquire()  # acquire sem
+        logger.info(f"Received event: {evt.target}. {self.node_id} Waiting....")
+        await self.hosted_tasks[incoming_target][1].acquire()  # acquire sem
         logger.info(f"Done Waiting.... Put in Execution Queue")
-        await self.executor_queue.put((host_information, evt))
+        exc_task = self.hosted_tasks[incoming_target][0]
+        await self.executor_queue.put((exc_task, evt))
         return
 
-    def recv_event(self, evt: star.Event, task_id: star.TaskIdentifier):
+    def recv_event(self, evt: star.Event):
         """OUTSIDE API. Consume a receiving event.
 
         Args:
             evt (star.Event): Receiving event.
         """
         assert isinstance(evt, star.Event)
-        f = asyncio.run_coroutine_threadsafe(
-            self.recv_event_coro(evt, task_id), asyncio.get_event_loop()
-        )
+        f = asyncio.run_coroutine_threadsafe(self.recv_event_coro(evt), self.loop)
 
     async def executor_loop(self):
         """ASYNC TASK. Handle the executor queue and pool"""
         logger.debug("Executor Loop Running")
         with concurrent.futures.ThreadPoolExecutor() as pool:
             while True:
-                item = await self.executor_queue.get()
-                func, requires_task_id = item[0]["task"]
-                sem = item[0]["count"]
-                task_id = item[0]["task_id"]
-                evt = item[1]
+                task, evt = await self.executor_queue.get()  # get the task
+                func = task.get_callable()
+                if func is None:
+                    logger.error("Function is NONE! skipping.")
+                    continue
 
                 logger.info(
-                    f"EX Queue: {evt.target}. Remaining tast compute units: {sem._value}. Total Across All Tasks Queue: {pool._work_queue.qsize()}. Total Workers Alloc: {len(pool._threads)} Total Workers: {pool._max_workers}."
+                    f"EX Queue: {evt}. Total Workers Alloc: {len(pool._threads)} Total Workers: {pool._max_workers}."
                 )
-                logger.debug(f"{func}")
+                logger.info(f"Run: {task}")
 
-                if not (requires_task_id):
+                if not (task.require_param):
                     out_future = asyncio.get_event_loop().run_in_executor(
                         pool, functools.partial(func, evt)
                     )
                 else:
                     out_future = asyncio.get_event_loop().run_in_executor(
-                        pool, functools.partial(func, evt, task_id)
+                        pool, functools.partial(func, evt, task)
                     )
 
-                out_future.add_done_callback(functools.partial(self.finish_task, sem))
+                out_future.add_done_callback(functools.partial(self.finish_task, task))
                 # await send_to_out_queue(out)
 
     def finish_task(
-        self,
-        sem: asyncio.Semaphore,
-        evt_future: concurrent.futures.Future[star.Event],
+        self, task: star.StarTask, evt_future: concurrent.futures.Future[star.Event]
     ):
         """Callback. Send out event generated from task.
 
@@ -170,20 +168,19 @@ class NodeEngine:
             evt (star.Event): Receiving event.
         """
         evt = evt_future.result()
-
         if evt.system is not None and evt.system["await"] and evt.system["initial"]:
             evt.system["initial"] = False
 
-        sem.release()
-        logger.info(
-            f"EX Done. Send Target: {evt.target}. Now, remaining compute units: {sem._value}."
-        )
+        # clear out the user/proc id and replace it with the task.
+        evt.target.attach_to_process_task(task)
+
+        logger.info(f"EX Done. Send Target: {evt.target}.")
 
         # assume the condition is none. It will already have condition or not
         async def send_quick(evt):
             await self.out_unified_queue.put(evt)
 
-        asyncio.run_coroutine_threadsafe(send_quick(evt), loop=asyncio.get_event_loop())
+        asyncio.run_coroutine_threadsafe(send_quick(evt), loop=self.loop)
 
     async def output_loop(self):
         """ASYNC TASK. Send output events."""
@@ -205,10 +202,12 @@ class NodeEngine:
             evt (star.Event): event returned by subject of await event call.
         """
         if evt.system["node"] != self.node_id or not (evt.system["await"]):
+            logger.warning("System node mismatch")
             return  # Drop. Does not refer to me!
 
         # look up trigger in table. If not False, ignore
         if evt.system["trigger"] not in self.await_triggers:
+            logger.warning("Trigger unknown")
             return  # Drop. Trigger not found.
 
         # see if event is for matching function!
@@ -218,22 +217,24 @@ class NodeEngine:
 
         trigger = evt.system["trigger"]
         if cast(threading.Event, self.await_triggers[trigger]["alert"]).is_set():
+            logger.warning("Already triggered! Drop!")
             return  # Already triggered! Drop!
 
         evt.clear_system()
 
         self.await_triggers[trigger]["data"] = evt
+        logger.info(f"GOT: {evt.data}")
         cast(
             threading.Event, self.await_triggers[trigger]["alert"]
         ).set()  # alert that you're done!
 
     def await_trigger(
-        self, trigger: tuple[uuid.UUID, star.TaskIdentifier], timeout=2.0
+        self, trigger: tuple[uuid.UUID, star.StarTask], timeout=2.0
     ) -> star.Event:
         """Wait for await_event trigger. Used by AwaitEvent
 
         Args:
-            trigger (tuple[uuid.UUID, star.TaskIdentifier]): Trigger ID
+            trigger (tuple[uuid.UUID, star.StarTask]): Trigger ID
             timeout (float, optional): Timeout for waiting. Defaults to 2.0.
 
         Raises:
@@ -255,12 +256,12 @@ class NodeEngine:
 
     def await_trigger_check(
         self,
-        trigger: tuple[uuid.UUID, star.TaskIdentifier],
+        trigger: tuple[uuid.UUID, star.StarTask],
     ) -> bool:
         """Check if trigger has been received.
 
         Args:
-            trigger (tuple[uuid.UUID, star.TaskIdentifier]): Trigger ID
+            trigger (tuple[uuid.UUID, star.StarTask]): Trigger ID
 
         Returns:
             bool: Trigger received.
@@ -268,19 +269,17 @@ class NodeEngine:
         # TODO: Create struct for triggers.
         return cast(threading.Event, self.await_triggers[trigger]["alert"]).is_set()
 
-    def create_trigger(
-        self, task_id: star.TaskIdentifier
-    ) -> tuple[uuid.UUID, star.TaskIdentifier]:
+    def create_trigger(self, task_id: star.StarTask) -> tuple[uuid.UUID, star.StarTask]:
         """Create trigger for TaskID.
 
         Args:
-            task_id (star.TaskIdentifier): TaskID
+            task_id (star.StarTask): TaskID
 
         Returns:
-            tuple[uuid.UUID, star.TaskIdentifier]: TriggerID
+            tuple[uuid.UUID, star.StarTask]: TriggerID
         """
         original_task_id = task_id
-        trigger_id = (uuid.uuid4(), original_task_id)
+        trigger_id = (uuid.uuid4(), original_task_id.get_id())
 
         self.await_triggers[trigger_id] = {
             "alert": threading.Event(),
@@ -290,11 +289,11 @@ class NodeEngine:
 
         return trigger_id
 
-    def clean_trigger(self, trigger: tuple[uuid.UUID, star.TaskIdentifier]):
+    def clean_trigger(self, trigger: tuple[uuid.UUID, star.StarTask]):
         """Remove trigger from engine
 
         Args:
-            trigger (tuple[uuid.UUID, star.TaskIdentifier]): TriggerID
+            trigger (tuple[uuid.UUID, star.StarTask]): TriggerID
         """
         del self.await_triggers[trigger]
 

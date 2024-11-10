@@ -2,6 +2,8 @@ import asyncio
 from typing import cast
 import dill  # type: ignore
 import logging
+
+import jsonpickle
 from node_queue_interface import Node_Request, Node_Response
 
 logger = logging.getLogger(__name__)
@@ -63,11 +65,16 @@ async def TCP_Server(
     connection_ID = connection_counter
     internal_server_queues[connection_ID] = asyncio.Queue()
     connection_counter += 1
-    logger.debug("Transport: Got connection!")
+    logger.debug("Transport:: Got connection!")
 
     # Obtain REQUEST
     request_data = await reader.read()
+    logger.debug(f"Received RAW")
+    # with dill.detect.trace():
     request_headers, request_body = dill.loads(request_data)
+
+    logger.debug(f"Received HEADERS: {request_headers}")
+    logger.debug(f"Received BODY: {request_body}")
 
     routing = {
         "ADDR": addr,
@@ -81,7 +88,9 @@ async def TCP_Server(
 
     # RESPONSE
     item = await internal_server_queues[connection_ID].get()
-    out_data = dill.dumps((item.headers, item.body))
+    out_data = dill.dumps(
+        (item.headers, item.body), fmode=dill.FILE_FMODE, recurse=True
+    )
     writer.write(out_data)
     writer.write_eof()
     await writer.drain()
@@ -131,11 +140,15 @@ async def TCP_Client(
     # original_data_request.connID = connection_counter
 
     # REQUEST (a response from NodeComm)
+
+    out_data = dill.dumps(
+        (data_request.headers, data_request.body), fmode=dill.FILE_FMODE, recurse=True
+    )
     logger.debug(f"SEND OUT: {data_request}")
-    out_data = dill.dumps((data_request.headers, data_request.body))
     writer.write(out_data)
     writer.write_eof()
     await writer.drain()
+    logger.debug(f"SEND OUT FINISH... waiting for read.")
 
     # RESPONSE (a request to NodeComm)
     read_data = await reader.read()
@@ -201,6 +214,7 @@ class Generic_TCP:
 
     async def handle_receiving_queue(self):
         """ASYNC TASK. Handle receiving queue."""
+        debug_counter = 0
         while True:
             try:
                 logger.debug(f"Wait... {id(self.receiving_queue)}")
@@ -219,9 +233,12 @@ class Generic_TCP:
                         logger.warning("No DEST header defined on CONNECT!")
                         continue
                     addr: Star_Address = x_system_dest
+                    debug_counter += 1
+                    logger.debug(f"Open Connection {debug_counter}")
                     asyncio.create_task(
-                        self.open_connection(addr, item)
+                        self.open_connection(addr, item, debug_counter)
                     )  # non blocking!
+                    logger.debug("Open Connection R---")
 
                 if x_system == "FEEDBACK":
                     x_system_origin = item.routing.get("ORIGINAL")
@@ -243,13 +260,16 @@ class Generic_TCP:
             except Exception as e:
                 logger.critical(e)
 
-    async def open_connection(self, addr: Star_Address, data_item: Node_Response):
+    async def open_connection(
+        self, addr: Star_Address, data_item: Node_Response, debug
+    ):
         """ASYNC. Open connection out to address
 
         Args:
             addr (Star_Address): Address to connect to
             data_item (Node_Response): Response to send to connection.
         """
+        logger.debug(f"Open Conn R1 {debug}")
         reader, writer = await asyncio.open_connection(
             host=addr.host,
             port=addr.port,

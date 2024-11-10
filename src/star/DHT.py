@@ -64,7 +64,7 @@ class DHT_Response:
         self.neighbor_addrs = addrs
 
     def __str__(self):
-        return f"{self.response_code}: {self.data} - {self.addrs}"
+        return f"{self.response_code}: {self.data} - {self.neighbor_addrs}"
 
 
 class DHT:
@@ -89,23 +89,29 @@ class DHT:
     def update_addresses(self, addr):
         self.addr = addr
 
-    def get(self, key, neighbors=3):
+    def get(self, key, neighbors=3, hash_func_in=None):
+
         if key in self.data:
             return DHT_Response("SELF_FOUND", self.data[key], [])
         # Not found, key probably on another node?
 
-        key_hsh = hash_func(key)
+        if hash_func_in is None:
+            primary_hash_function = hash_func
+        else:
+            primary_hash_function = hash_func_in
 
+        key_hsh = primary_hash_function(key)
+
+        # convert
         def diff_hash(obj):
-            obj_hash = hash_func(obj)
+            obj_hash = obj  # directly xor the address. # primary_hash_function(obj)
             return xor(obj_hash, key_hsh)
 
         closest = sorted(self.addr, key=diff_hash)  # sort by hash.
 
-        logger.debug(f"{'00'*32} - {key_hsh.hex()} - MAIN KEY {key}")
+        logger.debug(f"{key_hsh.hex()} - MAIN KEY")
         for x in closest:
-            obj_hsh = hash_func(x)
-            logger.debug(f"{diff_hash(x).hex()} - {obj_hsh.hex()} - {x}")
+            logger.debug(f"{diff_hash(x).hex()} - {x.hex()}")
 
         if len(closest) < neighbors:
             close_neighbors = closest
@@ -118,23 +124,28 @@ class DHT:
         self.data[key] = val
         self.cached_data.add(key)
 
-    def set(self, key, val, neighbors=3, dry_run=False) -> DHT_Response:
+    def set(
+        self, key, val, neighbors=3, post_to_cache=True, hash_func_in=None
+    ) -> DHT_Response:
         # store in myself. Then, see if there are any closer people to also send to.
 
-        key_hsh = hash_func(key)
-        logger.debug(f"Key HSH: {key_hsh.hex()}")
+        if hash_func_in is None:
+            primary_hash_function = hash_func
+        else:
+            primary_hash_function = hash_func_in
+
+        key_hsh = primary_hash_function(key)
 
         # convert
         def diff_hash(obj):
-            obj_hash = hash_func(obj)
+            obj_hash = obj  # directly xor the address. # primary_hash_function(obj)
             return xor(obj_hash, key_hsh)
 
         closest = sorted(self.addr, key=diff_hash)  # sort by hash.
 
-        logger.debug(f"{'00'*32} - {key_hsh.hex()} - MAIN KEY {key}")
+        logger.debug(f"{key_hsh.hex()} - MAIN KEY")
         for x in closest:
-            obj_hsh = hash_func(x)
-            logger.debug(f"{diff_hash(x).hex()} - {obj_hsh.hex()} - {x!r}")
+            logger.debug(f"{diff_hash(x).hex()} - {x.hex()}")
 
         if len(closest) < neighbors:
             close_neighbors = closest
@@ -144,7 +155,7 @@ class DHT:
         if self.my_address not in close_neighbors:
             # My node isn't in the close neighbors, so it's supposed to be
             # owned by another closer node.
-            if not (dry_run):
+            if post_to_cache:
                 self.cached_data.add(key)
                 self.data[key] = val
             return DHT_Response("NEIGHBOR_UPDATE_CACHE", (key, val), close_neighbors)
@@ -158,12 +169,10 @@ class DHT:
 
 if __name__ == "__main__":
 
-    a = star.TaskIdentifier("input", condition_func="lambda evt: evt.total % 2 == 0")
-    print(hash_func(a).hex())
-    ti = star.TaskIdentifier("input", condition_func="lambda evt: evt.total % 2 == 0")  # type: ignore
-    print(hash_func(ti).hex())
-
-    exit()
+    a = star.StarTask(b"input", False)
+    print(a.get_id())
+    b = star.StarTask(b"input2", True)  # type: ignore
+    print(b.get_id())
 
     addresses = [b"Address One", b"Address Two", b"Address Three"]
     dht_address_1 = DHT(addresses[0])
@@ -174,6 +183,7 @@ if __name__ == "__main__":
     dht_address_2.update_addresses(addresses)
     dht_address_3.update_addresses(addresses)
 
-    print(dht_address_1.set("Hello! One", 1, neighbors=2))
-    print(dht_address_2.set("Hello! Two", 2, neighbors=2))
-    print(dht_address_3.set("Hello! Three", 3, neighbors=2))
+    dht_address_1.set(
+        b, 1, neighbors=2, hash_func_in=star.task_hash, post_to_cache=False
+    )
+    print(dht_address_1.get(b, neighbors=2, hash_func_in=star.task_hash))

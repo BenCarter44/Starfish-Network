@@ -8,6 +8,7 @@ from star_engine import NodeEngine
 import star_components as star
 import sys
 import logging
+import uuid
 
 logger = logging.getLogger(__name__)
 
@@ -21,16 +22,16 @@ logger = logging.getLogger(__name__)
 class Node:
     """Does not ship with async loop integration..."""
 
-    def __init__(self, bin_addr: bytes) -> None:
+    def __init__(self, bin_addr: bytes, user_id: bytes) -> None:
         """Create a Node Communication Manager Object.
 
         Uses default asyncio event loop
         """
 
-        self.engine = NodeEngine()
+        self.engine = NodeEngine(bin_addr)
         star.BINDINGS = self.engine.return_component_bindings()
         self.engine.send_event_handler = self.send_event
-
+        self.user_id = user_id
         self.local_serving_addresses: dict[Star_Address, asyncio.Task] = {}
         self.receiving_queue: asyncio.Queue[Node_Request] = asyncio.Queue()
         self.engine_receiving_queue: queue.Queue[Node_Response] = (
@@ -60,31 +61,45 @@ class Node:
     async def start_engine(self):
         asyncio.create_task(self.engine.start_loops())
 
-    async def import_program(self, program: star.Program, tp: Generic_TCP):
-        task_list = program.task_list
+    async def start_program(self, program: star.Program, tp: Generic_TCP):
+        task_list: set[star.StarTask] = program.task_list
         if task_list is None:
             raise ValueError("No tasks in program!")
+        if program.start is None:
+            raise ValueError("No event to start the program!")
 
+        # create a process. Create a random UUID for the process. It can't conflict
+        # with already running processes for the user.
+        proc = star.StarProcess(
+            self.user_id,
+            uuid.uuid4().bytes,
+        )
         for task in task_list:
-            # task_id: value, then True/False if to pass task_id
-            # Allocate each task on the network.
-            await self.allocate_task(tp, task, task_list[task])
+            proc.add_task(task)
 
-        # self.clear_cache()  # for now, to force the distributed nature.
+        for task in proc.get_tasks():
+            assert isinstance(task, star.StarTask)
+            await self.allocate_task(tp, task)  # includes callable inside.
+            await asyncio.sleep(0.6)
 
-    async def start_program(self, program: star.Program):
+        program.start.target.attach_to_process(proc)
         await self.send_event(program.start)
+        self.clear_cache()  # for now, to force the distributed nature.
+        return proc
 
-    async def engine_allocate(self, key, body):
+    async def engine_allocate(self, task: star.StarTask):
         # key is TaskIdentifier
         # body is (func,bool)
-        key = cast(star.TaskIdentifier, key)
-        logger.info(f"Task {key} Allocated! on {self.bin_addr}")
-        self.engine.import_task(key, body[0], body[1])
+        logger.info(f"Task {task} Allocated! on {self.bin_addr!r}")
+        self.engine.import_task(task)
 
     async def send_event(self, evt: star.Event):
         ti = evt.target
-
+        if ti.user_id == star.ZERO_32 or ti.process_id == star.ZERO_32:
+            logger.warning("Dropping event. User/Process 0!")
+            logger.warning(ti)
+            return
+        logger.info(f"Send EVT target: {evt.data} {evt.target}")
         storage_address = await self.search_task(self.default_tp, ti)
         if storage_address is None:
             logger.warning("EVT NOT FOUND!")
@@ -127,14 +142,18 @@ class Node:
             asyncio.create_task(self.receive_queue_processor())
         self.default_tp = tp
 
-    async def allocate_task(self, tp: Generic_TCP, task_id, task_val):
+    async def allocate_task(self, tp: Generic_TCP, task: star.StarTask):
+        assert isinstance(task, star.StarTask)
         response = self.task_dht.set(
-            task_id, self.bin_addr, dry_run=True
-        )  # address of host. Don't actually store it.
+            task,
+            self.bin_addr,
+            post_to_cache=False,
+            hash_func_in=star.task_hash,
+        )  # address of host. Don't actually store it. (except if owned!)
         # send it to peers!
 
         if response.response_code == "NEIGHBOR_UPDATE_AND_OWN":
-            await self.engine_allocate(task_id, task_val)
+            await self.engine_allocate(task)
 
         peers = response.neighbor_addrs
         # logger.debug("PEERS: ", peers)
@@ -146,16 +165,15 @@ class Node:
             headers_send = {
                 "METHOD": "TASK_ALLOCATE",
                 "DHT_NODE_IGNORE": [self.bin_addr],
-                "DHT_KEY": task_id,
+                "DHT_KEY": task,
                 "FROM": self.bin_addr,
             }
-            logger.info(
-                f"Allocating task: [{task_id}]={task_val} - Send to peer {peer!r}"
-            )
-            await self.send_to(tp, ip_addr, headers_send, task_val)
+            logger.info(f"Allocating task: {task} - Send to peer {peer!r}")
+            await self.send_to(tp, ip_addr, headers_send, task)
+            await asyncio.sleep(0)
 
-    async def search_task(self, tp: Generic_TCP, task_id):
-        resp = self.task_dht.get(task_id)
+    async def search_task(self, tp: Generic_TCP, task_id: star.StarTask):
+        resp = self.task_dht.get(task_id, hash_func_in=star.task_hash)
         logger.debug(f"Search For Task: {task_id}")
         if resp.response_code == "SELF_FOUND":
             logger.debug(f"Search For Task: {task_id} - Found Local! {self.bin_addr!r}")
@@ -286,6 +304,7 @@ class Node:
 
         logger.debug(f"Send_to: {id(self.output_queues[tp_addr])}")
         await self.output_queues[tp_addr].put(connect_request)
+        await asyncio.sleep(0)
 
     ########################## Processing Requests/Routing Magic.
     # Analogous to the route def func's.
@@ -319,7 +338,9 @@ class Node:
         logger.debug(f"{self.bin_addr!r} Got EVENT from {headers['FROM']}")
         ti = headers["TASK_IDENTIFIER"]
 
-        self.engine.recv_event(item.body, task_id=ti)
+        evt = item.body
+
+        self.engine.recv_event(evt)
         routing = {"SYSTEM": "FEEDBACK", "ORIGINAL": item.routing}
         resp = Node_Response(routing=routing, headers={"METHOD": "CLOSE"}, body=None)
         await self.send_to_transport(item.routing["TP_ID"], resp)
@@ -340,7 +361,7 @@ class Node:
         ignore_nodes.append(self.bin_addr)
 
         res = self.task_dht.set(
-            key, self.bin_addr, dry_run=True
+            key, self.bin_addr, post_to_cache=False
         )  # don't actually store the body, store address.
         logger.debug(f"DHT returned: {res.response_code}")
         if res.response_code == "NEIGHBOR_UPDATE_CACHE":
@@ -365,8 +386,6 @@ class Node:
             # use onion method, meaning server makes request on behalf of client
             found = False
             found_addrs = []
-
-            logger.debug("SEND_OUTS: ", send_outs)
 
             for addr in send_outs:
                 # TODO: Only sends to one person. Because, if multiple, which person's response should send back to the host?
@@ -430,7 +449,7 @@ class Node:
 
         else:
             # Node owns it now!
-            await self.engine_allocate(key, item.body)
+            await self.engine_allocate(key)
 
             routing = {"SYSTEM": "FEEDBACK", "ORIGINAL": item.routing}
             headers = {
@@ -480,7 +499,7 @@ class Node:
         )
 
         # See if I have it, if not, get something closer
-        resp = self.task_dht.get(key)
+        resp = self.task_dht.get(key, hash_func_in=star.task_hash)
         if resp.response_code == "SELF_FOUND":
             # found!
             logger.debug(f"Found key [{key}] - local server")
@@ -533,14 +552,15 @@ class Node:
             if code == "FOUND":
                 chain = response.headers["CHAIN"]
                 logger.debug(f"Found key [{key}] - remote server {chain[-1]}")
-                resp = self.task_dht.set_cache(key, response.body)
+                self.task_dht.set_cache(key, response.body)
                 headers_response = {
+                    "METHOD": "TASK_SEARCH",
                     "CODE": "FOUND",
                     "DHT_KEY": key,
                     "CHAIN": chain,
                 }
                 routing = {"SYSTEM": "FEEDBACK", "ORIGINAL": item.routing}
-                body_response = resp.data
+                body_response = response.body  # relay back.
                 out = Node_Response(
                     routing=routing, headers=headers_response, body=response.body
                 )
@@ -611,16 +631,16 @@ if __name__ == "__main__":
         serve_addr4 = addr_table[b"Address Four"]
 
         if serve_first_two:
-            node_1 = Node(b"Address One")
-            node_2 = Node(b"Address Two")
+            node_1 = Node(b"Address One", b"USER ONE")
+            node_2 = Node(b"Address Two", b"USER ONE")
             logger.debug("Pizza")
             await node_1.start_engine()
             await node_2.start_engine()
         else:
-            node_1 = Node(b"Address Three")
-            node_2 = Node(b"Address Four")
+            node_1 = Node(b"Address Three", b"USER TWO")
+            node_2 = Node(b"Address Four", b"USER TWO")
             await node_1.start_engine()
-            await node_2.start_engine()
+            # await node_2.start_engine()
 
         if serve_first_two:
             tcp_ip_interface1 = Generic_TCP(serve_addr)
@@ -636,13 +656,19 @@ if __name__ == "__main__":
         await asyncio.sleep(5)
 
         if serve_first_two:
-            pgrm = star.Program(read_pgrm="my_program.star")
+            pgrm = star.Program(read_pgrm="my_list_program.star")
             logger.info(
                 f"I: Opening program '{pgrm.saved_data['pgrm_name']}' from {pgrm.saved_data['date_compiled']}\n"
             )
-            await node_1.import_program(pgrm, tcp_ip_interface1)
-            await asyncio.sleep(1)
-            await node_1.start_program(pgrm)
+            process = await node_1.start_program(pgrm, tcp_ip_interface1)
+
+        else:
+            await asyncio.sleep(10)
+            pgrm = star.Program(read_pgrm="file_program.star")
+            logger.info(
+                f"I: Opening program '{pgrm.saved_data['pgrm_name']}' from {pgrm.saved_data['date_compiled']}\n"
+            )
+            process = await node_1.start_program(pgrm, tcp_ip_interface1)
 
         # for x in range(1, 100):
         #     name = await asyncio.to_thread(input, "Wait......  1 \n")
@@ -666,5 +692,5 @@ if __name__ == "__main__":
     ch.setFormatter(CustomFormatter())
     logging.basicConfig(handlers=[ch], level=logging.INFO)
 
-    asyncio.get_event_loop().set_debug(True)
+    asyncio.get_event_loop().set_debug(False)
     asyncio.run(main())
