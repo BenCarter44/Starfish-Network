@@ -109,9 +109,11 @@ class DHT:
 
         closest = sorted(self.addr, key=diff_hash)  # sort by hash.
 
-        logger.debug(f"{key_hsh.hex()} - MAIN KEY")
-        for x in closest:
-            logger.debug(f"{diff_hash(x).hex()} - {x.hex()}")
+        # logger.debug(f"{key_hsh.hex().replace('0','')} - MAIN KEY")
+        # for x in closest:
+        #     tmp_hex = diff_hash(x).hex()
+        #     addr_hex = x.hex()
+        #     logger.debug(f"{tmp_hex.replace('0','')} - {addr_hex.replace('0','')}")
 
         if len(closest) < neighbors:
             close_neighbors = closest
@@ -143,9 +145,11 @@ class DHT:
 
         closest = sorted(self.addr, key=diff_hash)  # sort by hash.
 
-        logger.debug(f"{key_hsh.hex()} - MAIN KEY")
-        for x in closest:
-            logger.debug(f"{diff_hash(x).hex()} - {x.hex()}")
+        # logger.debug(f"{key_hsh.hex().replace('0','')} - MAIN KEY SET")
+        # for x in closest:
+        #     tmp_hex = diff_hash(x).hex()
+        #     addr_hex = x.hex()
+        #     logger.debug(f"{tmp_hex.replace('0','')} - {addr_hex.replace('0','')}")
 
         if len(closest) < neighbors:
             close_neighbors = closest

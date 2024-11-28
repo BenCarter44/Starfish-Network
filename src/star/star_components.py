@@ -52,10 +52,10 @@ def parse_task_from_id(task_id: bytes):
     if len(task_id) != 32 * 4:
         return None
 
-    user_id = task_id[0:32]
-    process_id = task_id[32:64]
-    name = task_id[64:96]
-    custom_bytes = task_id[96:]
+    custom_bytes = task_id[0:32]
+    user_id = task_id[32:64]
+    process_id = task_id[64:96]
+    name = task_id[96:]
     custom_bytes_window = 4 * 3
     custom_bytes = custom_bytes[-custom_bytes_window:]
 
@@ -109,14 +109,14 @@ class StarTask:
         self.callable = None
 
     def get_id(self):
-        # first 32 bytes are user bytes
-        # second 32 bytes are process ID bytes
-        # third 32 bytes are task bytes
-        # fourth 32 bytes are aux
+        # first 32 bytes are routing
+        # second 32 bytes are user bytes
+        # third 32 bytes are process ID bytes
+        # fourth 32 bytes are task bytes
 
         custom = struct.pack(">ii", self.version, self.subversion)  # not param.
         custom_bytes = pad_bytes(custom, 32)
-        return self.user_id + self.process_id + self.name + custom_bytes
+        return custom_bytes + self.user_id + self.process_id + self.name
 
     def __hash__(self):
         return hash(self.get_id())
@@ -167,11 +167,8 @@ class StarTask:
     def __repr__(self):
         hx = self.get_id()
         # use md5 to make it shorter
-        res = hashlib.md5(hx)
-
-        return (
-            f"<{self.nice_name} {res.hexdigest()}>\n{hx.hex()[0:128]}\n{hx.hex()[128:]}"
-        )
+        hx_nice = hx.hex().replace("0", "")
+        return f"<{self.nice_name} {hx_nice}>"
 
 
 logger = logging.getLogger(__name__)

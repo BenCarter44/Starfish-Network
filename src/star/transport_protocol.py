@@ -1,15 +1,37 @@
 import asyncio
-from typing import cast
+import binascii
+import os
+import string
+from typing import Optional, cast
 import dill  # type: ignore
 import logging
+import zmq
 
-import jsonpickle
+import zmq.asyncio
 from node_queue_interface import Node_Request, Node_Response
 
 logger = logging.getLogger(__name__)
 
 connection_counter = 0
 logger.info("HI!")
+
+
+def dump(msg: list[bytes]) -> None:
+    """Display raw output of zmq messages
+
+    Args:
+        msg (list[bytes]): zmq multipart message
+    """
+    for part in msg:
+        print("[%03d]" % len(part), end=" ")
+        try:
+            s_raw = part.decode("ascii")
+            for x in s_raw:
+                if x not in string.printable:
+                    raise ValueError
+            print(s_raw)
+        except (UnicodeDecodeError, ValueError) as e:
+            print(r"0x %s" % (binascii.hexlify(part, " ").decode("ascii")))
 
 
 class Star_Address:
@@ -44,38 +66,28 @@ class Star_Address:
 async def TCP_Server(
     reader: asyncio.StreamReader,
     writer: asyncio.StreamWriter,
-    output_queue: asyncio.Queue[Node_Request],
-    internal_server_queues: dict[int, asyncio.Queue[Node_Response]],
     transport_id: Star_Address,
+    ctx: zmq.asyncio.Context,
+    feedback_addr: str,
+    control_socket: zmq.asyncio.Socket,
 ):
-    """ASYNC Callback for when a client connects to the server port of the transport
-
-    Args:
-        reader (asyncio.StreamReader): Reader object of stream
-        writer (asyncio.StreamWriter): Writer object of stream
-        output_queue (asyncio.Queue[Node_Request]): Output Requests sent to node comm.
-        internal_server_queues (dict[int, asyncio.Queue[Node_Response]]): Received responses from node comm.
-        transport_id (Star_Address): Transport address (an identifier of the transport object calling this)
-    """
-
     global connection_counter
 
     transport_peer = writer.get_extra_info("peername")
     addr = Star_Address(transport_peer[0], transport_peer[1])
-    connection_ID = connection_counter
-    internal_server_queues[connection_ID] = asyncio.Queue()
+    connection_ID = str(connection_counter).encode("utf-8")
     connection_counter += 1
+
+    feedback_socket = ctx.socket(zmq.SUB)
+    feedback_socket.connect(feedback_addr)
+    feedback_socket.subscribe(connection_ID)
+
     logger.debug("Transport:: Got connection!")
 
     # Obtain REQUEST
     request_data = await reader.read()
-    logger.debug(f"Received RAW")
     # with dill.detect.trace():
     request_headers, request_body = dill.loads(request_data)
-
-    logger.debug(f"Received HEADERS: {request_headers}")
-    logger.debug(f"Received BODY: {request_body}")
-
     routing = {
         "ADDR": addr,
         "CONN_ID": connection_ID,
@@ -84,20 +96,33 @@ async def TCP_Server(
     }
     rq = Node_Request(routing=routing, headers=request_headers, body=request_body)
 
-    await output_queue.put(rq)
+    logger.debug("Transport:: Send data to node comm. ")
+    # FORMAT:
+    # 0: bytes: STOP/OK/FEEDBACK
+    # 1: routing dill
+    # 2: header dill
+    # 3: body dill
+    await control_socket.send_multipart([b"FEEDBACK"] + rq.get_zmq_message())
 
     # RESPONSE
-    item = await internal_server_queues[connection_ID].get()
-    out_data = dill.dumps(
-        (item.headers, item.body), fmode=dill.FILE_FMODE, recurse=True
-    )
+    # FORMAT:
+    # 0: bytes: ADDR
+    # 1: routing dill
+    # 2: header dill
+    # 3: body dill
+    item = await feedback_socket.recv_multipart()
+    logger.debug("Transport:: Got response from node comm. Write out")
+    headers = dill.loads(item[2])
+    body = dill.loads(item[3])
+    out_data = dill.dumps((headers, body), fmode=dill.FILE_FMODE, recurse=True)
     writer.write(out_data)
     writer.write_eof()
     await writer.drain()
 
-    await asyncio.sleep(0.1)  # TODO: delay for peer to read all the data.
+    # await asyncio.sleep(0.1)  # TODO: delay for peer to read all the data.
     writer.close()
     await writer.wait_closed()
+    feedback_socket.close()
 
     # Will need to create protocol framing. USE HTTP Framing!
     #  REQUEST
@@ -120,40 +145,22 @@ async def TCP_Server(
 async def TCP_Client(
     reader: asyncio.StreamReader,
     writer: asyncio.StreamWriter,
-    output_queue: asyncio.Queue[Node_Request],
-    # internal_client_queues: dict[int, asyncio.Queue[Node_Response]],
     data_request: Node_Response,
     transport_id: Star_Address,
+    control_socket: zmq.asyncio.Socket,
 ):
-    """Client handler once client connects
-
-    Args:
-        reader (asyncio.StreamReader): Reader stream object
-        writer (asyncio.StreamWriter): Writer stream object
-        output_queue (asyncio.Queue[Node_Request]): Queue of Requests to send to node comm
-        data_request (Node_Response): The response to send to network
-        transport_id (Star_Address): Transport address (an identifier of the transport object calling this)
-    """
-    global connection_counter
-
-    # internal_client_queues[connection_counter] = asyncio.Queue()
-    # original_data_request.connID = connection_counter
-
     # REQUEST (a response from NodeComm)
 
-    out_data = dill.dumps(
-        (data_request.headers, data_request.body), fmode=dill.FILE_FMODE, recurse=True
-    )
     logger.debug(f"SEND OUT: {data_request}")
-    writer.write(out_data)
+    writer.write(data_request.get_dill_data())
     writer.write_eof()
     await writer.drain()
     logger.debug(f"SEND OUT FINISH... waiting for read.")
-
+    await asyncio.sleep(0.1)  # TODO: delay for peer to read all the data.
     # RESPONSE (a request to NodeComm)
     read_data = await reader.read()
     response_headers, response_body = dill.loads(read_data)
-
+    logger.debug(f"SEND OUT FINISH...Got read!")
     writer.close()
     await writer.wait_closed()
 
@@ -166,7 +173,13 @@ async def TCP_Client(
         routing=response_routing, headers=response_headers, body=response_body
     )
     if response_headers.get("METHOD") != "CLOSE":
-        await output_queue.put(resp)  # blank response. don't bother node comm.
+        # FORMAT:
+        # 0: bytes: STOP/OK/FEEDBACK
+        # 1: routing dill
+        # 2: header dill
+        # 3: body dill
+        b = [b"TERMINAL"] + resp.get_multipart()
+        await control_socket.send_multipart(b)
 
 
 class Generic_TCP:
@@ -174,28 +187,28 @@ class Generic_TCP:
 
     def __init__(self, addr: Star_Address):
         self.address = addr
-        # for receiving events from the task manager
-        self.receiving_queue: asyncio.Queue[Node_Response] = asyncio.Queue()
-        # for sending events to the task manager
-        self.sending_queue: asyncio.Queue[Node_Request] = asyncio.Queue()
-        # for feedback from the task manager
-        self.internal_to_server_queue: dict[int, asyncio.Queue[Node_Response]] = {}
 
-    async def initalize_transport(
-        self,
-        sending_queue: asyncio.Queue[Node_Request],
-        receiving_queue: asyncio.Queue[Node_Response],
+    async def attach(
+        self, zmq_addr: str, identity: bytes, ctx: Optional[zmq.asyncio.Context] = None
     ):
-        """Alternate constructor for calling by node comm. Initializes Queues.
+        if ctx is None:
+            self.ctx = zmq.asyncio.Context()
+        else:
+            self.ctx = ctx
 
-        Args:
-            sending_queue (asyncio.Queue[Node_Request]): To send requests to node comm
-            receiving_queue (asyncio.Queue[Node_Response]): To receive requests from node comm
-        """
-        self.receiving_queue = receiving_queue
-        self.sending_queue = sending_queue
         asyncio.create_task(self.run_server())
-        asyncio.create_task(self.handle_receiving_queue())
+        asyncio.create_task(self.run_control())
+        # FORMAT:
+        # 0: bytes: STOP/OK/FEEDBACK
+        # 1: routing dill
+        # 2: header dill
+        # 3: body dill
+        self.control_socket = self.ctx.socket(zmq.DEALER)
+        self.control_socket.setsockopt(zmq.IDENTITY, identity)
+        self.control_socket.connect(zmq_addr)
+        self.socket_to_server = self.ctx.socket(zmq.PUB)
+        self.iface = "inproc://%s" % binascii.hexlify(os.urandom(8)).decode("utf-8")
+        self.socket_to_server.bind(self.iface)  # for publishing feedback to server.
 
         # runs the server as a separate task.
         # creates a task to monitor the receiving queue for outbound connections
@@ -204,7 +217,7 @@ class Generic_TCP:
         """ASYNC TASK. Run the server."""
         server = await asyncio.start_server(
             lambda r, w: TCP_Server(
-                r, w, self.sending_queue, self.internal_to_server_queue, self.address
+                r, w, self.address, self.ctx, self.iface, self.control_socket
             ),
             self.address.host,
             self.address.port,
@@ -212,64 +225,75 @@ class Generic_TCP:
         async with server:
             await server.serve_forever()
 
-    async def handle_receiving_queue(self):
-        """ASYNC TASK. Handle receiving queue."""
-        debug_counter = 0
+    async def process_control(self, msg: list[bytes]):
+        # ROUTING
+        # HEADERS
+        # BODY
+        if len(msg) != 4:
+            logger.warning("Malformed message received on proc. control")
+            return
+
+        routing = dill.loads(msg[1])  # item.
+        headers = dill.loads(msg[2])  # item
+        body = dill.loads(msg[3])  # item
+
+        x_system = routing.get("SYSTEM")
+        if x_system is None:
+            logger.warning("No SYSTEM header defined!")
+            return
+
+        # when node wants new connection.
+        if x_system == "CONNECT":
+            x_system_dest = routing.get("DEST")
+            if x_system_dest is None:
+                logger.warning("No DEST header defined on CONNECT!")
+                return
+            addr: Star_Address = x_system_dest
+            item = Node_Response.extract_multipart(msg[1:])
+
+            asyncio.create_task(self.open_connection(addr, item))  # non blocking!
+
+        if x_system == "FEEDBACK":
+            x_system_origin = routing.get("ORIGINAL")
+            if x_system_origin is None:
+                logger.warning("No ORIGINAL header defined on FEEDBACK!")
+                return
+            is_to_server = x_system_origin.get("SOURCE")
+            if is_to_server == "CLIENT":
+                logger.warning("Cannot send data from client! Use connect_to()")
+                return
+
+            x_system_origin_conn = x_system_origin.get("CONN_ID")
+            if x_system_origin_conn is None:
+                logger.warning("No CONN_ID in ORIGINAL")
+                return
+            # output to server connection.
+            item = Node_Response.extract_multipart(msg[1:])
+            await self.socket_to_server.send_multipart(
+                [x_system_origin_conn] + item.get_multipart()
+            )
+
+    async def run_control(self):
+        """ASYNC TASK. Handle receiving commands."""
         while True:
-            try:
-                logger.debug(f"Wait... {id(self.receiving_queue)}")
-                item = await self.receiving_queue.get()
+            # FORMAT:
+            # 0: bytes: STOP/OK/FEEDBACK
+            # 1: routing dill
+            # 2: header dill
+            # 3: body dill
+            msg = await self.control_socket.recv_multipart()
+            if msg[0] == b"STOP":
+                break
+            asyncio.create_task(self.process_control(msg))
+        self.control_socket.close()
 
-                logger.debug(f"Recv {item}")
-                x_system = item.routing.get("SYSTEM")
-                if x_system is None:
-                    logger.warning("No SYSTEM header defined!")
-                    continue
-
-                # when node wants new connection.
-                if x_system == "CONNECT":
-                    x_system_dest = item.routing.get("DEST")
-                    if x_system_dest is None:
-                        logger.warning("No DEST header defined on CONNECT!")
-                        continue
-                    addr: Star_Address = x_system_dest
-                    debug_counter += 1
-                    logger.debug(f"Open Connection {debug_counter}")
-                    asyncio.create_task(
-                        self.open_connection(addr, item, debug_counter)
-                    )  # non blocking!
-                    logger.debug("Open Connection R---")
-
-                if x_system == "FEEDBACK":
-                    x_system_origin = item.routing.get("ORIGINAL")
-                    if x_system_origin is None:
-                        logger.warning("No ORIGINAL header defined on FEEDBACK!")
-                        continue
-                    is_to_server = x_system_origin.get("SOURCE")
-                    if is_to_server == "CLIENT":
-                        logger.warning("Cannot send data from client! Use connect_to()")
-                        continue
-
-                    x_system_origin_conn = x_system_origin.get("CONN_ID")
-                    if x_system_origin_conn is None:
-                        logger.warning("No CONN_ID in ORIGINAL")
-                        continue
-                    assert x_system_origin_conn in self.internal_to_server_queue
-                    await self.internal_to_server_queue[x_system_origin_conn].put(item)
-
-            except Exception as e:
-                logger.critical(e)
-
-    async def open_connection(
-        self, addr: Star_Address, data_item: Node_Response, debug
-    ):
+    async def open_connection(self, addr: Star_Address, data_item: Node_Response):
         """ASYNC. Open connection out to address
 
         Args:
             addr (Star_Address): Address to connect to
             data_item (Node_Response): Response to send to connection.
         """
-        logger.debug(f"Open Conn R1 {debug}")
         reader, writer = await asyncio.open_connection(
             host=addr.host,
             port=addr.port,
@@ -277,10 +301,9 @@ class Generic_TCP:
         await TCP_Client(
             reader,
             writer,
-            self.sending_queue,
-            # self.internal_to_client_queue,
             data_item,
             self.address,
+            self.control_socket,
         )
 
 

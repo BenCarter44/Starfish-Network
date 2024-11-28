@@ -3,6 +3,8 @@
 
 from typing import Any
 
+import dill
+
 
 class Node_Request:
     """Represents requests COMING IN to the node communication manager"""
@@ -31,6 +33,28 @@ class Node_Request:
             {"ROUTING": self.routing, "HEADERS": self.headers, "BODY": self.body}
         )
 
+    def get_zmq_message(self) -> list[bytes]:
+        a = dill.dumps(self.routing)
+        b = dill.dumps(self.headers)
+        c = dill.dumps(self.body)
+        return [a, b, c]
+
+    @classmethod
+    def extract_multipart(cls, data):
+        a = dill.loads(data[0])
+        b = dill.loads(data[1])
+        c = dill.loads(data[2])
+        return cls(routing=a, headers=b, body=c)
+
+    def get_dill_data(self) -> bytes:
+        out_data = dill.dumps(
+            (self.headers, self.body), fmode=dill.FILE_FMODE, recurse=True
+        )
+        return out_data
+
+    def get_multipart(self) -> list[bytes]:
+        return self.get_zmq_message()
+
 
 class Node_Response:
     """Represents responses GOING OUT from the node communication manager"""
@@ -57,3 +81,25 @@ class Node_Response:
         return str(
             {"ROUTING": self.routing, "HEADERS": self.headers, "BODY": self.body}
         )
+
+    @classmethod
+    def extract_multipart(cls, data):
+        a = dill.loads(data[0])
+        b = dill.loads(data[1])
+        c = dill.loads(data[2])
+        return cls(routing=a, headers=b, body=c)
+
+    def get_zmq_message(self) -> list[bytes]:
+        a = dill.dumps(self.routing)
+        b = dill.dumps(self.headers)
+        c = dill.dumps(self.body)
+        return [a, b, c]
+
+    def get_dill_data(self) -> bytes:
+        out_data = dill.dumps(
+            (self.headers, self.body), fmode=dill.FILE_FMODE, recurse=True
+        )
+        return out_data
+
+    def get_multipart(self) -> list[bytes]:
+        return self.get_zmq_message()

@@ -1,5 +1,6 @@
 import asyncio
 import queue
+import string
 import threading
 from node_queue_interface import Node_Request, Node_Response
 from transport_protocol import *
@@ -9,6 +10,8 @@ import star_components as star
 import sys
 import logging
 import uuid
+import zmq.asyncio
+import os
 
 logger = logging.getLogger(__name__)
 
@@ -33,32 +36,51 @@ class Node:
         self.engine.send_event_handler = self.send_event
         self.user_id = user_id
         self.local_serving_addresses: dict[Star_Address, asyncio.Task] = {}
-        self.receiving_queue: asyncio.Queue[Node_Request] = asyncio.Queue()
-        self.engine_receiving_queue: queue.Queue[Node_Response] = (
-            queue.Queue()
-        )  # will be added to from engine thread
+        self.added_transports: dict[Star_Address, bytes] = {}
+        self.added_transports_rev: dict[bytes, Star_Address] = {}
 
+        self.ctx = zmq.asyncio.Context()
+        self.transport_socket = self.ctx.socket(zmq.ROUTER)
+        self.iface = "inproc://%s" % binascii.hexlify(os.urandom(8)).decode("utf-8")
+        self.transport_socket.bind(self.iface)
+
+        self.internal_feedback_counter = 0
+        self.internal_feedback: dict[int, asyncio.Queue] = {}  # has event triggering.
         # Transport is defined by the address it is serving.
-        self.output_queues: dict[Star_Address, asyncio.Queue[Node_Response]] = {}
         self.bin_addr = bin_addr
+
+        # task DHT
         self.task_dht = DHT(self.bin_addr)
+
+        # peer routing.
+        self.peer_dht = DHT(self.bin_addr)  # [peerID] = TTL[Star_Address]
+
+        # peer discovery
+        # net bootstrap:
+        #     fetch known peers from friend (one you connect to)
+        # peer on network:
+        #     net search (look up random address.... keep track of the jumps.)
+
+        # Need the following queries:
+        #   Peer DHT get.  <-- make a generalized distributed handler
+        #   Peer DHT set. <-- make a generalized distributed handler
+        #   Get known peers.  <-- this is the main one.
 
         # Temporary hard coded bin addr and IP. Later becomes a DHT
         self.addr_table = {
             b"Address One": Star_Address("tcp", "127.0.0.1", 9280),
             b"Address Two": Star_Address("tcp", "127.0.0.1", 9281),
-            b"Address Three": Star_Address("tcp", "127.0.0.1", 9282),
-            b"Address Four": Star_Address("tcp", "127.0.0.1", 9283),
+            # b"Address Three": Star_Address("tcp", "127.0.0.1", 9282),
+            # b"Address Four": Star_Address("tcp", "127.0.0.1", 9283),
         }
 
         self.task_dht.update_addresses(list(self.addr_table.keys()))
-        self.temp_queue_number = 0
-        self.temp_queues: dict[int, asyncio.Queue] = {}
         self.default_tp: Generic_TCP = None  # type: ignore
 
     ################################ Engine Interface
 
     async def start_engine(self):
+        asyncio.create_task(self.receive_queue_processor())
         asyncio.create_task(self.engine.start_loops())
 
     async def start_program(self, program: star.Program, tp: Generic_TCP):
@@ -80,7 +102,6 @@ class Node:
         for task in proc.get_tasks():
             assert isinstance(task, star.StarTask)
             await self.allocate_task(tp, task)  # includes callable inside.
-            await asyncio.sleep(0.6)
 
         program.start.target.attach_to_process(proc)
         await self.send_event(program.start)
@@ -131,15 +152,14 @@ class Node:
         Raises:
             ValueError: Raise error if already added to Node previously.
         """
-        if tp.address in self.output_queues:
+        if tp.address in self.added_transports:
             raise ValueError("Already added!")
-        self.output_queues[tp.address] = asyncio.Queue()
-        self.local_serving_addresses[tp.address] = asyncio.create_task(
-            tp.initalize_transport(self.receiving_queue, self.output_queues[tp.address])
-        )
-        if len(self.output_queues) == 1:
-            # receive task isn't running!
-            asyncio.create_task(self.receive_queue_processor())
+        r = os.urandom(8)
+        self.added_transports[tp.address] = r
+        self.added_transports_rev[r] = tp.address
+        await tp.attach(
+            self.iface, r, self.ctx
+        )  # possible deadlock.... check. Wait for attach when await for receive.
         self.default_tp = tp
 
     async def allocate_task(self, tp: Generic_TCP, task: star.StarTask):
@@ -163,7 +183,8 @@ class Node:
 
             ip_addr = self.addr_table[peer]
             headers_send = {
-                "METHOD": "TASK_ALLOCATE",
+                "METHOD": "DHT_STORE",
+                "DHT_SELECT": "TASK",
                 "DHT_NODE_IGNORE": [self.bin_addr],
                 "DHT_KEY": task,
                 "FROM": self.bin_addr,
@@ -172,11 +193,17 @@ class Node:
             await self.send_to(tp, ip_addr, headers_send, task)
             await asyncio.sleep(0)
 
-    async def search_task(self, tp: Generic_TCP, task_id: star.StarTask):
-        resp = self.task_dht.get(task_id, hash_func_in=star.task_hash)
+    async def search_task(
+        self, tp: Generic_TCP, task_id: star.StarTask
+    ):  ## GET DHT ITEM.
         logger.debug(f"Search For Task: {task_id}")
+        return await self.search_dht(tp, task_id, "TASK")
+
+    async def search_dht(self, tp: Generic_TCP, key, dht_select: str):
+        resp = self.retrieve_task(key)
+
         if resp.response_code == "SELF_FOUND":
-            logger.debug(f"Search For Task: {task_id} - Found Local! {self.bin_addr!r}")
+            logger.debug(f"Search For {key} - Found Local! {self.bin_addr!r}")
             return resp.data
 
         # Not stored in local DHT. Look up nodes closer.
@@ -184,36 +211,43 @@ class Node:
             if addr == self.bin_addr:
                 continue
             headers = {
-                "METHOD": "TASK_SEARCH",
+                "METHOD": "DHT_FETCH",
+                "DHT_SELECT": dht_select,
                 "DHT_NODE_IGNORE": [self.bin_addr],
-                "DHT_KEY": task_id,
+                "DHT_KEY": key,
                 "FROM": self.bin_addr,
             }
 
             ip_addr = self.addr_table[addr]
-            continue_id = self.temp_queue_number
-            self.temp_queue_number += 1
+            continue_id = self.internal_feedback_counter
+            self.internal_feedback_counter += 1
 
-            self.temp_queues[continue_id] = asyncio.Queue()
+            self.internal_feedback[continue_id] = (
+                asyncio.Queue()
+            )  # has event triggering. That is all the queue is used for.
 
             routing = {"CONTINUE": continue_id}
 
-            logger.debug(f"Search For Task: {task_id} - send_to")
+            logger.debug(f"Search For {key} - send_to")
             await self.send_to(tp, ip_addr, headers, None, routing_custom=routing)
 
-            logger.debug(f"Search For Task: {task_id} - q wait")
-            response: Node_Request = await self.temp_queues[continue_id].get()
-            del self.temp_queues[continue_id]
+            logger.debug(f"Search For {key} - q wait")
+            response: Node_Request = await self.internal_feedback[continue_id].get()
+            del self.internal_feedback[continue_id]
 
             code = response.headers["CODE"]
             if code == "FOUND":
                 chain = response.headers["CHAIN"]
-                logger.debug(f"Search For Task: {task_id} - Found Remote! {chain[-1]}")
-                resp = self.task_dht.set_cache(task_id, response.body)
+                logger.debug(f"Search For: {key} - Found Remote! {chain[-1]}")
+                if dht_select == "TASK":
+                    resp = self.store_task(key, response.body, cached=True)
+                elif dht_select == "PEER":
+                    pass
+                    # resp = self.store_peer(key, response.body, cached=True)
                 return response.body
 
         # not found!
-        logger.debug(f"Search For Task: {task_id} - Not Found!")
+        logger.debug(f"Search For: {key} - Not Found!")
         return None
 
     ########################## Queue Handling
@@ -226,16 +260,34 @@ class Node:
 
         while True:
             logger.debug("Waiting for item in comm")
-            item: Node_Request = await self.receiving_queue.get()
-
+            # FORMAT:
+            # 0: ROUTER ADDRESS
+            # 1: bytes: STOP/OK/FEEDBACK
+            # 2: routing dill
+            # 3: header dill
+            # 4: body dill
+            raw_in = await self.transport_socket.recv_multipart()
+            logger.debug("Got receipt from TP")
+            transport_addr = raw_in[0]
+            if transport_addr not in self.added_transports_rev:
+                logger.warning("Got unknown connection on recv q")
+                is_server = item.routing["SOURCE"] == "SERVER"
+                if is_server:
+                    asyncio.create_task(self.error_server(item))
+                continue
+            item = Node_Request.extract_multipart(raw_in[2:])
+            logger.debug(item)
             method = item.headers["METHOD"]
             is_server = item.routing["SOURCE"] == "SERVER"
             continue_num = None
             og: dict = item.routing.get("ORIGINAL")
             if og is not None:
                 continue_num = og.get("CONTINUE")
-            if continue_num is not None and continue_num in self.temp_queues:
-                await self.temp_queues[continue_num].put(item)
+            if continue_num is not None:
+                await self.internal_feedback[continue_num].put(item)
+                is_server = item.routing["SOURCE"] == "SERVER"
+                if is_server:
+                    asyncio.create_task(self.error_server(item))
                 continue  # do not process
 
             if method == "PING" and is_server:
@@ -244,15 +296,15 @@ class Node:
             elif method == "PONG" and not (is_server):  # client
                 asyncio.create_task(self.pong_client(item))
 
-            elif method == "TASK_ALLOCATE" and is_server:
+            elif method == "DHT_FETCH" and is_server:
+                asyncio.create_task(self.dht_search(item))
+
+            elif method == "DHT_STORE" and is_server:
+                asyncio.create_task(self.dht_store(item))
+
+            elif method == "DHT_STORE" and not is_server:
                 # required, not await as it must keep processing events and not block
-                asyncio.create_task(self.task_allocation(item))
-
-            elif method == "TASK_ALLOCATE" and not is_server:
-                asyncio.create_task(self.task_allocation_client(item))
-
-            elif method == "TASK_SEARCH" and is_server:
-                asyncio.create_task(self.task_search(item))
+                asyncio.create_task(self.dht_store_client(item))
 
             elif method == "EVENT" and is_server:
                 asyncio.create_task(self.process_event(item))
@@ -272,7 +324,17 @@ class Node:
 
         Analogous to return statement inside route func def
         """
-        await self.output_queues[transport].put(node_response)
+        transport_id = self.added_transports[transport]
+        # FORMAT:
+        # (0): ROUTER ADDR
+        # 0: bytes: STOP/OK/FEEDBACK
+        # 1: routing dill
+        # 2: header dill
+        # 3: body dill
+        await self.transport_socket.send_multipart(
+            [transport_id, b"OK"] + node_response.get_multipart()
+        )
+        # [transport].put(node_response)
 
     async def send_to(
         self,
@@ -299,12 +361,20 @@ class Node:
 
         # It's a "RESPONSE" as it is being sent out from node_comm.
         connect_request = Node_Response(routing=routing, headers=headers, body=body)
-        if tp_addr not in self.output_queues:
+        if tp_addr not in self.added_transports:
             raise ValueError("Transport has not been added to node")
 
-        logger.debug(f"Send_to: {id(self.output_queues[tp_addr])}")
-        await self.output_queues[tp_addr].put(connect_request)
-        await asyncio.sleep(0)
+        transport_id = self.added_transports[tp_addr]
+        # FORMAT:
+        # (0): ROUTER ADDR
+        # 0: bytes: STOP/OK/FEEDBACK
+        # 1: routing dill
+        # 2: header dill
+        # 3: body dill
+        await self.transport_socket.send_multipart(
+            [transport_id, b"OK"] + connect_request.get_multipart()
+        )
+        # await asyncio.sleep(60)
 
     ########################## Processing Requests/Routing Magic.
     # Analogous to the route def func's.
@@ -317,6 +387,16 @@ class Node:
         headers = {"METHOD": "PONG"}
         num = item.routing["TP_ID"]
         data = f"Server Port {num} Response to '{item.body}'!"
+        out = Node_Response(routing=routing, headers=headers, body=data)
+        await self.send_to_transport(item.routing["TP_ID"], out)
+
+    async def error_server(self, item: Node_Request):
+        """PING Server command"""
+        logger.info(f"Node: Got PING! {item.body}")
+        routing = {"SYSTEM": "FEEDBACK", "ORIGINAL": item.routing}
+        headers = {"METHOD": "NA"}
+        num = item.routing["TP_ID"]
+        data = f"Incorrect/unknown command"
         out = Node_Response(routing=routing, headers=headers, body=data)
         await self.send_to_transport(item.routing["TP_ID"], out)
 
@@ -345,124 +425,23 @@ class Node:
         resp = Node_Response(routing=routing, headers={"METHOD": "CLOSE"}, body=None)
         await self.send_to_transport(item.routing["TP_ID"], resp)
 
-    async def task_allocation(self, item: Node_Request):
-        # Request node to allocate task.
-        headers = item.headers
-        body = item.body
+    def retrieve_task(self, key: star.StarTask):
+        resp = self.task_dht.get(key, hash_func_in=star.task_hash)
+        return resp
 
-        ignore_nodes = headers["DHT_NODE_IGNORE"]
-        key = headers["DHT_KEY"]
-        from_bin_addr = headers["FROM"]
-
-        logger.debug(
-            f"{self.bin_addr!r} Received Task Allocation Request from {from_bin_addr!r}: [{key}]={body}"
-        )
-
-        ignore_nodes.append(self.bin_addr)
-
-        res = self.task_dht.set(
-            key, self.bin_addr, post_to_cache=False
-        )  # don't actually store the body, store address.
-        logger.debug(f"DHT returned: {res.response_code}")
-        if res.response_code == "NEIGHBOR_UPDATE_CACHE":
-            send_outs = []
-            for neighbor in res.neighbor_addrs:
-                if neighbor not in ignore_nodes:
-                    send_outs.append(neighbor)
-            if len(send_outs) == 0:
-                # no neighbors to send to!
-                routing = {"SYSTEM": "FEEDBACK", "ORIGINAL": item.routing}
-                headers = {
-                    "METHOD": "TASK_ALLOCATE",
-                    "CODE": "NO_ROUTES_AVAILABLE",
-                    "CHAIN": ignore_nodes,
-                }
-                logger.debug(f"Sending NO ROUTE AVAILABLE (direct) for [{key}]={body}")
-                out = Node_Response(routing=routing, headers=headers, body=None)
-                await self.send_to_transport(item.routing["TP_ID"], out)
-                return
-
-            # It is not to be owned by server. So, send request to peers
-            # use onion method, meaning server makes request on behalf of client
-            found = False
-            found_addrs = []
-
-            for addr in send_outs:
-                # TODO: Only sends to one person. Because, if multiple, which person's response should send back to the host?
-                headers_send = {
-                    "METHOD": "TASK_ALLOCATE",
-                    "DHT_NODE_IGNORE": ignore_nodes,
-                    "DHT_KEY": key,
-                    "FROM": self.bin_addr,
-                }
-                continue_id = self.temp_queue_number
-
-                self.temp_queue_number += 1
-                routing = {"CONTINUE": continue_id}  # type: ignore
-
-                self.temp_queues[continue_id] = asyncio.Queue()
-
-                ip_addr = self.addr_table[addr]
-                logger.debug(
-                    f"Hash Miss! [{key}]={body} - {self.bin_addr!r} Send to peer {addr!r}"
-                )
-                await self.send_to(
-                    item.routing["TP_ID"],
-                    ip_addr,
-                    headers_send,
-                    body,
-                    routing_custom=routing,
-                )
-                response: Node_Request = await self.temp_queues[continue_id].get()
-                if response.headers.get("CODE") == "SUCCESS_OWNED":
-                    logger.debug(f"Child return success [{key}]={body}")
-                    found = True
-                    found_addrs.append(addr)
-                del self.temp_queues[continue_id]  # no longer needed!
-
-            if not (found):
-                # no neighbors to send to!
-                routing = {"SYSTEM": "FEEDBACK", "ORIGINAL": item.routing}
-                headers = {
-                    "METHOD": "TASK_ALLOCATE",
-                    "CODE": "NO_ROUTES_AVAILABLE",
-                    "CHAIN": ignore_nodes,
-                }
-                logger.debug(
-                    f"Sending NO ROUTE AVAILABLE (indirect) for [{key}]={body}"
-                )
-                out = Node_Response(routing=routing, headers=headers, body=None)
-                await self.send_to_transport(item.routing["TP_ID"], out)
-                return
-
-            routing = {"SYSTEM": "FEEDBACK", "ORIGINAL": item.routing}
-            headers = {
-                "METHOD": "TASK_ALLOCATE",
-                "CODE": "SUCCESS_OWNED_BY_CHILD",
-                "CHAIN": ignore_nodes,
-                "OWNED": found_addrs,
-            }
-            logger.debug(f"Sending SUCCESS OWNED BY CHILD for [{key}]={body}")
-            out = Node_Response(routing=routing, headers=headers, body=None)
-            await self.send_to_transport(item.routing["TP_ID"], out)
-            return
-
+    def store_task(self, key, body, cached=False):
+        if cached:
+            resp = self.task_dht.set_cache(key, body)
         else:
-            # Node owns it now!
-            await self.engine_allocate(key)
+            # resp = self.task_dht.set(key, body, hash_func_in=star.task_hash)
+            resp = self.task_dht.set(
+                key, body, post_to_cache=False
+            )  # don't actually store the body, store address.
+        return resp
 
-            routing = {"SYSTEM": "FEEDBACK", "ORIGINAL": item.routing}
-            headers = {
-                "METHOD": "TASK_ALLOCATE",
-                "CODE": "SUCCESS_OWNED",
-                "CHAIN": ignore_nodes,
-            }
-            logger.debug(f"Sending DIRECT OWNED for [{key}]={body}")
-            out = Node_Response(routing=routing, headers=headers, body=None)
-            await self.send_to_transport(item.routing["TP_ID"], out)
-            return
+    ############################ DHT METHODS
 
-    async def task_allocation_client(self, item: Node_Request):
+    async def dht_store_client(self, item: Node_Request):  # DHT Set
         # Receiving data from server side.
         code_return = item.headers.get("CODE")
         logger.debug(f"Got Server Response for task allocation: CODE: {code_return}")
@@ -484,27 +463,160 @@ class Node:
 
         logger.warning(f"Malformed data received by client: {item}")
 
-    async def task_search(self, item: Node_Request):
+    async def dht_store(self, item: Node_Request):  # server
+        # Request node to allocate task.
+        headers = item.headers
+        body = item.body
+
+        dht_select = headers["DHT_SELECT"]
+        ignore_nodes = headers["DHT_NODE_IGNORE"]
+        key = headers["DHT_KEY"]
+        from_bin_addr = headers["FROM"]
+
+        logger.debug(
+            f"{self.bin_addr!r} Received Task Allocation Request from {from_bin_addr!r}: [{key}]={body}"
+        )
+
+        ignore_nodes.append(self.bin_addr)
+
+        if dht_select == "TASK":
+            res = self.store_task(key, self.bin_addr, False)
+
+        logger.debug(f"DHT returned: {res.response_code}")
+        if res.response_code == "NEIGHBOR_UPDATE_CACHE":
+            send_outs = []
+            for neighbor in res.neighbor_addrs:
+                if neighbor not in ignore_nodes:
+                    send_outs.append(neighbor)
+            if len(send_outs) == 0:
+                # no neighbors to send to!
+                routing = {"SYSTEM": "FEEDBACK", "ORIGINAL": item.routing}
+                headers = {
+                    "METHOD": "DHT_STORE",
+                    "DHT_SELECT": dht_select,
+                    "CODE": "NO_ROUTES_AVAILABLE",
+                    "CHAIN": ignore_nodes,
+                }
+                logger.debug(f"Sending NO ROUTE AVAILABLE (direct) for [{key}]={body}")
+                out = Node_Response(routing=routing, headers=headers, body=None)
+                await self.send_to_transport(item.routing["TP_ID"], out)
+                return
+
+            # It is not to be owned by server. So, send request to peers
+            # use onion method, meaning server makes request on behalf of client
+            found = False
+            found_addrs = []
+
+            for addr in send_outs:
+                # TODO: Only sends to one person. Because, if multiple, which person's response should send back to the host?
+                headers_send = {
+                    "METHOD": "DHT_STORE",
+                    "DHT_SELECT": dht_select,
+                    "DHT_NODE_IGNORE": ignore_nodes,
+                    "DHT_KEY": key,
+                    "FROM": self.bin_addr,
+                }
+                continue_id = self.internal_feedback_counter
+
+                self.internal_feedback_counter += 1
+                routing = {"CONTINUE": continue_id}  # type: ignore
+
+                self.internal_feedback[continue_id] = asyncio.Queue()
+
+                ip_addr = self.addr_table[addr]
+                logger.debug(
+                    f"Hash Miss! [{key}]={body} - {self.bin_addr!r} Send to peer {addr!r}"
+                )
+                await self.send_to(
+                    item.routing["TP_ID"],
+                    ip_addr,
+                    headers_send,
+                    body,
+                    routing_custom=routing,
+                )
+                response: Node_Request = await self.internal_feedback[continue_id].get()
+                if response.headers.get("CODE") == "SUCCESS_OWNED":
+                    logger.debug(f"Child return success [{key}]={body}")
+                    found = True
+                    found_addrs.append(addr)
+                del self.internal_feedback[continue_id]  # no longer needed!
+
+            if not (found):
+                # no neighbors to send to!
+                routing = {"SYSTEM": "FEEDBACK", "ORIGINAL": item.routing}
+                headers = {
+                    "METHOD": "DHT_STORE",
+                    "DHT_SELECT": dht_select,
+                    "CODE": "NO_ROUTES_AVAILABLE",
+                    "CHAIN": ignore_nodes,
+                }
+                logger.debug(
+                    f"Sending NO ROUTE AVAILABLE (indirect) for [{key}]={body}"
+                )
+                out = Node_Response(routing=routing, headers=headers, body=None)
+                await self.send_to_transport(item.routing["TP_ID"], out)
+                return
+
+            routing = {"SYSTEM": "FEEDBACK", "ORIGINAL": item.routing}
+            headers = {
+                "METHOD": "DHT_STORE",
+                "DHT_SELECT": dht_select,
+                "CODE": "SUCCESS_OWNED_BY_CHILD",
+                "CHAIN": ignore_nodes,
+                "OWNED": found_addrs,
+            }
+            logger.debug(f"Sending SUCCESS OWNED BY CHILD for [{key}]={body}")
+            out = Node_Response(routing=routing, headers=headers, body=None)
+            await self.send_to_transport(item.routing["TP_ID"], out)
+            return
+
+        else:
+            # Node owns it now!
+            if dht_select == "TASK":
+                await self.engine_allocate(key)
+
+            routing = {"SYSTEM": "FEEDBACK", "ORIGINAL": item.routing}
+            headers = {
+                "METHOD": "DHT_STORE",
+                "DHT_SELECT": dht_select,
+                "CODE": "SUCCESS_OWNED",
+                "CHAIN": ignore_nodes,
+            }
+            logger.debug(f"Sending DIRECT OWNED for [{key}]={body}")
+            out = Node_Response(routing=routing, headers=headers, body=None)
+            await self.send_to_transport(item.routing["TP_ID"], out)
+            return
+
+    async def dht_search(self, item: Node_Request):
         # Server
         headers = item.headers
         body = item.body
 
+        dht_select = headers["DHT_SELECT"]
         ignore_nodes = headers["DHT_NODE_IGNORE"]
         key = headers["DHT_KEY"]
         from_addr = headers["FROM"]
         ignore_nodes.append(self.bin_addr)
 
         logger.debug(
-            f"{self.bin_addr!r} Received Task DNS Query for [{key}] from {from_addr}"
+            f"{self.bin_addr!r} Received DHT Query for [{key}] from {from_addr}"
         )
 
         # See if I have it, if not, get something closer
-        resp = self.task_dht.get(key, hash_func_in=star.task_hash)
+
+        if dht_select == "TASK":
+            resp = self.retrieve_task(cast(star.StarTask, key))
+
+        elif dht_select == "PEER":
+            pass
+            # resp = self.retrieve_peer(key)
+
         if resp.response_code == "SELF_FOUND":
             # found!
             logger.debug(f"Found key [{key}] - local server")
             headers_response = {
-                "METHOD": "TASK_SEARCH",
+                "METHOD": "DHT_FETCH",
+                "DHT_SELECT": dht_select,
                 "CODE": "FOUND",
                 "DHT_KEY": key,
                 "CHAIN": ignore_nodes,
@@ -522,17 +634,18 @@ class Node:
             if addr in ignore_nodes:
                 continue
             headers_new = {
-                "METHOD": "TASK_SEARCH",
+                "METHOD": "DHT_FETCH",
+                "DHT_SELECT": dht_select,
                 "DHT_NODE_IGNORE": ignore_nodes,
                 "DHT_KEY": key,
                 "FROM": self.bin_addr,
             }
 
             ip_addr = self.addr_table[addr]
-            continue_id = self.temp_queue_number
-            self.temp_queue_number += 1
+            continue_id = self.internal_feedback_counter
+            self.internal_feedback_counter += 1
 
-            self.temp_queues[continue_id] = asyncio.Queue()
+            self.internal_feedback[continue_id] = asyncio.Queue()
 
             routing = {"CONTINUE": continue_id}  # type: ignore
             logger.debug(
@@ -545,16 +658,21 @@ class Node:
                 None,
                 routing_custom=routing,
             )
-            response: Node_Request = await self.temp_queues[continue_id].get()
-            del self.temp_queues[continue_id]
+            response: Node_Request = await self.internal_feedback[continue_id].get()
+            del self.internal_feedback[continue_id]
 
             code = response.headers["CODE"]
             if code == "FOUND":
                 chain = response.headers["CHAIN"]
                 logger.debug(f"Found key [{key}] - remote server {chain[-1]}")
-                self.task_dht.set_cache(key, response.body)
+                if dht_select == "TASK":
+                    self.store_task(key, response.body, cached=True)
+                elif dht_select == "PEER":
+                    pass
+                    # self.store_peer(key, response.body, cached=True)
                 headers_response = {
-                    "METHOD": "TASK_SEARCH",
+                    "METHOD": "DHT_FETCH",
+                    "DHT_SELECT": dht_select,
                     "CODE": "FOUND",
                     "DHT_KEY": key,
                     "CHAIN": chain,
@@ -569,7 +687,8 @@ class Node:
 
         logger.debug(f"Not Found key [{key}] - local server")
         headers_response = {
-            "METHOD": "TASK_SEARCH",
+            "METHOD": "DHT_FETCH",
+            "DHT_SELECT": dht_select,
             "CODE": "NOT_FOUND",
             "DHT_KEY": key,
             "CHAIN": ignore_nodes,
@@ -640,7 +759,7 @@ if __name__ == "__main__":
             node_1 = Node(b"Address Three", b"USER TWO")
             node_2 = Node(b"Address Four", b"USER TWO")
             await node_1.start_engine()
-            # await node_2.start_engine()
+            await node_2.start_engine()
 
         if serve_first_two:
             tcp_ip_interface1 = Generic_TCP(serve_addr)
@@ -664,11 +783,11 @@ if __name__ == "__main__":
 
         else:
             await asyncio.sleep(10)
-            pgrm = star.Program(read_pgrm="file_program.star")
-            logger.info(
-                f"I: Opening program '{pgrm.saved_data['pgrm_name']}' from {pgrm.saved_data['date_compiled']}\n"
-            )
-            process = await node_1.start_program(pgrm, tcp_ip_interface1)
+            # pgrm = star.Program(read_pgrm="file_program.star")
+            # logger.info(
+            #     f"I: Opening program '{pgrm.saved_data['pgrm_name']}' from {pgrm.saved_data['date_compiled']}\n"
+            # )
+            # process = await node_1.start_program(pgrm, tcp_ip_interface1)
 
         # for x in range(1, 100):
         #     name = await asyncio.to_thread(input, "Wait......  1 \n")
@@ -690,7 +809,7 @@ if __name__ == "__main__":
     ch = logging.StreamHandler(sys.stdout)
     ch.setLevel(logging.DEBUG)
     ch.setFormatter(CustomFormatter())
-    logging.basicConfig(handlers=[ch], level=logging.INFO)
+    logging.basicConfig(handlers=[ch], level=logging.DEBUG)
 
     asyncio.get_event_loop().set_debug(False)
     asyncio.run(main())
