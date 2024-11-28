@@ -70,8 +70,8 @@ class Node:
         self.addr_table = {
             b"Address One": Star_Address("tcp", "127.0.0.1", 9280),
             b"Address Two": Star_Address("tcp", "127.0.0.1", 9281),
-            # b"Address Three": Star_Address("tcp", "127.0.0.1", 9282),
-            # b"Address Four": Star_Address("tcp", "127.0.0.1", 9283),
+            b"Address Three": Star_Address("tcp", "127.0.0.1", 9282),
+            b"Address Four": Star_Address("tcp", "127.0.0.1", 9283),
         }
 
         self.task_dht.update_addresses(list(self.addr_table.keys()))
@@ -163,18 +163,33 @@ class Node:
         self.default_tp = tp
 
     async def allocate_task(self, tp: Generic_TCP, task: star.StarTask):
-        assert isinstance(task, star.StarTask)
-        response = self.task_dht.set(
-            task,
-            self.bin_addr,
-            post_to_cache=False,
-            hash_func_in=star.task_hash,
-        )  # address of host. Don't actually store it. (except if owned!)
+        return await self.set_dht(tp, task, self.bin_addr, "TASK")
+
+    async def search_task(
+        self, tp: Generic_TCP, task_id: star.StarTask
+    ):  ## GET DHT ITEM.
+        return
+        logger.debug(f"Search For Task: {task_id}")
+        return await self.search_dht(tp, task_id, "TASK")
+
+    async def set_dht(self, tp: Generic_TCP, key: Any, value: Any, dht_select: str):
+        if dht_select == "TASK":
+            response = self.task_dht.set(
+                key,
+                value,
+                post_to_cache=False,
+                hash_func_in=star.task_hash,
+            )  # address of host. Don't actually store it. (except if owned!)
+            if response.response_code == "NEIGHBOR_UPDATE_AND_OWN":
+                await self.engine_allocate(value)
+        elif dht_select == "PEER":
+            response = self.peer_dht.set(
+                key,
+                value,
+                post_to_cache=False,
+            )
+
         # send it to peers!
-
-        if response.response_code == "NEIGHBOR_UPDATE_AND_OWN":
-            await self.engine_allocate(task)
-
         peers = response.neighbor_addrs
         # logger.debug("PEERS: ", peers)
         for peer in peers:
@@ -184,23 +199,24 @@ class Node:
             ip_addr = self.addr_table[peer]
             headers_send = {
                 "METHOD": "DHT_STORE",
-                "DHT_SELECT": "TASK",
+                "DHT_SELECT": dht_select,
                 "DHT_NODE_IGNORE": [self.bin_addr],
-                "DHT_KEY": task,
+                "DHT_KEY": key,
                 "FROM": self.bin_addr,
             }
-            logger.info(f"Allocating task: {task} - Send to peer {peer!r}")
-            await self.send_to(tp, ip_addr, headers_send, task)
+            logger.info(f"Allocating: {key} - Send to peer {peer!r}")
+            await self.send_to(tp, ip_addr, headers_send, value)
             await asyncio.sleep(0)
 
-    async def search_task(
-        self, tp: Generic_TCP, task_id: star.StarTask
-    ):  ## GET DHT ITEM.
-        logger.debug(f"Search For Task: {task_id}")
-        return await self.search_dht(tp, task_id, "TASK")
-
-    async def search_dht(self, tp: Generic_TCP, key, dht_select: str):
-        resp = self.retrieve_task(key)
+    async def search_dht(
+        self, tp: Generic_TCP, key, dht_select: str
+    ):  # initatitor client
+        if dht_select == "TASK":
+            resp = self.retrieve_task(key)
+        elif dht_select == "PEER":
+            resp = self.retrieve_peer(key)
+        else:
+            raise ValueError()
 
         if resp.response_code == "SELF_FOUND":
             logger.debug(f"Search For {key} - Found Local! {self.bin_addr!r}")
@@ -242,8 +258,7 @@ class Node:
                 if dht_select == "TASK":
                     resp = self.store_task(key, response.body, cached=True)
                 elif dht_select == "PEER":
-                    pass
-                    # resp = self.store_peer(key, response.body, cached=True)
+                    resp = self.store_peer(key, response.body, cached=True)
                 return response.body
 
         # not found!
@@ -429,6 +444,11 @@ class Node:
         resp = self.task_dht.get(key, hash_func_in=star.task_hash)
         return resp
 
+    def retrieve_peer(self, key: star.StarTask):
+        raise ValueError()
+        resp = self.peer_dht.get(key)
+        return resp
+
     def store_task(self, key, body, cached=False):
         if cached:
             resp = self.task_dht.set_cache(key, body)
@@ -439,12 +459,23 @@ class Node:
             )  # don't actually store the body, store address.
         return resp
 
+    def store_peer(self, key, body, cached=False):
+        raise ValueError()
+        if cached:
+            resp = self.peer_dht.set_cache(key, body)
+        else:
+            # resp = self.task_dht.set(key, body, hash_func_in=star.task_hash)
+            resp = self.peer_dht.set(
+                key, body, post_to_cache=False
+            )  # don't actually store the body, store address.
+        return resp
+
     ############################ DHT METHODS
 
-    async def dht_store_client(self, item: Node_Request):  # DHT Set
+    async def dht_store_client(self, item: Node_Request):  # DHT Set receive
         # Receiving data from server side.
         code_return = item.headers.get("CODE")
-        logger.debug(f"Got Server Response for task allocation: CODE: {code_return}")
+        logger.debug(f"Got Server Response for dht allocation: CODE: {code_return}")
         if code_return == "NO_ROUTES_AVAILABLE":
             chain = item.headers.get("CHAIN")
             logger.debug(
@@ -481,6 +512,8 @@ class Node:
 
         if dht_select == "TASK":
             res = self.store_task(key, self.bin_addr, False)
+        elif dht_select == "PEER":
+            res = self.store_peer(key, body, False)
 
         logger.debug(f"DHT returned: {res.response_code}")
         if res.response_code == "NEIGHBOR_UPDATE_CACHE":
@@ -587,7 +620,7 @@ class Node:
             await self.send_to_transport(item.routing["TP_ID"], out)
             return
 
-    async def dht_search(self, item: Node_Request):
+    async def dht_search(self, item: Node_Request):  # server fetch receive
         # Server
         headers = item.headers
         body = item.body
@@ -608,8 +641,7 @@ class Node:
             resp = self.retrieve_task(cast(star.StarTask, key))
 
         elif dht_select == "PEER":
-            pass
-            # resp = self.retrieve_peer(key)
+            resp = self.retrieve_peer(key)
 
         if resp.response_code == "SELF_FOUND":
             # found!
@@ -668,8 +700,7 @@ class Node:
                 if dht_select == "TASK":
                     self.store_task(key, response.body, cached=True)
                 elif dht_select == "PEER":
-                    pass
-                    # self.store_peer(key, response.body, cached=True)
+                    self.store_peer(key, response.body, cached=True)
                 headers_response = {
                     "METHOD": "DHT_FETCH",
                     "DHT_SELECT": dht_select,
@@ -783,11 +814,11 @@ if __name__ == "__main__":
 
         else:
             await asyncio.sleep(10)
-            # pgrm = star.Program(read_pgrm="file_program.star")
-            # logger.info(
-            #     f"I: Opening program '{pgrm.saved_data['pgrm_name']}' from {pgrm.saved_data['date_compiled']}\n"
-            # )
-            # process = await node_1.start_program(pgrm, tcp_ip_interface1)
+            pgrm = star.Program(read_pgrm="file_program.star")
+            logger.info(
+                f"I: Opening program '{pgrm.saved_data['pgrm_name']}' from {pgrm.saved_data['date_compiled']}\n"
+            )
+            process = await node_1.start_program(pgrm, tcp_ip_interface1)
 
         # for x in range(1, 100):
         #     name = await asyncio.to_thread(input, "Wait......  1 \n")
