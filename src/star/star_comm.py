@@ -168,7 +168,6 @@ class Node:
     async def search_task(
         self, tp: Generic_TCP, task_id: star.StarTask
     ):  ## GET DHT ITEM.
-        return
         logger.debug(f"Search For Task: {task_id}")
         return await self.search_dht(tp, task_id, "TASK")
 
@@ -181,7 +180,7 @@ class Node:
                 hash_func_in=star.task_hash,
             )  # address of host. Don't actually store it. (except if owned!)
             if response.response_code == "NEIGHBOR_UPDATE_AND_OWN":
-                await self.engine_allocate(value)
+                await self.engine_allocate(key)
         elif dht_select == "PEER":
             response = self.peer_dht.set(
                 key,
