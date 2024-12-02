@@ -202,6 +202,8 @@ class NodeEngine:
             evt (star.Event): event returned by subject of await event call.
         """
         if evt.system["node"] != self.node_id or not (evt.system["await"]):
+            # print(evt.system)
+            # print(self.node_id)
             logger.warning("System node mismatch")
             return  # Drop. Does not refer to me!
 

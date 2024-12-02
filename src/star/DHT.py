@@ -75,7 +75,7 @@ class DHT:
             my_address (bytes): Address of owner
         """
         self.data: dict[Any, Any] = {}
-        self.addr: list[bytes] = []
+        self.addr: set[bytes] = set()
         # for holding data that isn't supposed to be in the dictionary.
         self.cached_data: set[Any] = set()
         self.my_address: bytes = my_address
@@ -87,7 +87,22 @@ class DHT:
         self.cached_data.clear()
 
     def update_addresses(self, addr):
-        self.addr = addr
+        if isinstance(addr, set):
+            self.addr = self.addr.union(addr)
+        else:
+            self.addr.add(addr)
+
+    def fetch_copy(self, owned_only=False):
+        if owned_only:
+            out = {}
+            for i in self.data:
+                if i in self.cached_data:
+                    continue
+                else:
+                    out[i] = self.data[i]
+            return out
+        else:
+            return self.data
 
     def get(self, key, neighbors=3, hash_func_in=None):
 

@@ -94,6 +94,9 @@ async def TCP_Server(
         "TP_ID": transport_id,
         "SOURCE": "SERVER",
     }
+    logger.debug(f"ROUTING: {routing}")
+    logger.debug(f"HEADERS: {request_headers}")
+    logger.debug(f"BODY: {request_body}")
     rq = Node_Request(routing=routing, headers=request_headers, body=request_body)
 
     logger.debug("Transport:: Send data to node comm. ")

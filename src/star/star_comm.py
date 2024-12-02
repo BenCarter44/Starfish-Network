@@ -32,7 +32,9 @@ class Node:
         """
 
         self.engine = NodeEngine(bin_addr)
-        star.BINDINGS = self.engine.return_component_bindings()
+        star.BINDINGS = (
+            self.engine.return_component_bindings()
+        )  # PROBLEM HERE.................
         self.engine.send_event_handler = self.send_event
         self.user_id = user_id
         self.local_serving_addresses: dict[Star_Address, asyncio.Task] = {}
@@ -67,14 +69,10 @@ class Node:
         #   Get known peers.  <-- this is the main one.
 
         # Temporary hard coded bin addr and IP. Later becomes a DHT
-        self.addr_table = {
-            b"Address One": Star_Address("tcp", "127.0.0.1", 9280),
-            b"Address Two": Star_Address("tcp", "127.0.0.1", 9281),
-            b"Address Three": Star_Address("tcp", "127.0.0.1", 9282),
-            b"Address Four": Star_Address("tcp", "127.0.0.1", 9283),
-        }
 
-        self.task_dht.update_addresses(list(self.addr_table.keys()))
+        # self.task_dht.update_addresses(list(self.addr_table.keys()))
+        self.peer_dht.update_addresses(self.bin_addr)
+        self.task_dht.update_addresses(self.bin_addr)
         self.default_tp: Generic_TCP = None  # type: ignore
 
     ################################ Engine Interface
@@ -103,6 +101,9 @@ class Node:
             assert isinstance(task, star.StarTask)
             await self.allocate_task(tp, task)  # includes callable inside.
 
+        logger.info(f"Task DHT of {self.bin_addr!r}")
+        print(self.task_dht.fetch_copy())
+
         program.start.target.attach_to_process(proc)
         await self.send_event(program.start)
         self.clear_cache()  # for now, to force the distributed nature.
@@ -120,13 +121,17 @@ class Node:
             logger.warning("Dropping event. User/Process 0!")
             logger.warning(ti)
             return
-        logger.info(f"Send EVT target: {evt.data} {evt.target}")
-        storage_address = await self.search_task(self.default_tp, ti)
+
+        tp = self.default_tp
+        logger.info(f"{self.bin_addr!r} Send EVT target: {evt.target} {evt.data}")
+        storage_address = await self.search_task(tp, ti)
         if storage_address is None:
             logger.warning("EVT NOT FOUND!")
             return
 
-        ip_addr = self.addr_table[storage_address]
+        ip_addr = self.peer_dht.get(storage_address).data
+        if ip_addr is None:
+            logger.error("SEND_EVENT: storage bin_addr NOT FOUND in peer_dht")
 
         headers_send = {
             "METHOD": "EVENT",
@@ -136,7 +141,7 @@ class Node:
         logger.debug(
             f"Sending event {evt.target!r} to {storage_address!r} from {self.bin_addr!r}"
         )
-        await self.send_to(self.default_tp, ip_addr, headers_send, evt)
+        await self.send_to(tp, ip_addr, headers_send, evt)
 
     ################################## External API
 
@@ -161,6 +166,7 @@ class Node:
             self.iface, r, self.ctx
         )  # possible deadlock.... check. Wait for attach when await for receive.
         self.default_tp = tp
+        self.store_peer(self.bin_addr, tp.address)
 
     async def allocate_task(self, tp: Generic_TCP, task: star.StarTask):
         return await self.set_dht(tp, task, self.bin_addr, "TASK")
@@ -176,7 +182,7 @@ class Node:
             response = self.task_dht.set(
                 key,
                 value,
-                post_to_cache=False,
+                # post_to_cache=False,
                 hash_func_in=star.task_hash,
             )  # address of host. Don't actually store it. (except if owned!)
             if response.response_code == "NEIGHBOR_UPDATE_AND_OWN":
@@ -185,7 +191,7 @@ class Node:
             response = self.peer_dht.set(
                 key,
                 value,
-                post_to_cache=False,
+                # post_to_cache=False,
             )
 
         # send it to peers!
@@ -195,7 +201,9 @@ class Node:
             if peer == self.bin_addr:
                 continue
 
-            ip_addr = self.addr_table[peer]
+            ip_addr = self.peer_dht.get(peer).data
+            if ip_addr is None:
+                logger.error("SET_DHT: peer addr NOT FOUND in peer_dht")
             headers_send = {
                 "METHOD": "DHT_STORE",
                 "DHT_SELECT": dht_select,
@@ -221,6 +229,9 @@ class Node:
             logger.debug(f"Search For {key} - Found Local! {self.bin_addr!r}")
             return resp.data
 
+        logger.warning("SEARCH DHT dump")
+        print(self.task_dht.fetch_copy())
+
         # Not stored in local DHT. Look up nodes closer.
         for addr in resp.neighbor_addrs:
             if addr == self.bin_addr:
@@ -233,7 +244,9 @@ class Node:
                 "FROM": self.bin_addr,
             }
 
-            ip_addr = self.addr_table[addr]
+            ip_addr = self.peer_dht.get(addr).data
+            if ip_addr is None:
+                logger.error("SEARCH_DHT: peer_addr NOT FOUND in DHT")
             continue_id = self.internal_feedback_counter
             self.internal_feedback_counter += 1
 
@@ -263,6 +276,42 @@ class Node:
         # not found!
         logger.debug(f"Search For: {key} - Not Found!")
         return None
+
+    async def establish_connection(
+        self, peerID: bytes, connection_addr: Star_Address, tp: Generic_TCP
+    ):
+        # connect to peer.
+        if peerID == self.bin_addr:
+            return
+        continue_id = self.internal_feedback_counter
+        self.internal_feedback_counter += 1
+        self.internal_feedback[continue_id] = asyncio.Queue()
+
+        routing = {"CONTINUE": continue_id}
+        headers = {
+            "METHOD": "BOOTSTRAP",
+            "DIAL": tp.address,
+            "FROM": self.bin_addr,
+        }
+        await self.send_to(tp, connection_addr, headers, b"", routing_custom=routing)
+        response: Node_Request = await self.internal_feedback[continue_id].get()
+        del self.internal_feedback[continue_id]
+        self.peer_dht.update_addresses({peerID})
+
+        incoming_addresses = (
+            response.body
+        )  # a dictionary of key peer address and Star_Address
+        addr_add = set()
+        for in_addr in incoming_addresses:
+            self.peer_dht.set_cache(
+                in_addr, incoming_addresses[in_addr]
+            )  # Cached. Not owned. # TODO. Check flow here.
+            addr_add.add(in_addr)
+
+        self.task_dht.update_addresses(peerID)
+        self.peer_dht.update_addresses(peerID)
+        self.task_dht.update_addresses(addr_add)
+        self.peer_dht.update_addresses(addr_add)
 
     ########################## Queue Handling
 
@@ -301,7 +350,9 @@ class Node:
                 await self.internal_feedback[continue_num].put(item)
                 is_server = item.routing["SOURCE"] == "SERVER"
                 if is_server:
-                    asyncio.create_task(self.error_server(item))
+                    asyncio.create_task(
+                        self.error_server(item)
+                    )  # Tell server not to respond.
                 continue  # do not process
 
             if method == "PING" and is_server:
@@ -322,6 +373,9 @@ class Node:
 
             elif method == "EVENT" and is_server:
                 asyncio.create_task(self.process_event(item))
+
+            elif method == "BOOTSTRAP" and is_server:
+                asyncio.create_task(self.process_bootstrap(item))
 
             else:
                 logger.warning(
@@ -406,7 +460,7 @@ class Node:
 
     async def error_server(self, item: Node_Request):
         """PING Server command"""
-        logger.info(f"Node: Got PING! {item.body}")
+        logger.info(f"Node: Got ERROR Server Handler! {item.body}")
         routing = {"SYSTEM": "FEEDBACK", "ORIGINAL": item.routing}
         headers = {"METHOD": "NA"}
         num = item.routing["TP_ID"]
@@ -427,6 +481,26 @@ class Node:
     # Peer Dial Allocation - set - DHT recursive
     # Peer Dial DNS - get - DHT recursive
 
+    async def process_bootstrap(self, item: Node_Request):
+        headers = item.headers
+        logger.info(f"{self.bin_addr!r} Got BOOTSTRAP REQUEST from {headers['FROM']}")
+
+        # get local copy.
+        # Record from DIAL.
+        dial: Star_Address = headers["DIAL"]
+        bin_addr: bytes = headers["FROM"]
+
+        peers = self.peer_dht.fetch_copy()
+        # logger.debug("Process bootstrap, peers to send: ")
+        # print(peers)
+        self.store_peer(bin_addr, dial)
+
+        routing = {"SYSTEM": "FEEDBACK", "ORIGINAL": item.routing}
+        resp = Node_Response(
+            routing=routing, headers={"METHOD": "BOOTSTRAP_RESPONSE"}, body=peers
+        )
+        await self.send_to_transport(item.routing["TP_ID"], resp)
+
     async def process_event(self, item: Node_Request):
         headers = item.headers
         logger.debug(f"{self.bin_addr!r} Got EVENT from {headers['FROM']}")
@@ -444,7 +518,6 @@ class Node:
         return resp
 
     def retrieve_peer(self, key: star.StarTask):
-        raise ValueError()
         resp = self.peer_dht.get(key)
         return resp
 
@@ -454,18 +527,21 @@ class Node:
         else:
             # resp = self.task_dht.set(key, body, hash_func_in=star.task_hash)
             resp = self.task_dht.set(
-                key, body, post_to_cache=False
+                key,
+                body,
+                # post_to_cache=False,
             )  # don't actually store the body, store address.
         return resp
 
     def store_peer(self, key, body, cached=False):
-        raise ValueError()
         if cached:
             resp = self.peer_dht.set_cache(key, body)
         else:
             # resp = self.task_dht.set(key, body, hash_func_in=star.task_hash)
             resp = self.peer_dht.set(
-                key, body, post_to_cache=False
+                key,
+                body,
+                # post_to_cache=False,
             )  # don't actually store the body, store address.
         return resp
 
@@ -555,7 +631,9 @@ class Node:
 
                 self.internal_feedback[continue_id] = asyncio.Queue()
 
-                ip_addr = self.addr_table[addr]
+                ip_addr = self.peer_dht.get(addr).data
+                if ip_addr is None:
+                    logger.error("DHT_STORE: addr NOT FOUND in peer DHT")
                 logger.debug(
                     f"Hash Miss! [{key}]={body} - {self.bin_addr!r} Send to peer {addr!r}"
                 )
@@ -672,7 +750,9 @@ class Node:
                 "FROM": self.bin_addr,
             }
 
-            ip_addr = self.addr_table[addr]
+            ip_addr = self.peer_dht.get(addr).data
+            if ip_addr is None:
+                logger.error("addr NOT FOUND in Peer DHT")
             continue_id = self.internal_feedback_counter
             self.internal_feedback_counter += 1
 
@@ -760,7 +840,7 @@ if __name__ == "__main__":
             await asyncio.sleep(1)
             logger.debug("Tasks currently running: ", len(asyncio.all_tasks()))
 
-    async def main():
+    async def main2():
         # asyncio.create_task(monitor())
         mode = sys.argv[1]
         serve_first_two = int(mode)
@@ -781,26 +861,26 @@ if __name__ == "__main__":
 
         if serve_first_two:
             node_1 = Node(b"Address One", b"USER ONE")
-            node_2 = Node(b"Address Two", b"USER ONE")
+            # node_2 = Node(b"Address Two", b"USER ONE")
             logger.debug("Pizza")
             await node_1.start_engine()
-            await node_2.start_engine()
+            # await node_2.start_engine()
         else:
             node_1 = Node(b"Address Three", b"USER TWO")
-            node_2 = Node(b"Address Four", b"USER TWO")
+            # node_2 = Node(b"Address Four", b"USER TWO")
             await node_1.start_engine()
-            await node_2.start_engine()
+            # await node_2.start_engine()
 
         if serve_first_two:
             tcp_ip_interface1 = Generic_TCP(serve_addr)
             tcp_ip_interface2 = Generic_TCP(serve_addr2)
             await node_1.add_transport(tcp_ip_interface1)
-            await node_2.add_transport(tcp_ip_interface2)
+            # await node_2.add_transport(tcp_ip_interface2)
         else:
             tcp_ip_interface1 = Generic_TCP(serve_addr3)
             tcp_ip_interface2 = Generic_TCP(serve_addr4)
             await node_1.add_transport(tcp_ip_interface1)
-            await node_2.add_transport(tcp_ip_interface2)
+            # await node_2.add_transport(tcp_ip_interface2)
 
         await asyncio.sleep(5)
 
@@ -833,13 +913,109 @@ if __name__ == "__main__":
         await asyncio.sleep(1000)
         logger.critical("Main done!")
 
+    async def main():
+        # asyncio.create_task(monitor())
+        mode = sys.argv[1]
+        server_number = int(mode)
+        logger.info(f"SERVE: {server_number}")
+
+        """Main function for testing."""
+        # asyncio.create_task(monitor())
+        addr_table = {
+            b"Address One": Star_Address("tcp", "127.0.0.1", 9280),
+            b"Address Two": Star_Address("tcp", "127.0.0.1", 9281),
+            b"Address Three": Star_Address("tcp", "127.0.0.1", 9282),
+            b"Address Four": Star_Address("tcp", "127.0.0.1", 9283),
+        }
+        serve_addr = addr_table[b"Address One"]
+        serve_addr2 = addr_table[b"Address Two"]
+        serve_addr3 = addr_table[b"Address Three"]
+        serve_addr4 = addr_table[b"Address Four"]
+
+        if server_number == 1:
+            node = Node(b"Address One", b"USER ONE")
+            tp = Generic_TCP(serve_addr)
+            await node.start_engine()
+            await node.add_transport(tp)
+        if server_number == 2:
+            node = Node(b"Address Two", b"USER ONE")
+            tp = Generic_TCP(serve_addr2)
+            await node.start_engine()
+            await node.add_transport(tp)
+        if server_number == 3:
+            node = Node(b"Address Three", b"USER TWO")
+            tp = Generic_TCP(serve_addr3)
+            await node.start_engine()
+            await node.add_transport(tp)
+        if server_number == 4:
+            node = Node(b"Address Four", b"USER TWO")
+            tp = Generic_TCP(serve_addr4)
+            await node.start_engine()
+            await node.add_transport(tp)
+
+        await asyncio.sleep(5)
+
+        if server_number == 1:
+            # nodeA.peer_dht.set(
+            #     b"Address Three", addr_table[b"Address Three"]
+            # )  #  1 --> 3
+            # logger.info("Set 1 --> 3 initial seed.")
+
+            logger.info("Connecting Addr#1 to Addr#3")
+            await node.establish_connection(
+                b"Address Three", addr_table[b"Address Three"], tp
+            )
+            logger.info("Resulting 1 --> 3")
+            print(node.peer_dht.fetch_copy())
+
+            await node.establish_connection(
+                b"Address Two", addr_table[b"Address Two"], tp
+            )
+            await asyncio.sleep(2)
+            logger.info("Final Node1")
+            print(node.peer_dht.fetch_copy())
+
+        if server_number == 2:
+            # nodeA.peer_dht.set(
+            #     b"Address Three", addr_table[b"Address Three"]
+            # )  #  1 --> 3
+            # logger.info("Set 1 --> 3 initial seed.")
+
+            logger.info("Connecting Addr#1 to Addr#3")
+            await node.establish_connection(
+                b"Address Four", addr_table[b"Address Four"], tp
+            )
+            logger.info("Resulting 2 --> 4")
+            print(node.peer_dht.fetch_copy())
+
+            await asyncio.sleep(2)
+            logger.info("Final Node1")
+            print(node.peer_dht.fetch_copy())
+
+            # nodeA.peer_dht.set(b"Address Three", addr_table[b"Address One"])  #  1 --> 3
+            # logger.info("Set 3 --> 1 initial seed.")
+
+        # for x in range(1, 100):
+        #     name = await asyncio.to_thread(input, "Wait......  1 \n")
+
+        #     await node_1.allocate_task(tcp_ip_interface1, f"Test ID {x}", "Test Val")
+        #     name = await asyncio.to_thread(input, "Wait......  2 \n")
+
+        #     await node_2.allocate_task(tcp_ip_interface2, f"Test ID2 {x}", "Test Val")
+        #     name = await asyncio.to_thread(input, "Search......  2 \n")
+        #     reply = await node_1.search_task(tcp_ip_interface1, f"Test ID2 {x}")
+        #     logger.info(f"FINAL REPLY: {reply}")
+
+        await asyncio.sleep(1000)
+        logger.critical("Main done!")
+
     logger = logging.getLogger(__name__)
 
     # # create console handler with a higher log level
     ch = logging.StreamHandler(sys.stdout)
     ch.setLevel(logging.DEBUG)
     ch.setFormatter(CustomFormatter())
-    logging.basicConfig(handlers=[ch], level=logging.DEBUG)
+    logging.basicConfig(handlers=[ch], level=logging.INFO)
 
     asyncio.get_event_loop().set_debug(False)
     asyncio.run(main())
