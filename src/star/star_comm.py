@@ -13,6 +13,8 @@ import uuid
 import zmq.asyncio
 import os
 
+from util import gaussian_bytes
+
 logger = logging.getLogger(__name__)
 
 # Manages a node.
@@ -56,6 +58,9 @@ class Node:
 
         # peer routing.
         self.peer_dht = DHT(self.bin_addr)  # [peerID] = TTL[Star_Address]
+        self.peer_addr_unknown: set[bytes] = (
+            set()
+        )  # [peerID]   --- store peers here that I know exist but don't know their tp.address
 
         # peer discovery
         # net bootstrap:
@@ -80,6 +85,12 @@ class Node:
     async def start_engine(self):
         asyncio.create_task(self.receive_queue_processor())
         asyncio.create_task(self.engine.start_loops())
+        asyncio.create_task(self.run_discover())
+
+    async def run_discover(self):
+        while True:
+            await asyncio.sleep(15)
+            await self.peer_discovery()
 
     async def start_program(self, program: star.Program, tp: Generic_TCP):
         task_list: set[star.StarTask] = program.task_list
@@ -177,6 +188,39 @@ class Node:
         logger.debug(f"Search For Task: {task_id}")
         return await self.search_dht(tp, task_id, "TASK")
 
+    async def search_peer(self, tp: Generic_TCP, peer_id: bytes):  ## GET DHT ITEM.
+        logger.debug(f"Search For Peer: {peer_id!r}")
+        return await self.search_dht(tp, peer_id, "PEER")
+
+    async def peer_discovery(self):
+        # Peers located somewhere in the network, but I may or may not know them. Add to cache.
+        decision = random.random()
+        if decision < 0.25:  # 25% of time, cache the viewed chains.
+            peer_to_query = None
+            for x in self.peer_addr_unknown:
+                peer_to_query = x
+                break
+            if peer_to_query is None:
+                return await self.peer_discovery()
+            logger.info(f"Discovery: Searching for {peer_to_query!r} - chain")
+            await self.search_peer(self.default_tp, peer_to_query)
+            return
+        if (
+            decision < 0.75
+        ):  # 50% of time, try to find new CLOSE people (use gauss dist)
+            query = gaussian_bytes(
+                self.bin_addr, 1 << 64, 128
+            )  # use a 64 byte std.dev (So, ~69% within same user group.)
+            logger.info(f"Discovery: Searching for {query.hex()} - gauss")
+            await self.search_peer(self.default_tp, query)
+            return
+        else:
+            # 25% of time, try to find FAR people. (General random dist.)
+            query = os.urandom(128)
+            logger.info(f"Discovery: Searching for {query.hex()} - rand")
+            await self.search_peer(self.default_tp, query)
+            return
+
     async def set_dht(self, tp: Generic_TCP, key: Any, value: Any, dht_select: str):
         if dht_select == "TASK":
             response = self.task_dht.set(
@@ -188,11 +232,7 @@ class Node:
             if response.response_code == "NEIGHBOR_UPDATE_AND_OWN":
                 await self.engine_allocate(key)
         elif dht_select == "PEER":
-            response = self.peer_dht.set(
-                key,
-                value,
-                # post_to_cache=False,
-            )
+            response = self.store_peer(key, value)
 
         # send it to peers!
         peers = response.neighbor_addrs
@@ -220,17 +260,18 @@ class Node:
     ):  # initatitor client
         if dht_select == "TASK":
             resp = self.retrieve_task(key)
+            logger.warning("SEARCH DHT dump")
+            print(self.task_dht.fetch_copy())
         elif dht_select == "PEER":
             resp = self.retrieve_peer(key)
+            logger.warning("SEARCH DHT dump")
+            print(self.peer_dht.fetch_copy())
         else:
             raise ValueError()
 
         if resp.response_code == "SELF_FOUND":
             logger.debug(f"Search For {key} - Found Local! {self.bin_addr!r}")
             return resp.data
-
-        logger.warning("SEARCH DHT dump")
-        print(self.task_dht.fetch_copy())
 
         # Not stored in local DHT. Look up nodes closer.
         for addr in resp.neighbor_addrs:
@@ -266,6 +307,8 @@ class Node:
             code = response.headers["CODE"]
             if code == "FOUND":
                 chain = response.headers["CHAIN"]
+                for peer in chain:
+                    self.peer_addr_unknown.add(peer)
                 logger.debug(f"Search For: {key} - Found Remote! {chain[-1]}")
                 if dht_select == "TASK":
                     resp = self.store_task(key, response.body, cached=True)
@@ -303,9 +346,8 @@ class Node:
         )  # a dictionary of key peer address and Star_Address
         addr_add = set()
         for in_addr in incoming_addresses:
-            self.peer_dht.set_cache(
-                in_addr, incoming_addresses[in_addr]
-            )  # Cached. Not owned. # TODO. Check flow here.
+            # Cached. Not owned. # TODO. Check flow here.
+            self.store_peer(in_addr, incoming_addresses[in_addr], cached=True)
             addr_add.add(in_addr)
 
         self.task_dht.update_addresses(peerID)
@@ -534,6 +576,8 @@ class Node:
         return resp
 
     def store_peer(self, key, body, cached=False):
+        self.peer_dht.update_addresses(key)
+        self.task_dht.update_addresses(key)
         if cached:
             resp = self.peer_dht.set_cache(key, body)
         else:
@@ -549,10 +593,15 @@ class Node:
 
     async def dht_store_client(self, item: Node_Request):  # DHT Set receive
         # Receiving data from server side.
-        code_return = item.headers.get("CODE")
+        code_return = item.headers["CODE"]
         logger.debug(f"Got Server Response for dht allocation: CODE: {code_return}")
+
+        chain = item.headers["CHAIN"]
+        # chain of peers! Passive discovery.
+        for peer in chain:
+            self.peer_addr_unknown.add(peer)
+
         if code_return == "NO_ROUTES_AVAILABLE":
-            chain = item.headers.get("CHAIN")
             logger.debug(
                 f"No routes available. Currently however stored here in cache: {chain}"
             )
@@ -582,6 +631,9 @@ class Node:
         logger.debug(
             f"{self.bin_addr!r} Received Task Allocation Request from {from_bin_addr!r}: [{key}]={body}"
         )
+
+        for peer in ignore_nodes:
+            self.peer_addr_unknown.add(peer)
 
         ignore_nodes.append(self.bin_addr)
 
@@ -706,6 +758,8 @@ class Node:
         ignore_nodes = headers["DHT_NODE_IGNORE"]
         key = headers["DHT_KEY"]
         from_addr = headers["FROM"]
+        for peer in ignore_nodes:
+            self.peer_addr_unknown.add(peer)
         ignore_nodes.append(self.bin_addr)
 
         logger.debug(
@@ -775,6 +829,8 @@ class Node:
             code = response.headers["CODE"]
             if code == "FOUND":
                 chain = response.headers["CHAIN"]
+                for peer in chain:
+                    self.peer_addr_unknown.add(peer)
                 logger.debug(f"Found key [{key}] - remote server {chain[-1]}")
                 if dht_select == "TASK":
                     self.store_task(key, response.body, cached=True)
@@ -956,11 +1012,6 @@ if __name__ == "__main__":
         await asyncio.sleep(5)
 
         if server_number == 1:
-            # nodeA.peer_dht.set(
-            #     b"Address Three", addr_table[b"Address Three"]
-            # )  #  1 --> 3
-            # logger.info("Set 1 --> 3 initial seed.")
-
             logger.info("Connecting Addr#1 to Addr#3")
             await node.establish_connection(
                 b"Address Three", addr_table[b"Address Three"], tp
@@ -976,10 +1027,6 @@ if __name__ == "__main__":
             print(node.peer_dht.fetch_copy())
 
         if server_number == 2:
-            # nodeA.peer_dht.set(
-            #     b"Address Three", addr_table[b"Address Three"]
-            # )  #  1 --> 3
-            # logger.info("Set 1 --> 3 initial seed.")
 
             logger.info("Connecting Addr#1 to Addr#3")
             await node.establish_connection(
@@ -991,20 +1038,6 @@ if __name__ == "__main__":
             await asyncio.sleep(2)
             logger.info("Final Node1")
             print(node.peer_dht.fetch_copy())
-
-            # nodeA.peer_dht.set(b"Address Three", addr_table[b"Address One"])  #  1 --> 3
-            # logger.info("Set 3 --> 1 initial seed.")
-
-        # for x in range(1, 100):
-        #     name = await asyncio.to_thread(input, "Wait......  1 \n")
-
-        #     await node_1.allocate_task(tcp_ip_interface1, f"Test ID {x}", "Test Val")
-        #     name = await asyncio.to_thread(input, "Wait......  2 \n")
-
-        #     await node_2.allocate_task(tcp_ip_interface2, f"Test ID2 {x}", "Test Val")
-        #     name = await asyncio.to_thread(input, "Search......  2 \n")
-        #     reply = await node_1.search_task(tcp_ip_interface1, f"Test ID2 {x}")
-        #     logger.info(f"FINAL REPLY: {reply}")
 
         await asyncio.sleep(1000)
         logger.critical("Main done!")

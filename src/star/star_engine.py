@@ -341,9 +341,9 @@ if __name__ == "__main__":
         f"Opening program '{pgrm.saved_data['pgrm_name']}' from {pgrm.saved_data['date_compiled']}\n"
     )
 
-    compute_node = NodeEngine()
-    star.IS_ENGINE = True
-    star.BINDINGS = compute_node.return_component_bindings()
+    # compute_node = NodeEngine()
+    # star.IS_ENGINE = True
+    # star.BINDINGS = compute_node.return_component_bindings()
     # exc = compute_node.import_program(pgrm)
     # compute_node.start_program(exc, local=True)
 
