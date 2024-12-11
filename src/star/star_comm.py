@@ -1,7 +1,4 @@
 import asyncio
-import queue
-import string
-import threading
 from node_queue_interface import Node_Request, Node_Response
 from transport_protocol import *
 from DHT import *
@@ -260,12 +257,12 @@ class Node:
     ):  # initatitor client
         if dht_select == "TASK":
             resp = self.retrieve_task(key)
-            logger.warning("SEARCH DHT dump")
-            print(self.task_dht.fetch_copy())
+            logger.debug("SEARCH DHT dump")
+            # print(self.task_dht.fetch_copy())
         elif dht_select == "PEER":
             resp = self.retrieve_peer(key)
-            logger.warning("SEARCH DHT dump")
-            print(self.peer_dht.fetch_copy())
+            logger.debug("SEARCH DHT dump")
+            # print(self.peer_dht.fetch_copy())
         else:
             raise ValueError()
 
@@ -1038,6 +1035,21 @@ if __name__ == "__main__":
             await asyncio.sleep(2)
             logger.info("Final Node1")
             print(node.peer_dht.fetch_copy())
+
+        if server_number == 1:
+            pgrm = star.Program(read_pgrm="my_list_program.star")
+            logger.info(
+                f"I: Opening program '{pgrm.saved_data['pgrm_name']}' from {pgrm.saved_data['date_compiled']}\n"
+            )
+            process = await node.start_program(pgrm, tp)
+
+        elif server_number == 2:
+            await asyncio.sleep(10)
+            pgrm = star.Program(read_pgrm="file_program.star")
+            logger.info(
+                f"I: Opening program '{pgrm.saved_data['pgrm_name']}' from {pgrm.saved_data['date_compiled']}\n"
+            )
+            process = await node.start_program(pgrm, tp)
 
         await asyncio.sleep(1000)
         logger.critical("Main done!")
