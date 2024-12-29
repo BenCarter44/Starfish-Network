@@ -1,6 +1,13 @@
 import sys
 import time
-import star_components as star
+import os
+
+sys.path.append(os.path.join(os.path.dirname(__file__), "..", "src"))
+try:
+    from ..src.core import star_components as star
+except:
+    from core import star_components as star
+
 import logging
 
 logger = logging.getLogger(__name__)

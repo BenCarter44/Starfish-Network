@@ -3,8 +3,9 @@ from typing import Any
 import numpy as np
 import dill  # type: ignore
 import hashlib
-import star_components as star
+import src.core.star_components as star
 import logging
+from src.communications.main_pb2 import DHTStatus
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +52,7 @@ def hash_func(data: Any) -> bytes:
 
 
 class DHT_Response:
-    def __init__(self, response_code: str, data: Any, addrs: list[bytes]):
+    def __init__(self, response_code: DHTStatus, data: Any, addrs: list[bytes]):
         """Response from DHT class
 
         Args:
@@ -106,8 +107,12 @@ class DHT:
 
     def get(self, key, neighbors=3, hash_func_in=None):
 
-        if key in self.data:
-            return DHT_Response("SELF_FOUND", self.data[key], [])
+        if key in self.data and key not in self.cached_data:
+            return DHT_Response(DHTStatus.OWNED, self.data[key], [])
+
+        if key in self.data and key in self.cached_data:
+            return DHT_Response(DHTStatus.FOUND, self.data[key], [])
+
         # Not found, key probably on another node?
 
         if hash_func_in is None:
@@ -135,36 +140,53 @@ class DHT:
         else:
             close_neighbors = closest[:neighbors]
 
-        return DHT_Response("NOT_FOUND", None, close_neighbors)
+        return DHT_Response(DHTStatus.NOT_FOUND, None, close_neighbors)
 
     def set_cache(self, key, val):
         self.data[key] = val
         self.cached_data.add(key)
 
+    def fancy_print(self):
+        for x in self.data:
+            cache_text = "OWN  "
+            if x in self.cached_data:
+                cache_text = "CACHE"
+
+            key = x.hex()
+            value = self.data[x]
+            if len(value.hex()) > 16:
+                value = value.hex()[0:16]
+                value += "..."
+            else:
+                value = value.hex()
+            logger.debug(f"{cache_text}\t[{key}]\t = {value}")
+
     def set(
-        self, key, val, neighbors=3, post_to_cache=True, hash_func_in=None
+        self, key, val, neighbors=1, post_to_cache=True, hash_func_in=None
     ) -> DHT_Response:
+        if len(key) != 16:
+            logger.warning("Key in DHT set is not 16 bytes!")
         # store in myself. Then, see if there are any closer people to also send to.
+        # if hash_func_in is None:
+        #     primary_hash_function = hash_func
+        # else:
+        #     primary_hash_function = hash_func_in
 
-        if hash_func_in is None:
-            primary_hash_function = hash_func
-        else:
-            primary_hash_function = hash_func_in
-
-        key_hsh = primary_hash_function(key)
+        # key_hsh = primary_hash_function(key)
 
         # convert
         def diff_hash(obj):
             obj_hash = obj  # directly xor the address. # primary_hash_function(obj)
-            return xor(obj_hash, key_hsh)
+            return xor(obj_hash, key)
 
         closest = sorted(self.addr, key=diff_hash)  # sort by hash.
 
-        # logger.debug(f"{key_hsh.hex().replace('0','')} - MAIN KEY SET")
-        # for x in closest:
-        #     tmp_hex = diff_hash(x).hex()
-        #     addr_hex = x.hex()
-        #     logger.debug(f"{tmp_hex.replace('0','')} - {addr_hex.replace('0','')}")
+        logger.debug(f"{key.hex()} - MAIN KEY SET")
+        logger.debug(f"Neighbor | Diff Hex")
+        for x in closest:
+            tmp_hex = diff_hash(x).hex()
+            addr_hex = x.hex()
+            logger.debug(f"{addr_hex} | {tmp_hex}")
 
         if len(closest) < neighbors:
             close_neighbors = closest
@@ -177,13 +199,16 @@ class DHT:
             if post_to_cache:
                 self.cached_data.add(key)
                 self.data[key] = val
-            return DHT_Response("NEIGHBOR_UPDATE_CACHE", (key, val), close_neighbors)
+                self.fancy_print()
+            return DHT_Response(DHTStatus.FOUND, (key, val), close_neighbors)
 
         # if random.random() < 0.5:  # For testing the children update feature.
         #     self.cached_data.add(key)
         #     return DHT_Response("NEIGHBOR_UPDATE_CACHE", (key, val), [closest[-1]])
         self.data[key] = val
-        return DHT_Response("NEIGHBOR_UPDATE_AND_OWN", (key, val), close_neighbors)
+        self.fancy_print()
+
+        return DHT_Response(DHTStatus.OWNED, (key, val), close_neighbors)
 
 
 if __name__ == "__main__":

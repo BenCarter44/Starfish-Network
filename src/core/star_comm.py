@@ -1,16 +1,16 @@
 import asyncio
 from node_queue_interface import Node_Request, Node_Response
-from transport_protocol import *
-from DHT import *
-from star_engine import NodeEngine
-import star_components as star
+from src.core.transport_protocol import *
+from src.core.DHT import *
+from src.core.star_engine import NodeEngine
+import src.core.star_components as star
 import sys
 import logging
 import uuid
 import zmq.asyncio
 import os
 
-from util import gaussian_bytes
+from src.util.util import gaussian_bytes
 
 logger = logging.getLogger(__name__)
 

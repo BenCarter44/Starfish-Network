@@ -5,10 +5,14 @@ from threading import Thread
 import threading
 from typing import Any, Callable, Optional, cast
 import uuid
-import star_components as star
+import src.core.star_components as star
 import asyncio
 import time
 import logging
+
+import os, sys
+
+sys.path.append(os.path.join(os.path.dirname(__file__), "..", "src"))
 
 logger = logging.getLogger(__name__)
 
@@ -103,7 +107,7 @@ class NodeEngine:
         incoming_target = evt.target
 
         if incoming_target not in self.hosted_tasks:
-            logger.debug("Passed in task ID but not hosting. Forwarding")
+            logger.warning("Passed in task ID but not hosting. Forwarding")
             await self.out_unified_queue.put(evt)
             return
 
@@ -146,8 +150,9 @@ class NodeEngine:
                     f"EX Queue: {evt}. Total Workers Alloc: {len(pool._threads)} Total Workers: {pool._max_workers}."
                 )
                 logger.info(f"Run: {task}")
+                logger.debug(func)
 
-                if not (task.require_param):
+                if not (task.pass_id):
                     out_future = asyncio.get_event_loop().run_in_executor(
                         pool, functools.partial(func, evt)
                     )
