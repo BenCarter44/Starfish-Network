@@ -8,7 +8,7 @@ Imagine a table with one hundred table legs. Now, imagine those table legs rando
 
 ---
 
-This is currently a research project for [Benjamin Carter's](https://codingcando.com/) undergraduate capstone under the direction of Professor [Dr. Isac Artzi](https://www.gcu.edu/faculty-list) and with a research advisor of Professor [David Demland](https://www.gcu.edu/faculty-list)  in Grand Canyon University's Artificial Intelligence Research and Design Program (RDP).
+This is currently a research project for [Benjamin Carter's](https://codingcando.com/) undergraduate capstone under the direction of Professor [Dr. Isac Artzi](https://www.gcu.edu/faculty-list) and with a research advisor of Professor [David Demland](https://www.gcu.edu/faculty-list) at Grand Canyon University.
 
 ---
 
