@@ -35,6 +35,7 @@ if __name__ == "__main__":
     async def monitor():
         """Get a count of how many tasks scheduled on the asyncio loop."""
         while True:
+            return
             await asyncio.sleep(1)
             logger.debug(f"Tasks currently running: {len(asyncio.all_tasks())}")
 
@@ -48,19 +49,19 @@ if __name__ == "__main__":
         # asyncio.create_task(monitor())
         addr_table = [
             (
-                b"\x00\x22\x00\x00\x00\x00\x00\x00\x00\x00\x00\x05\x04\x03\x02\x01",
+                b"\x00\x22\x00\x05\x04\x03\x02\x01",
                 star.StarAddress("tcp://127.0.0.1:9280"),
             ),
             (
-                b"\x40\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01",
+                b"\x40\x00\x00\x00\x00\x00\x00\x00",
                 star.StarAddress("tcp://127.0.0.1:9281"),
             ),
             (
-                b"\x80\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01",
+                b"\x80\x00\x00\x00\x00\x00\x00\x00",
                 star.StarAddress("tcp://127.0.0.1:9282"),
             ),
             (
-                b"\xB0\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01",
+                b"\xB0\x00\x00\x00\x00\x00\x00\x00",
                 star.StarAddress("tcp://127.0.0.1:9283"),
             ),
         ]
@@ -87,33 +88,41 @@ if __name__ == "__main__":
             logger.info("Connecting Addr#1 to Addr#2")
             await node.connect_to_peer(addr_table[1][0], addr_table[1][1])
 
-            await asyncio.sleep(2)
-            logger.info("Final Node1 PEER LIST")
-            print(node.plugboard.peer_table.fetch_copy())
+            await asyncio.sleep(10)
+            logger.warning("Final Node1 PEER LIST")
+            node.plugboard.peer_table.fancy_print()
 
-        # if server_number == 2:
+        if server_number == 2:
+            await asyncio.sleep(10)
+            logger.info("Connecting Addr#2 to Addr#3 & 4")
+            await node.connect_to_peer(addr_table[2][0], addr_table[2][1])
+            await node.connect_to_peer(addr_table[3][0], addr_table[3][1])
 
-        #     logger.info("Connecting Addr#1 to Addr#3")
-        #     await node.establish_connection(b"AddrThree", addr_table[b"AddrThree"])
-        #     await node.establish_connection(b"AddrFour", addr_table[b"AddrFour"])
+            logger.warning("Final Node2")
+            node.plugboard.peer_table.fancy_print()
 
-        #     logger.info("Final Node1")
-        #     print(node.peer_dht.fetch_copy())
+        if server_number == 3 or server_number == 4:
+            await asyncio.sleep(5)
+            logger.warning(f"Final Node{server_number}")
+            node.plugboard.peer_table.fancy_print()
 
         if server_number == 1:
+            pass
+            await asyncio.sleep(45)
             pgrm = star.Program(read_pgrm="examples/my_list_program.star")
             logger.info(
                 f"I: Opening program '{pgrm.saved_data['pgrm_name']}' from {pgrm.saved_data['date_compiled']}\n"
             )
             process = await node.start_program(pgrm, b"User")
 
-        # elif server_number == 2:
-        #     await asyncio.sleep(10)
-        #     pgrm = star.Program(read_pgrm="file_program.star")
-        #     logger.info(
-        #         f"I: Opening program '{pgrm.saved_data['pgrm_name']}' from {pgrm.saved_data['date_compiled']}\n"
-        #     )
-        #     process = await node.start_program(pgrm)
+        elif server_number == 4:
+            pass
+            await asyncio.sleep(40)
+            pgrm = star.Program(read_pgrm="examples/file_program.star")
+            logger.info(
+                f"I: Opening program '{pgrm.saved_data['pgrm_name']}' from {pgrm.saved_data['date_compiled']}\n"
+            )
+            process = await node.start_program(pgrm, b"Bob")
 
         await asyncio.sleep(1000)
         logger.critical("Main done!")
@@ -124,7 +133,7 @@ if __name__ == "__main__":
     ch = logging.StreamHandler(sys.stdout)
     ch.setLevel(logging.DEBUG)
     ch.setFormatter(CustomFormatter())
-    logging.basicConfig(handlers=[ch], level=logging.DEBUG)
+    logging.basicConfig(handlers=[ch], level=logging.INFO)
 
     asyncio.get_event_loop().set_debug(True)
     asyncio.run(main())

@@ -105,6 +105,9 @@ class DHT:
         else:
             return self.data
 
+    def exists(self, key: bytes):
+        return key in self.data
+
     def get(self, key, neighbors=3, hash_func_in=None):
 
         if key in self.data and key not in self.cached_data:
@@ -143,6 +146,10 @@ class DHT:
         return DHT_Response(DHTStatus.NOT_FOUND, None, close_neighbors)
 
     def set_cache(self, key, val):
+        if key in self.data and key not in self.cached_data:
+            # owned! Skip!
+            self.data[key] = val
+            return
         self.data[key] = val
         self.cached_data.add(key)
 
@@ -164,8 +171,8 @@ class DHT:
     def set(
         self, key, val, neighbors=1, post_to_cache=True, hash_func_in=None
     ) -> DHT_Response:
-        if len(key) != 16:
-            logger.warning("Key in DHT set is not 16 bytes!")
+        if len(key) != 8:
+            logger.warning("Key in DHT set is not 8 bytes!")
         # store in myself. Then, see if there are any closer people to also send to.
         # if hash_func_in is None:
         #     primary_hash_function = hash_func

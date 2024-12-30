@@ -37,19 +37,25 @@ class DHTClient:
         self.peer_id = addr_to
 
     async def FetchItem(
-        self, key: bytes, select
+        self, key: bytes, select: pb_base.DHTSelect, nodes_visited: list[bytes] = []
     ) -> tuple[bytes, pb_base.DHTStatus, pb_base.DHTSelect]:
 
         logger.debug("Create FetchItem request")
         logger.debug(f"[{key.hex()}]")
         peer_id = self.peer_id
-        request = pb_base.DHT_Fetch_Request(key=key, select=select)
-        request.query_chain.append(peer_id)
-
+        request = pb_base.DHT_Fetch_Request(
+            key=key, select=select, query_chain=nodes_visited
+        )
         response = await self.stub.FetchItem(request)
         return response.value, response.status, response.select
 
-    async def StoreItem(self, key: bytes, value: bytes, select) -> int:
+    async def StoreItem(
+        self,
+        key: bytes,
+        value: bytes,
+        select: pb_base.DHTSelect,
+        nodes_visited: list[bytes] = [],
+    ) -> int:
         peer_id = self.peer_id
 
         logger.debug("Create StoreItem request")
@@ -57,8 +63,12 @@ class DHTClient:
         if len(val) > 32:
             val = val[0:32] + "..."
         logger.debug(f'[{key.hex()}] = "{val}"')
-        request = pb_base.DHT_Store_Request(key=key, value=value, select=select)
+        request = pb_base.DHT_Store_Request(
+            key=key, value=value, select=select, query_chain=nodes_visited
+        )
         request.query_chain.append(peer_id)
+        for x in request.query_chain:
+            logger.debug(f"Visited: {x.hex()}")
         response = await self.stub.StoreItem(request)
         # try:
         #     response_stream =
@@ -88,6 +98,8 @@ class DHTService(pb.DHTServiceServicer):
         nodes_visited.append(self.addr)
         logger.debug("Got FetchItem request")
         logger.debug(f"[{request.key.hex()}]")
+        for x in nodes_visited:
+            logger.debug(f"Visited: {x.hex()}")
         if request.select == pb_base.DHTSelect.PEER_ID:
             peer_id = nice_print(request.key)
             # peer_id = request.key.decode("utf-8")
@@ -122,15 +134,17 @@ class DHTService(pb.DHTServiceServicer):
                 addr
             )
             if transport is None:
-                logger.error(f"Transport for {addr.hex()} not found!")
+                logger.info(f"Transport for {addr.hex()} not found!")
                 continue
 
             channel = transport.get_channel()
             dhtClient = DHTClient(channel, self.addr)
             response, status, select = await dhtClient.FetchItem(
-                request.key, request.select
+                request.key, request.select, nodes_visited=nodes_visited
             )
             await channel.close()
+            if status == pb_base.DHTStatus.NOT_FOUND:
+                continue
             self.internal_callback.dht_cache_store(
                 request.key, response, request.select
             )
@@ -142,7 +156,7 @@ class DHTService(pb.DHTServiceServicer):
                 select=request.select,
             )
 
-        logger.warning(f"No Neighbors! Not FOUND for fetch!")
+        logger.info(f"No Neighbors! Not FOUND for fetch! Key: {request.key.hex()}")
         return pb_base.DHT_Fetch_Response(
             key=request.key,
             value=data,
@@ -163,13 +177,17 @@ class DHTService(pb.DHTServiceServicer):
         logger.debug(f'[{request.key.hex()}] = "{val}"')
         if request.select == pb_base.DHTSelect.PEER_ID:
             # peer_id = nice_print(request.key)
-            peer_id = request.key.decode("utf-8")
+            # peer_id = request.key.decode("utf-8")
             val = StarAddress.from_bytes(request.value)
-            logger.debug(f"Decoded PEER: [{peer_id}] = {val.get_string_channel()}")
+            logger.debug(
+                f"Decoded PEER: [{request.key.hex()}] = {val.get_string_channel()}"
+            )
         elif request.select == pb_base.DHTSelect.TASK_ID:
             task_addr = nice_print(request.key)  # task ID in bytes
 
         nodes_visited = request.query_chain
+        for x in nodes_visited:
+            logger.debug(f"Visited: {x.hex()}")
         peers_update = set(nodes_visited)
         await self.internal_callback.update_peers_seen(peers_update)  # internal.
         nodes_visited.append(self.addr)
@@ -203,11 +221,14 @@ class DHTService(pb.DHTServiceServicer):
             transport: StarAddress = await self.internal_callback.get_peer_transport(
                 addr
             )
+            if transport is None:
+                logger.info(f"Transport for {addr.hex()} not found!")
+                continue
 
             channel = transport.get_channel()
             dhtClient = DHTClient(channel, self.addr)
             response = await dhtClient.StoreItem(
-                request.key, request.value, request.select
+                request.key, request.value, request.select, nodes_visited=nodes_visited
             )
             await channel.close()
             return pb_base.DHT_Store_Response(
@@ -217,7 +238,7 @@ class DHTService(pb.DHTServiceServicer):
                 select=request.select,
             )
 
-        logger.warning(f"No Neighbors! Not FOUND for store!")
+        logger.info(f"No Neighbors! Not FOUND for store! Key: {request.key.hex()}")
         return pb_base.DHT_Store_Response(
             key=request.key,
             query_chain=nodes_visited,

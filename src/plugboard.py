@@ -1,4 +1,8 @@
 import asyncio
+import os
+
+from src.communications.PeerService import PeerDiscoveryClient
+from src.util.util import gaussian_bytes
 from .core.star_engine import NodeEngine
 from .core.DHT import *
 from .communications.TaskService import TaskPeer
@@ -33,6 +37,12 @@ class PlugBoard:
         logger.info(f"Creating local channel: {self.local_addr.get_string_channel()}")
         self.dht_interface = DHTClient(channel, self.my_addr)
         self.task_interface: TaskPeer = TaskPeer(channel, self.my_addr)
+        self.peer_discovery_interface = PeerDiscoveryClient(
+            self.my_addr, self.local_addr
+        )
+        self.seen_peers: set[bytes] = set()
+        self.received_rpcs = asyncio.Event()
+
         # self.peer_interface: dict[StarAddress, PeerClient] = {}
 
     async def get_peer_transport(self, addr: bytes):
@@ -40,18 +50,71 @@ class PlugBoard:
         tp_b = await self.dht_get(addr, DHTSelect.PEER_ID)
         if tp_b is None:
             return None
+        # logger.debug(f"TP: {tp_b.hex()} - {tp_b}")
         tp = StarAddress.from_bytes(tp_b)
         return tp
 
     async def add_peer(self, addr: bytes, tp: StarAddress):
         await self.dht_set(addr, tp.to_bytes(), DHTSelect.PEER_ID)
 
-    async def update_peers_seen(self, addr_list: set[bytes]):
-        pass
+    async def update_peers_seen(self, addr_list: set[bytes] | bytes):
+        self.received_rpcs.set()
+        if isinstance(addr_list, set):
+            for addr in addr_list:
+                if self.peer_table.exists(addr):
+                    continue
+                self.seen_peers.add(addr)
+            return
+        self.seen_peers.add(addr_list)
+
+    async def perform_discovery_round(self):
+        # Peers located somewhere in the network, but I may or may not know them. Add to cache.
+        self.received_rpcs.clear()
+        decision = random.random()
+        if decision < 0.50:  # 50% of time, cache the viewed chains.
+            peer_to_query = None
+            for x in self.seen_peers:
+                peer_to_query = x
+                break
+            if peer_to_query is None:
+                return await self.perform_discovery_round()
+            self.seen_peers.remove(peer_to_query)
+            logger.info(
+                f"Discovery: Searching for {peer_to_query.hex()} - chain - length remain: {len(self.seen_peers)}"
+            )
+            await self.get_peer_transport(peer_to_query)
+            return
+        if (
+            decision < 0.75
+        ):  # 25% of time, try to find new CLOSE people (use gauss dist)
+            query = gaussian_bytes(self.my_addr[0:4], 2**16, 4)  # d route
+            query = query + os.urandom(4)
+            logger.info(
+                f"Discovery: Searching for {query.hex()} - gauss - length remain: {len(self.seen_peers)}"
+            )
+            await self.get_peer_transport(query)
+            return
+        else:
+            # 25% of time, try to find FAR people. (General random dist.)
+            query = os.urandom(8)
+            logger.info(
+                f"Discovery: Searching for {query.hex()} - rand - length remain: {len(self.seen_peers)}"
+            )
+            await self.get_peer_transport(query)
+            return
+
+    async def perform_bootstrap(self, peer_addr: bytes, address: StarAddress):
+        peers = await self.peer_discovery_interface.Bootstrap(peer_addr, address)
+        for peer in peers:
+            peerID = peer.peer_id
+            addr = StarAddress.from_pb(peer.addr)
+            self.dht_cache_store(peerID, addr.to_bytes(), DHTSelect.PEER_ID)
 
     async def dispatch_event(self, evt: Event):
         # Sends to local.
-        await self.task_interface.SendEvent(evt)
+        status = await self.task_interface.SendEvent(evt)
+        if status == DHTStatus.NOT_FOUND:
+            logger.error("Unable to deliver event to node!")
 
     def receive_event(self, evt):
         self.engine.recv_event(evt)
@@ -93,7 +156,8 @@ class PlugBoard:
         )  # send out.
         if status != DHTStatus.FOUND and status != DHTStatus.OWNED:
             return None
-
+        if value == b"":
+            return None
         assert select_in == select
         return value
 

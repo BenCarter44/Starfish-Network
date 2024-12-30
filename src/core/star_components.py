@@ -75,6 +75,7 @@ class StarTask:
         self.task_id = pad_bytes(task_id, 2)
         self.callable = b""
         self.nice_name = ""
+        self.runtime_data: Optional[dict[str, bytes]] = None
         self.pass_id = pass_id
 
     def to_bytes(self) -> bytes:
@@ -82,7 +83,7 @@ class StarTask:
 
     def to_pb(self, include_callable=False) -> pb_p.TaskIdentifier:
         if self.callable != b"" and include_callable:
-            c = dill.dumps(self.callable, fmode=dill.FILE_FMODE)
+            c = dill.dumps((self.callable, self.runtime_data), fmode=dill.FILE_FMODE)
         else:
             c = b""
 
@@ -102,10 +103,12 @@ class StarTask:
         out = cls(pb.user_id, pb.process_id, pb.task_id, pb.pass_id)
 
         if pb.callable_data != b"":
-            c = dill.loads(pb.callable_data)
+            c, r = dill.loads(pb.callable_data)
         else:
             c = b""
+            r = {}
         out.callable = c
+        out.runtime_data = r
         # logger.debug(f"From PB: {out.callable}")
         return out
 
@@ -122,6 +125,7 @@ class StarTask:
         self.__init__(r.user_id, r.process_id, r.task_id)
         self.pass_id = ti.pass_id
         self.callable = r.callable
+        self.runtime_data = r.runtime_data
 
     def attach_to_process(self, process_object: StarProcess):
         self.process_id = process_object.process_id
@@ -225,9 +229,6 @@ class StarAddress:
 
 logger = logging.getLogger(__name__)
 
-# Currently global for program. --> a program is simply a list of Tasks with Callable.
-task_list: set[StarTask] = set()
-conditional_task_list: dict[str, list[tuple[str, str, Callable, bool]]] = {}
 
 IS_ENGINE = False
 BINDINGS: dict[str, Callable] = {}
@@ -310,15 +311,14 @@ class Event:
         if target.find(":") != -1:
             raise ValueError("No colons allowed in task name!")
 
-        hsh_func = hashlib.sha256()
-        hsh_func.update(target.encode("utf-8"))
         task_identifier = StarTask(
             self.owned_user_id if self.owned_user_id is not None else b"",
             self.owned_process_id if self.owned_process_id is not None else b"",
-            hsh_func.digest()[0:4],
+            b"",
         )
         task_identifier.set_nice_name(target)
         self.target = task_identifier
+        self.target_string = target
 
     def set_conditional_target(self, target: StarTask | str) -> None:
         """Set target task of event.
@@ -335,15 +335,14 @@ class Event:
         if target.find(":") != -1:
             raise ValueError("No colons allowed in task name!")
 
-        hsh_func = hashlib.sha256()
-        hsh_func.update(target.encode("utf-8"))
         task_identifier = StarTask(
             self.owned_user_id if self.owned_user_id is not None else b"",
             self.owned_process_id if self.owned_process_id is not None else b"",
-            hsh_func.digest()[0:4],
+            b"",
         )
         task_identifier.set_nice_name(target)
         self.target = task_identifier
+        self.target_string = target
 
 
 class AwaitGroup:
@@ -499,11 +498,20 @@ def dispatch_event(evt: Event, originating_task: StarTask) -> None:
 
     evt.owned_process_id = originating_task.process_id
     evt.owned_user_id = originating_task.user_id
+
+    evt.target.task_id = originating_task.runtime_data[evt.target_string]
+
     evt.target.attach_to_process_task(originating_task)
     logger.info(evt.target)
     logger.info(f"SEND: {evt.data}")
     f = BINDINGS["dispatch_event"]
     return f(evt)
+
+
+# Currently global for program. --> a program is simply a list of Tasks with Callable.
+task_list: set[StarTask] = set()
+conditional_task_list: dict[str, list[tuple[str, str, Callable, bool]]] = {}
+preview_task_list: list[tuple[str, Callable, bool]] = []
 
 
 class Program:
@@ -574,6 +582,19 @@ class Program:
 ############################################################
 
 
+# task_to_id: dict[str, bytes] = {}
+
+
+# def setup(names: list[str]):
+#     global task_to_id
+#     counter = 0
+#     for name in names:
+#         counter_b = int.to_bytes(counter, 2, "big")
+#         task_to_id[name] = counter_b
+#         counter += 1
+#     return task_to_id
+
+
 def task(name: str, pass_task_id=False):
     """Decorator for building a task
 
@@ -591,17 +612,17 @@ def task(name: str, pass_task_id=False):
                 *args, **kwargs
             )  # do not pass arguments. Do func(*args, **kwargs) if want args.
 
+            # evt_out.target.task_id = task_to_id[name]
+            # return evt_out
+
         # Register Task with function=wrap, name=name, condition=condition
         if name.find(":") != -1:
             raise ValueError("No colons allowed in task name!")
-        hsh_func = hashlib.sha256()
-        hsh_func.update(name.encode("utf-8"))
-        task_identifier = StarTask(b"", b"", hsh_func.digest()[0:4], pass_task_id)
-        task_identifier.set_nice_name(name)
-        task_identifier.set_callable(f_wrap)
-
-        task_list.add(task_identifier)
-        logger.info(f"Registered task {name} with ID: {task_identifier.get_id()!r}")
+        # task_identifier = StarTask(b"", b"", task_to_id[name], pass_task_id)
+        # task_identifier.set_nice_name(name)
+        # task_identifier.set_callable(f_wrap)
+        # f_wrap(Event(), StarTask(b"", b"", b"", False))
+        preview_task_list.append((name, f_wrap, pass_task_id))
 
         return f_wrap
 
@@ -633,7 +654,7 @@ def conditional_task(name: str, condition: str, pass_task_id=False):
             conditional_task_list[name].append((name, condition, f_wrap, pass_task_id))
         else:
             conditional_task_list[name] = [(name, condition, f_wrap, pass_task_id)]
-        logger.info(f"Registered task {name} with condition {condition}...")
+        # print(f"Registered task {name} with condition {condition}...")
 
         return f_wrap
 
@@ -649,6 +670,28 @@ def compile(start_event: Event) -> Program:
     Returns:
         Program: Program Object
     """
+
+    # do unconditional tasks first
+    counter = 0
+    task_to_id = {}
+    for name, f_wrap, pass_task_id in preview_task_list:
+        task_to_id[name] = int.to_bytes(counter, 2, "big", signed=False)
+        counter += 1
+
+    for name, f_wrap, pass_task_id in preview_task_list:
+        # print(name, f_wrap)
+        def edit_ti(func):
+            def edit_task_id(*args, **kwargs):
+                e = func(*args, **kwargs)
+                e.target.task_id = task_to_id[e.target_string]
+                return e
+
+            return edit_task_id
+
+        task_identifier = StarTask(b"", b"", task_to_id[name], pass_task_id)  # type: ignore
+        task_identifier.set_nice_name(name)
+        task_identifier.set_callable(edit_ti(f_wrap))
+        task_list.add(task_identifier)
 
     # go through each task. See the condition. If multiple, create a decision event
 
@@ -671,6 +714,7 @@ def compile(start_event: Event) -> Program:
 
         return custom_decision_tree
 
+    counter_all = len(task_to_id)
     for name, condition_list in conditional_task_list.items():
 
         # create the individual tasks
@@ -680,11 +724,20 @@ def compile(start_event: Event) -> Program:
             c_name, condition_str, func, pass_id = cond_task_tokens
 
             new_name = f"{c_name}:{counter}"
-            hsh_func = hashlib.sha256()
-            hsh_func.update(new_name.encode("utf-8"))
-            task_identifier = StarTask(b"", b"", hsh_func.digest()[0:4], pass_id)
+            task_to_id[new_name] = int.to_bytes(counter_all, 2, "big", signed=False)
+            counter_all += 1
+            task_identifier = StarTask(b"", b"", task_to_id[new_name], pass_id)
             task_identifier.set_nice_name(new_name)
-            task_identifier.set_callable(func)
+
+            def edit_ti(func):
+                def edit_task_id(*args, **kwargs):
+                    e = func(*args, **kwargs)
+                    e.target.task_id = task_to_id[e.target_string]
+                    return e
+
+                return edit_task_id
+
+            task_identifier.set_callable(edit_ti(func))
             counter += 1
 
             task_list.add(task_identifier)
@@ -692,16 +745,19 @@ def compile(start_event: Event) -> Program:
 
         # create master task
         func = build_master_func(condition_dict)
-        hsh_func = hashlib.sha256()
-        hsh_func.update(name.encode("utf-8"))
-        task_identifier = StarTask(b"", b"", hsh_func.digest()[0:4], pass_id)
+        task_to_id[name] = int.to_bytes(counter_all, 2, "big", signed=False)
+        counter_all += 1
+        task_identifier = StarTask(b"", b"", task_to_id[name], pass_id)
         task_identifier.set_nice_name(name)
         task_identifier.set_callable(func)
         task_list.add(task_identifier)
 
     for task in task_list:
         logger.info(f"Registered: {task}")
+        task.runtime_data = task_to_id
 
+    start_event.target.task_id = task_to_id[start_event.target_string]
+    logger.info(f"Start: {start_event.target}")
     program = Program(task_list=task_list, start_event=start_event)
     # program.show_dependencies()
     return program

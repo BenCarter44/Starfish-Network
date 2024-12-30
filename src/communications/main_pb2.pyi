@@ -154,49 +154,34 @@ class SendEvent_Response(_message.Message):
     status: DHTStatus
     def __init__(self, status: _Optional[_Union[DHTStatus, str]] = ...) -> None: ...
 
-class SearchPeer_Request(_message.Message):
-    __slots__ = ("peer",)
-    PEER_FIELD_NUMBER: _ClassVar[int]
-    peer: bytes
-    def __init__(self, peer: _Optional[bytes] = ...) -> None: ...
-
-class SearchPeer_Response(_message.Message):
-    __slots__ = ("addr", "status")
-    ADDR_FIELD_NUMBER: _ClassVar[int]
-    STATUS_FIELD_NUMBER: _ClassVar[int]
-    addr: _primitives_pb2.TransportAddress
-    status: DHTStatus
+class Bootstrap_Request(_message.Message):
+    __slots__ = ("peerID", "dial_from")
+    PEERID_FIELD_NUMBER: _ClassVar[int]
+    DIAL_FROM_FIELD_NUMBER: _ClassVar[int]
+    peerID: bytes
+    dial_from: _primitives_pb2.TransportAddress
     def __init__(
         self,
-        addr: _Optional[_Union[_primitives_pb2.TransportAddress, _Mapping]] = ...,
-        status: _Optional[_Union[DHTStatus, str]] = ...,
+        peerID: _Optional[bytes] = ...,
+        dial_from: _Optional[_Union[_primitives_pb2.TransportAddress, _Mapping]] = ...,
     ) -> None: ...
 
-class StorePeer_Request(_message.Message):
-    __slots__ = ("peer", "addr")
-    PEER_FIELD_NUMBER: _ClassVar[int]
+class Bootstrap_Response(_message.Message):
+    __slots__ = ("value",)
+    VALUE_FIELD_NUMBER: _ClassVar[int]
+    value: _containers.RepeatedCompositeFieldContainer[Bootstrap_Item]
+    def __init__(
+        self, value: _Optional[_Iterable[_Union[Bootstrap_Item, _Mapping]]] = ...
+    ) -> None: ...
+
+class Bootstrap_Item(_message.Message):
+    __slots__ = ("peer_id", "addr")
+    PEER_ID_FIELD_NUMBER: _ClassVar[int]
     ADDR_FIELD_NUMBER: _ClassVar[int]
-    peer: bytes
+    peer_id: bytes
     addr: _primitives_pb2.TransportAddress
     def __init__(
         self,
-        peer: _Optional[bytes] = ...,
+        peer_id: _Optional[bytes] = ...,
         addr: _Optional[_Union[_primitives_pb2.TransportAddress, _Mapping]] = ...,
-    ) -> None: ...
-
-class StorePeer_Response(_message.Message):
-    __slots__ = ("code",)
-    CODE_FIELD_NUMBER: _ClassVar[int]
-    code: int
-    def __init__(self, code: _Optional[int] = ...) -> None: ...
-
-class BOOTSTRAP(_message.Message):
-    __slots__ = ("dial_to",)
-    FROM_FIELD_NUMBER: _ClassVar[int]
-    DIAL_TO_FIELD_NUMBER: _ClassVar[int]
-    dial_to: _primitives_pb2.TransportAddress
-    def __init__(
-        self,
-        dial_to: _Optional[_Union[_primitives_pb2.TransportAddress, _Mapping]] = ...,
-        **kwargs
     ) -> None: ...

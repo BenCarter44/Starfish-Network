@@ -57,6 +57,10 @@ class TaskService(pb.TaskServiceServicer):
 
         # Send to peer that owns the task!
         tp = await self.internal_callback.get_peer_transport(peerID)
+        if tp is None:
+            logger.info(f"Transport for {peerID.hex()} not found!")
+            return pb_base.SendEvent_Response(status=pb_base.DHTStatus.NOT_FOUND)
+
         channel = tp.get_channel()
         taskClient = TaskPeer(channel, self.addr)
         response = await taskClient.SendEvent(evt)

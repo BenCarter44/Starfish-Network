@@ -2,6 +2,8 @@
 import random
 from typing import cast
 import uuid
+from src.communications.PeerService import PeerService
+from src.communications.main_pb2_grpc import add_PeerServiceServicer_to_server
 from src.core.star_components import Program, StarProcess, StarTask
 from src.plugboard import PlugBoard
 
@@ -40,25 +42,42 @@ class Node:
         self.plugboard = PlugBoard(bin_addr, transport)
         self.addr = bin_addr
         self.transport = transport
+        self.is_connected = False
 
     async def run(self):
         asyncio.create_task(self.plugboard.engine.start_loops())
-        self.server = grpc.aio.server(maximum_concurrent_rpcs=100)
+
+        self.server = grpc.aio.server(maximum_concurrent_rpcs=None)
         add_DHTServiceServicer_to_server(
             servicer=DHTService(self.plugboard, self.addr), server=self.server
         )
         add_TaskServiceServicer_to_server(
             servicer=TaskService(self.plugboard, self.addr), server=self.server
         )
+        add_PeerServiceServicer_to_server(
+            servicer=PeerService(self.plugboard, self.addr), server=self.server
+        )
 
         port = self.transport.get_string_channel()
         self.server.add_insecure_port(port)
         logger.info(f"Serving on: {port}")
         await self.server.start()
+        asyncio.create_task(self.peer_discovery_task())
         await self.server.wait_for_termination()
 
     async def connect_to_peer(self, peer_addr, address: StarAddress):
+        # send bootstrap request to peer.
+        await self.plugboard.perform_bootstrap(peer_addr, address)
         await self.plugboard.add_peer(peer_addr, address)
+        self.is_connected = True
+
+    async def peer_discovery_task(self):
+        while True:
+            # if self.addr != b"\xB0\x00\x00\x00\x00\x00\x00\x00":
+            #     return
+            await asyncio.sleep(5)
+            if self.is_connected or self.plugboard.received_rpcs.is_set():
+                await self.plugboard.perform_discovery_round()
 
     async def start_program(self, program: Program, user_id: bytes):
         task_list: set[StarTask] = program.task_list
@@ -71,7 +90,7 @@ class Node:
         # with already running processes for the user.
         proc = StarProcess(
             user_id,
-            int.to_bytes(random.randint(1, 2**15), 8, "big"),
+            int.to_bytes(random.randint(1, 2**15), 2, "big"),
         )
         for task in task_list:
             proc.add_task(task)
@@ -84,5 +103,6 @@ class Node:
 
         program.start.target.attach_to_process(proc)
         # await asyncio.sleep(100)
+        logger.info(f"Start Event: {program.start.target.get_id().hex()}")
         await self.plugboard.dispatch_event(program.start)
         return proc

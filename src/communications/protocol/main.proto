@@ -72,24 +72,18 @@ message SendEvent_Response {
     DHTStatus status = 1;
 }
 
-message SearchPeer_Request {
-    bytes peer = 1;
-}
-message SearchPeer_Response {
-    TransportAddress addr = 1;
-    DHTStatus status = 2;
-}
-message StorePeer_Request {
-    bytes peer = 1;
-    TransportAddress addr = 2;
-}
-message StorePeer_Response {
-    int32 code = 1;
+message Bootstrap_Request {
+    bytes peerID = 1;
+    TransportAddress dial_from = 2;
 }
 
-message BOOTSTRAP {
-    bytes from = 1;
-    TransportAddress dial_to = 2;
+message Bootstrap_Response {
+    repeated Bootstrap_Item value = 1;
+}
+
+message Bootstrap_Item {
+    bytes peer_id = 1;
+    TransportAddress addr = 2;
 }
 
 // /////////////////////////////////////////
@@ -118,11 +112,7 @@ service PingPong {
     rpc SendPing(PING) returns (PONG) {}
 }
 
-// service PeerService {
-    
-//     // Fetch 
-//     rpc SearchPeer(SearchPeer_Request) returns (SearchPeer_Response) {}
+service PeerService {
 
-//     // Store
-//     rpc StorePeer(SearchPeer_Request) returns (SearchPeer_Response) {} 
-// }
+    rpc Bootstrap(Bootstrap_Request) returns (Bootstrap_Response) {}
+}

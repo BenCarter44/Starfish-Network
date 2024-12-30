@@ -22,7 +22,7 @@ from . import primitives_pb2 as primitives__pb2
 
 
 DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(
-    b'\n\nmain.proto\x12\x08protocol\x1a\x10primitives.proto"\x7f\n\x11\x44HT_Fetch_Request\x12\x0b\n\x03key\x18\x01 \x01(\x0c\x12\x13\n\x0bquery_chain\x18\x02 \x03(\x0c\x12#\n\x06status\x18\x03 \x01(\x0e\x32\x13.protocol.DHTStatus\x12#\n\x06select\x18\x04 \x01(\x0e\x32\x13.protocol.DHTSelect"\x8f\x01\n\x12\x44HT_Fetch_Response\x12\x0b\n\x03key\x18\x01 \x01(\x0c\x12\r\n\x05value\x18\x02 \x01(\x0c\x12\x13\n\x0bquery_chain\x18\x03 \x03(\x0c\x12#\n\x06status\x18\x04 \x01(\x0e\x32\x13.protocol.DHTStatus\x12#\n\x06select\x18\x05 \x01(\x0e\x32\x13.protocol.DHTSelect"\x8e\x01\n\x11\x44HT_Store_Request\x12\x0b\n\x03key\x18\x01 \x01(\x0c\x12\r\n\x05value\x18\x02 \x01(\x0c\x12\x13\n\x0bquery_chain\x18\x03 \x03(\x0c\x12#\n\x06status\x18\x04 \x01(\x0e\x32\x13.protocol.DHTStatus\x12#\n\x06select\x18\x05 \x01(\x0e\x32\x13.protocol.DHTSelect"\x80\x01\n\x12\x44HT_Store_Response\x12\x0b\n\x03key\x18\x01 \x01(\x0c\x12\x13\n\x0bquery_chain\x18\x02 \x03(\x0c\x12#\n\x06status\x18\x03 \x01(\x0e\x32\x13.protocol.DHTStatus\x12#\n\x06select\x18\x04 \x01(\x0e\x32\x13.protocol.DHTSelect"\x15\n\x04PING\x12\r\n\x05value\x18\x01 \x01(\x05"\x15\n\x04PONG\x12\r\n\x05value\x18\x01 \x01(\x05">\n\x14TaskAllocate_Request\x12&\n\x04task\x18\x01 \x01(\x0b\x32\x18.protocol.TaskIdentifier"<\n\x15TaskAllocate_Response\x12#\n\x06status\x18\x01 \x01(\x0e\x32\x13.protocol.DHTStatus"1\n\x11SendEvent_Request\x12\x1c\n\x03\x65vt\x18\x01 \x01(\x0b\x32\x0f.protocol.Event"9\n\x12SendEvent_Response\x12#\n\x06status\x18\x01 \x01(\x0e\x32\x13.protocol.DHTStatus""\n\x12SearchPeer_Request\x12\x0c\n\x04peer\x18\x01 \x01(\x0c"d\n\x13SearchPeer_Response\x12(\n\x04\x61\x64\x64r\x18\x01 \x01(\x0b\x32\x1a.protocol.TransportAddress\x12#\n\x06status\x18\x02 \x01(\x0e\x32\x13.protocol.DHTStatus"K\n\x11StorePeer_Request\x12\x0c\n\x04peer\x18\x01 \x01(\x0c\x12(\n\x04\x61\x64\x64r\x18\x02 \x01(\x0b\x32\x1a.protocol.TransportAddress""\n\x12StorePeer_Response\x12\x0c\n\x04\x63ode\x18\x01 \x01(\x05"F\n\tBOOTSTRAP\x12\x0c\n\x04\x66rom\x18\x01 \x01(\x0c\x12+\n\x07\x64ial_to\x18\x02 \x01(\x0b\x32\x1a.protocol.TransportAddress*=\n\tDHTStatus\x12\x0b\n\x07UNKNOWN\x10\x00\x12\t\n\x05\x46OUND\x10\x01\x12\r\n\tNOT_FOUND\x10\x02\x12\t\n\x05OWNED\x10\x03*=\n\tDHTSelect\x12\t\n\x05\x42LANK\x10\x00\x12\x0b\n\x07PEER_ID\x10\x01\x12\x0b\n\x07TASK_ID\x10\x02\x12\x0b\n\x07\x46ILE_ID\x10\x03\x32\xa0\x01\n\nDHTService\x12H\n\tFetchItem\x12\x1b.protocol.DHT_Fetch_Request\x1a\x1c.protocol.DHT_Fetch_Response"\x00\x12H\n\tStoreItem\x12\x1b.protocol.DHT_Store_Request\x1a\x1c.protocol.DHT_Store_Response"\x00\x32W\n\x0bTaskService\x12H\n\tSendEvent\x12\x1b.protocol.SendEvent_Request\x1a\x1c.protocol.SendEvent_Response"\x00\x32\x38\n\x08PingPong\x12,\n\x08SendPing\x12\x0e.protocol.PING\x1a\x0e.protocol.PONG"\x00\x62\x06proto3'
+    b'\n\nmain.proto\x12\x08protocol\x1a\x10primitives.proto"\x7f\n\x11\x44HT_Fetch_Request\x12\x0b\n\x03key\x18\x01 \x01(\x0c\x12\x13\n\x0bquery_chain\x18\x02 \x03(\x0c\x12#\n\x06status\x18\x03 \x01(\x0e\x32\x13.protocol.DHTStatus\x12#\n\x06select\x18\x04 \x01(\x0e\x32\x13.protocol.DHTSelect"\x8f\x01\n\x12\x44HT_Fetch_Response\x12\x0b\n\x03key\x18\x01 \x01(\x0c\x12\r\n\x05value\x18\x02 \x01(\x0c\x12\x13\n\x0bquery_chain\x18\x03 \x03(\x0c\x12#\n\x06status\x18\x04 \x01(\x0e\x32\x13.protocol.DHTStatus\x12#\n\x06select\x18\x05 \x01(\x0e\x32\x13.protocol.DHTSelect"\x8e\x01\n\x11\x44HT_Store_Request\x12\x0b\n\x03key\x18\x01 \x01(\x0c\x12\r\n\x05value\x18\x02 \x01(\x0c\x12\x13\n\x0bquery_chain\x18\x03 \x03(\x0c\x12#\n\x06status\x18\x04 \x01(\x0e\x32\x13.protocol.DHTStatus\x12#\n\x06select\x18\x05 \x01(\x0e\x32\x13.protocol.DHTSelect"\x80\x01\n\x12\x44HT_Store_Response\x12\x0b\n\x03key\x18\x01 \x01(\x0c\x12\x13\n\x0bquery_chain\x18\x02 \x03(\x0c\x12#\n\x06status\x18\x03 \x01(\x0e\x32\x13.protocol.DHTStatus\x12#\n\x06select\x18\x04 \x01(\x0e\x32\x13.protocol.DHTSelect"\x15\n\x04PING\x12\r\n\x05value\x18\x01 \x01(\x05"\x15\n\x04PONG\x12\r\n\x05value\x18\x01 \x01(\x05">\n\x14TaskAllocate_Request\x12&\n\x04task\x18\x01 \x01(\x0b\x32\x18.protocol.TaskIdentifier"<\n\x15TaskAllocate_Response\x12#\n\x06status\x18\x01 \x01(\x0e\x32\x13.protocol.DHTStatus"1\n\x11SendEvent_Request\x12\x1c\n\x03\x65vt\x18\x01 \x01(\x0b\x32\x0f.protocol.Event"9\n\x12SendEvent_Response\x12#\n\x06status\x18\x01 \x01(\x0e\x32\x13.protocol.DHTStatus"R\n\x11\x42ootstrap_Request\x12\x0e\n\x06peerID\x18\x01 \x01(\x0c\x12-\n\tdial_from\x18\x02 \x01(\x0b\x32\x1a.protocol.TransportAddress"=\n\x12\x42ootstrap_Response\x12\'\n\x05value\x18\x01 \x03(\x0b\x32\x18.protocol.Bootstrap_Item"K\n\x0e\x42ootstrap_Item\x12\x0f\n\x07peer_id\x18\x01 \x01(\x0c\x12(\n\x04\x61\x64\x64r\x18\x02 \x01(\x0b\x32\x1a.protocol.TransportAddress*=\n\tDHTStatus\x12\x0b\n\x07UNKNOWN\x10\x00\x12\t\n\x05\x46OUND\x10\x01\x12\r\n\tNOT_FOUND\x10\x02\x12\t\n\x05OWNED\x10\x03*=\n\tDHTSelect\x12\t\n\x05\x42LANK\x10\x00\x12\x0b\n\x07PEER_ID\x10\x01\x12\x0b\n\x07TASK_ID\x10\x02\x12\x0b\n\x07\x46ILE_ID\x10\x03\x32\xa0\x01\n\nDHTService\x12H\n\tFetchItem\x12\x1b.protocol.DHT_Fetch_Request\x1a\x1c.protocol.DHT_Fetch_Response"\x00\x12H\n\tStoreItem\x12\x1b.protocol.DHT_Store_Request\x1a\x1c.protocol.DHT_Store_Response"\x00\x32W\n\x0bTaskService\x12H\n\tSendEvent\x12\x1b.protocol.SendEvent_Request\x1a\x1c.protocol.SendEvent_Response"\x00\x32\x38\n\x08PingPong\x12,\n\x08SendPing\x12\x0e.protocol.PING\x1a\x0e.protocol.PONG"\x00\x32W\n\x0bPeerService\x12H\n\tBootstrap\x12\x1b.protocol.Bootstrap_Request\x1a\x1c.protocol.Bootstrap_Response"\x00\x62\x06proto3'
 )
 
 _globals = globals()
@@ -30,10 +30,10 @@ _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
 _builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, "main_pb2", _globals)
 if not _descriptor._USE_C_DESCRIPTORS:
     DESCRIPTOR._loaded_options = None
-    _globals["_DHTSTATUS"]._serialized_start = 1198
-    _globals["_DHTSTATUS"]._serialized_end = 1259
-    _globals["_DHTSELECT"]._serialized_start = 1261
-    _globals["_DHTSELECT"]._serialized_end = 1322
+    _globals["_DHTSTATUS"]._serialized_start = 1099
+    _globals["_DHTSTATUS"]._serialized_end = 1160
+    _globals["_DHTSELECT"]._serialized_start = 1162
+    _globals["_DHTSELECT"]._serialized_end = 1223
     _globals["_DHT_FETCH_REQUEST"]._serialized_start = 42
     _globals["_DHT_FETCH_REQUEST"]._serialized_end = 169
     _globals["_DHT_FETCH_RESPONSE"]._serialized_start = 172
@@ -54,20 +54,18 @@ if not _descriptor._USE_C_DESCRIPTORS:
     _globals["_SENDEVENT_REQUEST"]._serialized_end = 814
     _globals["_SENDEVENT_RESPONSE"]._serialized_start = 816
     _globals["_SENDEVENT_RESPONSE"]._serialized_end = 873
-    _globals["_SEARCHPEER_REQUEST"]._serialized_start = 875
-    _globals["_SEARCHPEER_REQUEST"]._serialized_end = 909
-    _globals["_SEARCHPEER_RESPONSE"]._serialized_start = 911
-    _globals["_SEARCHPEER_RESPONSE"]._serialized_end = 1011
-    _globals["_STOREPEER_REQUEST"]._serialized_start = 1013
-    _globals["_STOREPEER_REQUEST"]._serialized_end = 1088
-    _globals["_STOREPEER_RESPONSE"]._serialized_start = 1090
-    _globals["_STOREPEER_RESPONSE"]._serialized_end = 1124
-    _globals["_BOOTSTRAP"]._serialized_start = 1126
-    _globals["_BOOTSTRAP"]._serialized_end = 1196
-    _globals["_DHTSERVICE"]._serialized_start = 1325
-    _globals["_DHTSERVICE"]._serialized_end = 1485
-    _globals["_TASKSERVICE"]._serialized_start = 1487
-    _globals["_TASKSERVICE"]._serialized_end = 1574
-    _globals["_PINGPONG"]._serialized_start = 1576
-    _globals["_PINGPONG"]._serialized_end = 1632
+    _globals["_BOOTSTRAP_REQUEST"]._serialized_start = 875
+    _globals["_BOOTSTRAP_REQUEST"]._serialized_end = 957
+    _globals["_BOOTSTRAP_RESPONSE"]._serialized_start = 959
+    _globals["_BOOTSTRAP_RESPONSE"]._serialized_end = 1020
+    _globals["_BOOTSTRAP_ITEM"]._serialized_start = 1022
+    _globals["_BOOTSTRAP_ITEM"]._serialized_end = 1097
+    _globals["_DHTSERVICE"]._serialized_start = 1226
+    _globals["_DHTSERVICE"]._serialized_end = 1386
+    _globals["_TASKSERVICE"]._serialized_start = 1388
+    _globals["_TASKSERVICE"]._serialized_end = 1475
+    _globals["_PINGPONG"]._serialized_start = 1477
+    _globals["_PINGPONG"]._serialized_end = 1533
+    _globals["_PEERSERVICE"]._serialized_start = 1535
+    _globals["_PEERSERVICE"]._serialized_end = 1622
 # @@protoc_insertion_point(module_scope)
