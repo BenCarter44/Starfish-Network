@@ -1,8 +1,3 @@
-######
-# OLD -- not needed??? Put it in the Plugboard... as it is just a DHT
-######
-
-
 # Class for code for the servicer
 # Class for client
 

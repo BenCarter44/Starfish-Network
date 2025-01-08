@@ -24,7 +24,16 @@ except:
     from ..communications import primitives_pb2 as pb_p
 
 
-def pad_bytes(b: bytes, l: int):
+def pad_bytes(b: bytes, l: int) -> bytes:
+    """Pad bytes on left (most significant bit first, big endian)
+
+    Args:
+        b (bytes): bytes to pad
+        l (int): length
+
+    Returns:
+        bytes: The padded bytes
+    """
     data = bytearray(b)
     padding_byte = b"\x00"
     data = data.rjust(l, padding_byte)  # pad on MSB
@@ -41,28 +50,64 @@ class StarProcess:
     # requires user ID.
 
     def to_bytes(self) -> bytes:
+        """Serialize object to bytes
+
+        Returns:
+            bytes: StarProcess in bytes
+        """
         return self.to_pb().SerializeToString()
 
     def to_pb(self) -> pb_p.Process:
+        """Serialize object to Protobuf object
+
+        Returns:
+            pb_p.Process: Protobuf Process object
+        """
         return pb_p.Process(user=self.user_id, process_id=self.process_id)
 
     @classmethod
     def from_pb(cls, pb):
+        """Create a StarProcess from a Protobuf Process object
+
+        Args:
+            pb (Process protobuf object)
+
+        Raises:
+            NotImplementedError: Not implemented!
+        """
         raise NotImplementedError
 
     @classmethod
-    def from_bytes(cls, b):
+    def from_bytes(cls, b: bytes) -> "StarProcess":
+        """Create object from bytes
+
+        Args:
+            b (bytes): Bytes of process
+
+        Returns:
+            StarProcess: Return a StarProcess object
+        """
         ti = pb_p.Process()
         ti = ti.FromString(b)
         return cls.from_pb(ti)
 
     def add_task(self, i: "StarTask"):
+        """Associate a task to a process
+
+        Args:
+            i (StarTask): StarTask to associate to the process
+        """
         assert type(i) == type(cast(StarTask, i))
         # assert isinstance(i, StarTask)
         i.attach_to_process(self)
         self.task_list.add(i)
 
-    def get_tasks(self):
+    def get_tasks(self) -> set["StarTask"]:
+        """Get tasks associated with the process
+
+        Returns:
+            set[StarTask]: Tasks associated with the process
+        """
         return self.task_list
 
 
@@ -79,9 +124,22 @@ class StarTask:
         self.pass_id = pass_id
 
     def to_bytes(self) -> bytes:
+        """Serialize StarTask to bytes
+
+        Returns:
+            bytes: bytes of the object
+        """
         return self.to_pb().SerializeToString()
 
     def to_pb(self, include_callable=False) -> pb_p.TaskIdentifier:
+        """Serialize object to Protobuf
+
+        Args:
+            include_callable (bool, optional): Include callable function. Defaults to False.
+
+        Returns:
+            pb_p.TaskIdentifier: Protobuf object
+        """
         if self.callable != b"" and include_callable:
             c = dill.dumps((self.callable, self.runtime_data), fmode=dill.FILE_FMODE)
         else:
@@ -96,10 +154,23 @@ class StarTask:
         )
 
     def to_bytes_with_callable(self) -> bytes:
+        """Serialize to bytes including callable
+
+        Returns:
+            bytes: Bytes
+        """
         return self.to_pb(True).SerializeToString()
 
     @classmethod
-    def from_pb(cls, pb):
+    def from_pb(cls, pb: pb_p.TaskIdentifier) -> "StarTask":
+        """Create StarTask from protobuf object
+
+        Args:
+            pb (pb_p.TaskIdentifier): Protobuf object
+
+        Returns:
+            StarTask: Task object
+        """
         out = cls(pb.user_id, pb.process_id, pb.task_id, pb.pass_id)
 
         if pb.callable_data != b"":
@@ -113,12 +184,17 @@ class StarTask:
         return out
 
     @classmethod
-    def from_bytes(cls, b):
+    def from_bytes(cls, b: bytes):
         ti = pb_p.TaskIdentifier()
         ti = ti.FromString(b)
         return cls.from_pb(ti)
 
     def from_bytes_local(self, b):
+        """Same as from_bytes but overwrites the object
+
+        Args:
+            b (bytes): The bytes of the object
+        """
         ti = pb_p.TaskIdentifier()
         ti = ti.FromString(b)
         r = self.from_pb(ti)

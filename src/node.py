@@ -39,12 +39,19 @@ except:
 class Node:
     # Support only one transport now!
     def __init__(self, bin_addr: bytes, transport: StarAddress):
+        """Host a node.
+
+        Args:
+            bin_addr (bytes): The node binary address (Peer ID)
+            transport (StarAddress): Transport address to serve on.
+        """
         self.plugboard = PlugBoard(bin_addr, transport)
         self.addr = bin_addr
         self.transport = transport
         self.is_connected = False
 
     async def run(self):
+        """Run the gRPC servers and start the execution engine"""
         asyncio.create_task(self.plugboard.engine.start_loops())
 
         self.server = grpc.aio.server(maximum_concurrent_rpcs=None)
@@ -65,21 +72,38 @@ class Node:
         asyncio.create_task(self.peer_discovery_task())
         await self.server.wait_for_termination()
 
-    async def connect_to_peer(self, peer_addr, address: StarAddress):
+    async def connect_to_peer(self, peer_addr: bytes, address: StarAddress):
+        """Create bootstrap request to peer.
+
+        Args:
+            peer_addr (bytes): Peer ID
+            address (StarAddress): Address of peer to connect to
+        """
         # send bootstrap request to peer.
         await self.plugboard.perform_bootstrap(peer_addr, address)
         await self.plugboard.add_peer(peer_addr, address)
         self.is_connected = True
 
     async def peer_discovery_task(self):
+        """The peer discovery task. Do round every 5 sec"""
         while True:
-            # if self.addr != b"\xB0\x00\x00\x00\x00\x00\x00\x00":
-            #     return
             await asyncio.sleep(5)
             if self.is_connected or self.plugboard.received_rpcs.is_set():
                 await self.plugboard.perform_discovery_round()
 
-    async def start_program(self, program: Program, user_id: bytes):
+    async def start_program(self, program: Program, user_id: bytes) -> StarProcess:
+        """Put a program on the execution queue of the OS
+
+        Args:
+            program (Program): Program object
+            user_id (bytes): User ID in bytes
+
+        Raises:
+            ValueError: Program is malformed
+
+        Returns:
+            StarProcess: The process object currently being run.
+        """
         task_list: set[StarTask] = program.task_list
         if task_list is None:
             raise ValueError("No tasks in program!")
