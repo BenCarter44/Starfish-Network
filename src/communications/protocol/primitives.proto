@@ -1,0 +1,36 @@
+syntax = "proto3";
+
+package protocol;
+
+message TaskIdentifier {
+    bytes user_id = 1;
+    bytes process_id = 2;
+    bytes task_id = 3;
+    bytes callable_data = 4;
+    int32 pass_id = 5;
+
+}
+
+message TaskValue {
+    bytes address = 1;
+    bytes task_data = 2;
+}
+
+message Process {
+    bytes user = 1;
+    bytes process_id = 2;
+}
+
+message TransportAddress {
+    bytes protocol = 1;
+    bytes host = 2;
+    bytes port = 3;
+}
+
+message Event {
+    // PeerIdentifier addr_from = 1; 
+    TaskIdentifier task_to = 1;
+    bytes data = 2;
+    bytes system_data = 3;
+
+}

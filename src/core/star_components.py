@@ -13,9 +13,27 @@ from typing_extensions import Self
 import dill  # type: ignore
 import uuid
 import logging
+import grpc
+import sys, os
+
+sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
+
+try:
+    import communications.primitives_pb2 as pb_p
+except:
+    from ..communications import primitives_pb2 as pb_p
 
 
-def pad_bytes(b: bytes, l: int):
+def pad_bytes(b: bytes, l: int) -> bytes:
+    """Pad bytes on left (most significant bit first, big endian)
+
+    Args:
+        b (bytes): bytes to pad
+        l (int): length
+
+    Returns:
+        bytes: The padded bytes
+    """
     data = bytearray(b)
     padding_byte = b"\x00"
     data = data.rjust(l, padding_byte)  # pad on MSB
@@ -24,72 +42,166 @@ def pad_bytes(b: bytes, l: int):
 
 class StarProcess:
     def __init__(self, user_id: bytes, process_id: bytes):
-        self.user_id = pad_bytes(user_id, 32)
-        self.process_id = pad_bytes(process_id, 32)
-        self.task_list = set()
+        self.user_id = pad_bytes(user_id, 4)
+        self.process_id = pad_bytes(process_id, 2)
+        self.task_list: set[StarTask] = set()
 
     # list of task identifiers.
     # requires user ID.
 
+    def to_bytes(self) -> bytes:
+        """Serialize object to bytes
+
+        Returns:
+            bytes: StarProcess in bytes
+        """
+        return self.to_pb().SerializeToString()
+
+    def to_pb(self) -> pb_p.Process:
+        """Serialize object to Protobuf object
+
+        Returns:
+            pb_p.Process: Protobuf Process object
+        """
+        return pb_p.Process(user=self.user_id, process_id=self.process_id)
+
+    @classmethod
+    def from_pb(cls, pb):
+        """Create a StarProcess from a Protobuf Process object
+
+        Args:
+            pb (Process protobuf object)
+
+        Raises:
+            NotImplementedError: Not implemented!
+        """
+        raise NotImplementedError
+
+    @classmethod
+    def from_bytes(cls, b: bytes) -> "StarProcess":
+        """Create object from bytes
+
+        Args:
+            b (bytes): Bytes of process
+
+        Returns:
+            StarProcess: Return a StarProcess object
+        """
+        ti = pb_p.Process()
+        ti = ti.FromString(b)
+        return cls.from_pb(ti)
+
     def add_task(self, i: "StarTask"):
+        """Associate a task to a process
+
+        Args:
+            i (StarTask): StarTask to associate to the process
+        """
+        assert type(i) == type(cast(StarTask, i))
+        # assert isinstance(i, StarTask)
         i.attach_to_process(self)
         self.task_list.add(i)
 
-    def get_tasks(self):
+    def get_tasks(self) -> set["StarTask"]:
+        """Get tasks associated with the process
+
+        Returns:
+            set[StarTask]: Tasks associated with the process
+        """
         return self.task_list
 
 
-def task_hash(task: "StarTask"):
-    assert isinstance(task, StarTask)
-    return task.get_id()
-
-
-def pass_through_hash(b: bytes):
-    return b
-
-
-def parse_task_from_id(task_id: bytes):
-    if len(task_id) != 32 * 4:
-        return None
-
-    custom_bytes = task_id[0:32]
-    user_id = task_id[32:64]
-    process_id = task_id[64:96]
-    name = task_id[96:]
-    custom_bytes_window = 4 * 3
-    custom_bytes = custom_bytes[-custom_bytes_window:]
-
-    version, subversion = struct.unpack(">ii", custom_bytes)
-
-    task = StarTask(name)
-    task.user_id = user_id
-    task.process_id = process_id
-    task.version = version
-    task.subversion = subversion
-    return task
-
-
 class StarTask:
-    def __init__(self, name: bytes, require_task_id_param=False):
-        self.name = pad_bytes(name, 32)
-        self.require_param = require_task_id_param  # private!
-        self.process_id = pad_bytes(b"", 32)
-        self.user_id = pad_bytes(b"", 32)
-        self.version = 3
-        self.subversion = 1
+    def __init__(
+        self, user_id: bytes, process_id: bytes, task_id: bytes, pass_id=False
+    ):
+        self.user_id = pad_bytes(user_id, 4)
+        self.process_id = pad_bytes(process_id, 2)
+        self.task_id = pad_bytes(task_id, 2)
+        self.callable = b""
         self.nice_name = ""
+        self.runtime_data: Optional[dict[str, bytes]] = None
+        self.pass_id = pass_id
 
-        if (
-            len(self.process_id) != 32
-            or len(self.user_id) != 32
-            or len(self.name) != 32
-        ):
-            logger.warn(len(self.process_id))
-            logger.warn(len(self.user_id))
-            logger.warn(len(self.name))
-            raise ValueError("Value not padded correctly!")
+    def to_bytes(self) -> bytes:
+        """Serialize StarTask to bytes
 
-        self.callable = None
+        Returns:
+            bytes: bytes of the object
+        """
+        return self.to_pb().SerializeToString()
+
+    def to_pb(self, include_callable=False) -> pb_p.TaskIdentifier:
+        """Serialize object to Protobuf
+
+        Args:
+            include_callable (bool, optional): Include callable function. Defaults to False.
+
+        Returns:
+            pb_p.TaskIdentifier: Protobuf object
+        """
+        if self.callable != b"" and include_callable:
+            c = dill.dumps((self.callable, self.runtime_data), fmode=dill.FILE_FMODE)
+        else:
+            c = b""
+
+        return pb_p.TaskIdentifier(
+            user_id=self.user_id,
+            process_id=self.process_id,
+            task_id=self.task_id,
+            callable_data=c if include_callable else b"",
+            pass_id=self.pass_id,
+        )
+
+    def to_bytes_with_callable(self) -> bytes:
+        """Serialize to bytes including callable
+
+        Returns:
+            bytes: Bytes
+        """
+        return self.to_pb(True).SerializeToString()
+
+    @classmethod
+    def from_pb(cls, pb: pb_p.TaskIdentifier) -> "StarTask":
+        """Create StarTask from protobuf object
+
+        Args:
+            pb (pb_p.TaskIdentifier): Protobuf object
+
+        Returns:
+            StarTask: Task object
+        """
+        out = cls(pb.user_id, pb.process_id, pb.task_id, pb.pass_id)
+
+        if pb.callable_data != b"":
+            c, r = dill.loads(pb.callable_data)
+        else:
+            c = b""
+            r = {}
+        out.callable = c
+        out.runtime_data = r
+        # logger.debug(f"From PB: {out.callable}")
+        return out
+
+    @classmethod
+    def from_bytes(cls, b: bytes):
+        ti = pb_p.TaskIdentifier()
+        ti = ti.FromString(b)
+        return cls.from_pb(ti)
+
+    def from_bytes_local(self, b):
+        """Same as from_bytes but overwrites the object
+
+        Args:
+            b (bytes): The bytes of the object
+        """
+        ti = pb_p.TaskIdentifier()
+        ti = ti.FromString(b)
+        r = self.from_pb(ti)
+        self.__init__(r.user_id, r.process_id, r.task_id)
+        self.pass_id = ti.pass_id
+        self.callable = r.callable
+        self.runtime_data = r.runtime_data
 
     def attach_to_process(self, process_object: StarProcess):
         self.process_id = process_object.process_id
@@ -113,10 +225,10 @@ class StarTask:
         # second 32 bytes are user bytes
         # third 32 bytes are process ID bytes
         # fourth 32 bytes are task bytes
-
-        custom = struct.pack(">ii", self.version, self.subversion)  # not param.
-        custom_bytes = pad_bytes(custom, 32)
-        return custom_bytes + self.user_id + self.process_id + self.name
+        custom = self.user_id + self.process_id + self.task_id
+        # custom_bytes = pad_bytes(custom, 32)
+        # return custom_bytes + self.user_id + self.process_id + self.name
+        return custom
 
     def __hash__(self):
         return hash(self.get_id())
@@ -127,60 +239,77 @@ class StarTask:
         return False
 
     def __getstate__(self):  # for pickling
-
-        # don't recurse here.
-        callable_bts = dill.dumps(self.callable, fmode=dill.FILE_FMODE, recurse=False)
-        return {
-            "name": self.name,
-            "require_param": self.require_param,
-            "process_id": self.process_id,
-            "user_id": self.user_id,
-            "version": self.version,
-            "subversion": self.subversion,
-            "nice_name": self.nice_name,
-            "callable": bytes(callable_bts),
-        }
+        return {"data": self.to_bytes_with_callable()}
 
     def __setstate__(self, state):  # for unpickling.
-        self.name = state["name"]
-        self.require_param = state["require_param"]
-        self.process_id = state["process_id"]
-        self.user_id = state["user_id"]
-        self.version = state["version"]
-        self.subversion = state["subversion"]
-        self.nice_name = state["nice_name"]
-        bts = state["callable"]
-        self.callable = dill.loads(bts)
+        # logger.debug(state)
+        self.from_bytes_local(state["data"])
 
     def set_nice_name(self, nice_name: str):
         self.nice_name = nice_name
 
-    def pack_for_sending(self):
-        other = StarTask(self.name, self.require_param)
-        other.nice_name = self.nice_name
-        other.process_id = self.process_id
-        other.user_id = self.user_id
-        other.version = self.version
-        other.subversion = self.subversion
-        return other
-
     def __repr__(self):
         hx = self.get_id()
         # use md5 to make it shorter
-        hx_nice = hx.hex().replace("0", "")
+        hx_nice = hx.hex()
         return f"<{self.nice_name} {hx_nice}>"
+
+
+class StarAddress:
+    """Event Struct"""
+
+    def __init__(self, string: str):
+        """Hold values that get passed from one task to another
+
+        Args:
+            a (Any, optional): A value. Defaults to 0.
+            b (Any, optional): B value. Defaults to 0.
+        """
+        self.protocol = string.split("://", 1)[0]
+        self.host = string[len(self.protocol) + 3 :].split(":", 1)[0]
+        self.port = int(string.split(":")[-1])
+        self.protocol = self.protocol.encode("utf-8")
+        self.host = self.host.encode("utf-8")
+        self.port = str(self.port).encode("utf-8")
+
+    def to_bytes(self) -> bytes:
+        return self.to_pb().SerializeToString()
+
+    def to_pb(self) -> pb_p.TransportAddress:
+        return pb_p.TransportAddress(
+            protocol=self.protocol, host=self.host, port=self.port
+        )
+
+    @classmethod
+    def from_pb(cls, pb):
+        out = cls("dummy://0:0")
+        out.protocol = pb.protocol
+        out.host = pb.host
+        out.port = pb.port
+        return out
+
+    @classmethod
+    def from_bytes(cls, b):
+        ti = pb_p.TransportAddress()
+        ti = ti.FromString(b)
+        return cls.from_pb(ti)
+
+    def get_channel(self) -> grpc.aio.Channel:
+        string = f"{self.host.decode('utf-8')}:{self.port.decode('utf-8')}"
+        return grpc.aio.insecure_channel(string)
+
+    def get_string_channel(self):
+        string = f"{self.host.decode('utf-8')}:{self.port.decode('utf-8')}"
+        return string
 
 
 logger = logging.getLogger(__name__)
 
-# Currently global for program. --> a program is simply a list of Tasks with Callable.
-task_list: set[StarTask] = set()
-conditional_task_list: dict[str, list[tuple[str, str, Callable, bool]]] = {}
 
 IS_ENGINE = False
 BINDINGS: dict[str, Callable] = {}
 
-ZERO_32 = b"\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
+ZERO_8 = b"\x00\x00\x00\x00\x00\x00\x00\x00"
 
 
 class Event:
@@ -198,8 +327,39 @@ class Event:
         self.target = None
         self.is_target_conditional = False  # used for compiler only
 
-        self.original_user_id: Optional[bytes] = None
-        self.original_process_id: Optional[bytes] = None
+        self.owned_user_id: Optional[bytes] = None
+        self.owned_process_id: Optional[bytes] = None
+
+    def to_bytes(self) -> bytes:
+        return self.to_pb().SerializeToString()
+
+    def to_pb(self) -> pb_p.Event:
+        task_to = self.target
+        if self.target is None:
+            task_to = StarTask(b"", b"", b"")
+
+        return pb_p.Event(
+            task_to=task_to.to_pb(),
+            data=dill.dumps(self.data, fmode=dill.FILE_FMODE),
+            system_data=dill.dumps(self.system, fmode=dill.FILE_FMODE),
+        )
+
+    @classmethod
+    def from_pb(cls, pb):
+        data = dill.loads(pb.data)
+        system = dill.loads(pb.system_data)
+        task_to = pb.task_to
+
+        out = cls(data)
+        out.system = system
+        out.target = StarTask.from_pb(task_to)
+        return out
+
+    @classmethod
+    def from_bytes(cls, b):
+        ti = pb_p.Event()
+        ti = ti.FromString(b)
+        return cls.from_pb(ti)
 
     def clear_system(self) -> None:
         """Clear out system parameters"""
@@ -215,28 +375,26 @@ class Event:
         Args:
             target (str): Label for task.
         """
-        if isinstance(target, StarTask):
+        try:
+            i = target.get_id()  # type: ignore
             self.target = target
             return
+        except:
+            pass  # Not a StarTask .... isinstance doesn't work for some reason on programs
+
+        target = cast(str, target)
 
         if target.find(":") != -1:
             raise ValueError("No colons allowed in task name!")
 
-        hsh_func = hashlib.sha256()
-        hsh_func.update(target.encode("utf-8"))
-        task_identifier = StarTask(hsh_func.digest())
+        task_identifier = StarTask(
+            self.owned_user_id if self.owned_user_id is not None else b"",
+            self.owned_process_id if self.owned_process_id is not None else b"",
+            b"",
+        )
         task_identifier.set_nice_name(target)
         self.target = task_identifier
-
-        if self.original_process_id is not None:
-            self.target.process_id = self.original_process_id
-        else:
-            self.target.process_id = ZERO_32
-
-        if self.original_user_id is not None:
-            self.target.user_id = self.original_user_id
-        else:
-            self.target.user_id = ZERO_32
+        self.target_string = target
 
     def set_conditional_target(self, target: StarTask | str) -> None:
         """Set target task of event.
@@ -253,14 +411,14 @@ class Event:
         if target.find(":") != -1:
             raise ValueError("No colons allowed in task name!")
 
-        hsh_func = hashlib.sha256()
-        hsh_func.update(target.encode("utf-8"))
-        task_identifier = StarTask(hsh_func.digest())
+        task_identifier = StarTask(
+            self.owned_user_id if self.owned_user_id is not None else b"",
+            self.owned_process_id if self.owned_process_id is not None else b"",
+            b"",
+        )
         task_identifier.set_nice_name(target)
         self.target = task_identifier
-
-        self.target.process_id = self.original_process_id
-        self.target.user_id = self.original_user_id
+        self.target_string = target
 
 
 class AwaitGroup:
@@ -414,13 +572,22 @@ def dispatch_event(evt: Event, originating_task: StarTask) -> None:
 
     # recv_event(evt)  # equiv.
 
-    evt.original_process_id = originating_task.process_id
-    evt.original_user_id = originating_task.user_id
+    evt.owned_process_id = originating_task.process_id
+    evt.owned_user_id = originating_task.user_id
+
+    evt.target.task_id = originating_task.runtime_data[evt.target_string]
+
     evt.target.attach_to_process_task(originating_task)
     logger.info(evt.target)
     logger.info(f"SEND: {evt.data}")
     f = BINDINGS["dispatch_event"]
     return f(evt)
+
+
+# Currently global for program. --> a program is simply a list of Tasks with Callable.
+task_list: set[StarTask] = set()
+conditional_task_list: dict[str, list[tuple[str, str, Callable, bool]]] = {}
+preview_task_list: list[tuple[str, Callable, bool]] = []
 
 
 class Program:
@@ -491,6 +658,19 @@ class Program:
 ############################################################
 
 
+# task_to_id: dict[str, bytes] = {}
+
+
+# def setup(names: list[str]):
+#     global task_to_id
+#     counter = 0
+#     for name in names:
+#         counter_b = int.to_bytes(counter, 2, "big")
+#         task_to_id[name] = counter_b
+#         counter += 1
+#     return task_to_id
+
+
 def task(name: str, pass_task_id=False):
     """Decorator for building a task
 
@@ -508,17 +688,17 @@ def task(name: str, pass_task_id=False):
                 *args, **kwargs
             )  # do not pass arguments. Do func(*args, **kwargs) if want args.
 
+            # evt_out.target.task_id = task_to_id[name]
+            # return evt_out
+
         # Register Task with function=wrap, name=name, condition=condition
         if name.find(":") != -1:
             raise ValueError("No colons allowed in task name!")
-        hsh_func = hashlib.sha256()
-        hsh_func.update(name.encode("utf-8"))
-        task_identifier = StarTask(hsh_func.digest(), pass_task_id)
-        task_identifier.set_nice_name(name)
-        task_identifier.set_callable(f_wrap)
-
-        task_list.add(task_identifier)
-        logger.info(f"Registered task {name} with ID: {task_identifier.get_id()!r}")
+        # task_identifier = StarTask(b"", b"", task_to_id[name], pass_task_id)
+        # task_identifier.set_nice_name(name)
+        # task_identifier.set_callable(f_wrap)
+        # f_wrap(Event(), StarTask(b"", b"", b"", False))
+        preview_task_list.append((name, f_wrap, pass_task_id))
 
         return f_wrap
 
@@ -550,7 +730,7 @@ def conditional_task(name: str, condition: str, pass_task_id=False):
             conditional_task_list[name].append((name, condition, f_wrap, pass_task_id))
         else:
             conditional_task_list[name] = [(name, condition, f_wrap, pass_task_id)]
-        logger.info(f"Registered task {name} with condition {condition}...")
+        # print(f"Registered task {name} with condition {condition}...")
 
         return f_wrap
 
@@ -566,6 +746,28 @@ def compile(start_event: Event) -> Program:
     Returns:
         Program: Program Object
     """
+
+    # do unconditional tasks first
+    counter = 0
+    task_to_id = {}
+    for name, f_wrap, pass_task_id in preview_task_list:
+        task_to_id[name] = int.to_bytes(counter, 2, "big", signed=False)
+        counter += 1
+
+    for name, f_wrap, pass_task_id in preview_task_list:
+        # print(name, f_wrap)
+        def edit_ti(func):
+            def edit_task_id(*args, **kwargs):
+                e = func(*args, **kwargs)
+                e.target.task_id = task_to_id[e.target_string]
+                return e
+
+            return edit_task_id
+
+        task_identifier = StarTask(b"", b"", task_to_id[name], pass_task_id)  # type: ignore
+        task_identifier.set_nice_name(name)
+        task_identifier.set_callable(edit_ti(f_wrap))
+        task_list.add(task_identifier)
 
     # go through each task. See the condition. If multiple, create a decision event
 
@@ -588,6 +790,7 @@ def compile(start_event: Event) -> Program:
 
         return custom_decision_tree
 
+    counter_all = len(task_to_id)
     for name, condition_list in conditional_task_list.items():
 
         # create the individual tasks
@@ -597,11 +800,20 @@ def compile(start_event: Event) -> Program:
             c_name, condition_str, func, pass_id = cond_task_tokens
 
             new_name = f"{c_name}:{counter}"
-            hsh_func = hashlib.sha256()
-            hsh_func.update(new_name.encode("utf-8"))
-            task_identifier = StarTask(hsh_func.digest(), pass_id)
+            task_to_id[new_name] = int.to_bytes(counter_all, 2, "big", signed=False)
+            counter_all += 1
+            task_identifier = StarTask(b"", b"", task_to_id[new_name], pass_id)
             task_identifier.set_nice_name(new_name)
-            task_identifier.set_callable(func)
+
+            def edit_ti(func):
+                def edit_task_id(*args, **kwargs):
+                    e = func(*args, **kwargs)
+                    e.target.task_id = task_to_id[e.target_string]
+                    return e
+
+                return edit_task_id
+
+            task_identifier.set_callable(edit_ti(func))
             counter += 1
 
             task_list.add(task_identifier)
@@ -609,16 +821,19 @@ def compile(start_event: Event) -> Program:
 
         # create master task
         func = build_master_func(condition_dict)
-        hsh_func = hashlib.sha256()
-        hsh_func.update(name.encode("utf-8"))
-        task_identifier = StarTask(hsh_func.digest())
+        task_to_id[name] = int.to_bytes(counter_all, 2, "big", signed=False)
+        counter_all += 1
+        task_identifier = StarTask(b"", b"", task_to_id[name], pass_id)
         task_identifier.set_nice_name(name)
         task_identifier.set_callable(func)
         task_list.add(task_identifier)
 
     for task in task_list:
         logger.info(f"Registered: {task}")
+        task.runtime_data = task_to_id
 
+    start_event.target.task_id = task_to_id[start_event.target_string]
+    logger.info(f"Start: {start_event.target}")
     program = Program(task_list=task_list, start_event=start_event)
     # program.show_dependencies()
     return program

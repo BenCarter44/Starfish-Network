@@ -14,9 +14,9 @@ def gaussian_bytes(mean: bytes, std_dev: bytes | int, length: int) -> bytes:
         bytes: Random bytes sampled from the Gaussian distribution.
     """
     # Convert bytes to integers
-    mean_int = int.from_bytes(mean, byteorder="big")
+    mean_int = int.from_bytes(mean, byteorder="big", signed=False)
     if isinstance(std_dev, bytes):
-        std_dev = int.from_bytes(std_dev, byteorder="big")
+        std_dev = int.from_bytes(std_dev, byteorder="big", signed=False)
 
     # Generate random Gaussian values
     random_value = np.random.normal(mean_int, std_dev)
@@ -25,7 +25,7 @@ def gaussian_bytes(mean: bytes, std_dev: bytes | int, length: int) -> bytes:
     clipped_value = max(0, min(random_value, (1 << (8 * length)) - 1))
 
     # Convert the value back to bytes
-    return int(clipped_value).to_bytes(length, byteorder="big")
+    return int(clipped_value).to_bytes(length, byteorder="big", signed=False)
 
 
 if __name__ == "__main__":

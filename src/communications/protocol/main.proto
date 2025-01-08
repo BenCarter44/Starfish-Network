@@ -1,0 +1,118 @@
+syntax = "proto3";
+
+package protocol;
+
+import "primitives.proto";
+
+enum DHTStatus {
+    UNKNOWN = 0;
+    FOUND = 1;
+    NOT_FOUND = 2;
+    OWNED = 3;
+}
+
+enum DHTSelect {
+    BLANK = 0;
+    PEER_ID = 1;
+    TASK_ID = 2;
+    FILE_ID = 3;
+}
+
+message DHT_Fetch_Request {
+    bytes key = 1;
+    repeated bytes query_chain = 2;
+    DHTStatus status = 3;
+    DHTSelect select = 4;
+}
+
+message DHT_Fetch_Response {
+    bytes key = 1;
+    bytes value = 2;
+    repeated bytes query_chain = 3;
+    DHTStatus status = 4;
+    DHTSelect select = 5;
+}
+
+message DHT_Store_Request {
+    bytes key = 1;
+    bytes value = 2;
+    repeated bytes query_chain = 3;
+    DHTStatus status = 4;
+    DHTSelect select = 5;
+}
+
+message DHT_Store_Response {
+    bytes key = 1;
+    repeated bytes query_chain = 2;
+    DHTStatus status = 3;
+    DHTSelect select = 4;
+}
+
+message PING {
+    int32 value = 1;
+}
+
+message PONG {
+    int32 value = 1;
+}
+
+
+message TaskAllocate_Request {
+    TaskIdentifier task = 1;
+}
+message TaskAllocate_Response {
+    DHTStatus status = 1;
+}
+
+message SendEvent_Request {
+    Event evt = 1;
+}
+
+message SendEvent_Response {
+    DHTStatus status = 1;
+}
+
+message Bootstrap_Request {
+    bytes peerID = 1;
+    TransportAddress dial_from = 2;
+}
+
+message Bootstrap_Response {
+    repeated Bootstrap_Item value = 1;
+}
+
+message Bootstrap_Item {
+    bytes peer_id = 1;
+    TransportAddress addr = 2;
+}
+
+// /////////////////////////////////////////
+
+service DHTService {
+
+    // Fetch item from DHT
+    rpc FetchItem(DHT_Fetch_Request) returns (DHT_Fetch_Response) {}
+
+    // Store item from DHT
+    rpc StoreItem(DHT_Store_Request) returns (DHT_Store_Response) {}
+}
+
+service TaskService {
+
+    // Create Task
+    // rpc AllocateTask(TaskAllocate_Request) returns (TaskAllocate_Response) {}
+
+    // Send Event
+    rpc SendEvent(SendEvent_Request) returns (SendEvent_Response) {}
+}
+
+service PingPong {
+
+    // Send PING
+    rpc SendPing(PING) returns (PONG) {}
+}
+
+service PeerService {
+
+    rpc Bootstrap(Bootstrap_Request) returns (Bootstrap_Response) {}
+}

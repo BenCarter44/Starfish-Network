@@ -1,0 +1,7 @@
+grpcio==1.68.1
+grpcio-tools==1.68.1
+numpy==1.26.4
+dill==0.3.8
+pyzmq==25.0.0
+jsonpickle==3.2.2
+typing_extensions==4.12.2

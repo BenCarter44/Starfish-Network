@@ -1,400 +1,128 @@
-import threading
-import time
-from typing import Any, Optional
+"""
+Starfish OS - A distributed OS
 
-import zmq
-from src.SharedKV import KeyValueCommunications
-from src.node import Owned_Node, Node
-from src.ttl import DataTTL
-from src.utils import zpipe
-from src.GraphEngine import display_graph
-import io
+This is a testing script that runs a single node for the operating system.
+It is these nodes that interact with other nodes in the network, creating the OS.
+"""
 
-# neighbors = {101:[102], 102:[103,104], 104:[105], 105:[103], 103:[101]}
+import asyncio
+import sys
+from src.node import Node
+import src.core.star_components as star
 
-DEFAULT_TEMP_TIME = 3
+import logging
+from src.util.log_format import CustomFormatter
 
-
-def main_worker(identity, control: zmq.Socket):
-    """A container for one peer. Starts the keyvalue engine for the peer
-
-    Args:
-        identity (_type_): _description_
-        control (zmq.Socket): _description_
-    """
-    my_endpoint = f"tcp://127.0.0.1:8{identity}"
-    my_node = Owned_Node(endpoint=my_endpoint, identity=identity)
-
-    poller = zmq.Poller()
-    poller.register(control, zmq.POLLIN)
-    while True:
-        socket_recv = dict(poller.poll(1000))
-        if control in socket_recv:
-            msg = control.recv_multipart()
-            if msg[0] == b"Connect":
-                requested_peer = msg[1].decode("utf-8")
-                if requested_peer == my_endpoint:
-                    # error!
-                    my_node.debug_printf("Test : Error - Can't connect to itself")
-                    continue
-
-                exists = False
-                connect_peer: Optional[Node] = None
-                global_peers = my_node.get_global_node_network_by_endpoint()
-                for peer in global_peers:
-                    if requested_peer == peer.endpoint.get_value_or_null():  # type: ignore
-                        exists = True
-                        connect_peer = peer
-                        break
-
-                if not (exists):
-                    my_node.debug_printf(
-                        f"Wanting to connect to {requested_peer} but it currently does not exist in global registry. Doing anyway"
-                    )
-                    connect_peer = Node(
-                        endpoint=DataTTL(
-                            requested_peer, time.time() + DEFAULT_TEMP_TIME
-                        )
-                    )
-
-                my_node.connect_to_node(connect_peer)  # type: ignore
-                my_node.debug_printf(
-                    f"Test : Connected to {connect_peer.endpoint.get_raw_val()}"  # type: ignore
-                )
-            if msg[0] == b"ls":
-                peers = my_node.get_inbound_connected_nodes()
-                for peer in peers:
-                    my_node.debug_printf(
-                        f"Inbound      | {peer.endpoint.get_value_or_null()} | {peer.identity.get_value_or_null()}"
-                    )
-                peers = my_node.get_outbound_connected_nodes()
-                for peer in peers:
-                    my_node.debug_printf(
-                        f"Outbound     | {peer.endpoint.get_value_or_null()} | {peer.identity.get_value_or_null()}"
-                    )
-                peers = my_node.get_global_node_network_by_endpoint()
-                for peer in peers:
-                    my_node.debug_printf(
-                        f"Global Endpt | {peer.endpoint.get_value_or_null()} | {peer.identity.get_value_or_null()}"
-                    )
-                peers = my_node.get_global_node_network_by_identity()
-                for peer in peers:
-                    my_node.debug_printf(
-                        f"Global ID    | {peer.endpoint.get_value_or_null()} | {peer.identity.get_value_or_null()}"
-                    )
-                my_node.debug_printf("===")
-                streams = my_node.receiving_get_streams()
-                for stream in streams:
-                    i = my_node.receiving_read(stream)
-                    if isinstance(i, io.BytesIO):
-                        my_node.debug_printf(f"{stream}    | {i.getvalue()!r}")
-                    else:
-                        i.seek(0, 0)
-                        with open(f"/tmp/{stream}.txt", "wb") as f:
-                            f.write(i.read())
-                        my_node.debug_printf(f"{stream}    | '/tmp/{stream}.txt'")
-
-                net_g = my_node.get_network_graph()
-                display_graph(net_g)
-
-            if msg[0] == b"Disconnect":
-                requested_peer = msg[1].decode("utf-8")
-                if requested_peer == my_endpoint:
-                    # error!
-                    my_node.debug_printf("Test : Error - Can't disconnect to itself")
-                    continue
-
-                exists = False
-                disconnect_peer: Optional[Node] = None
-                global_peers = my_node.get_global_node_network_by_endpoint()
-                for peer in global_peers:
-                    if requested_peer == peer.endpoint.get_value_or_null():  # type: ignore
-                        exists = True
-                        disconnect_peer = peer
-                        break
-
-                if not (exists):
-                    my_node.debug_printf(
-                        f"Disconnect from {requested_peer} but it currently does not exist in global registry. Doing anyway. ERROR!"
-                    )
-                    raise NotImplementedError
-                    disconnect_peer = Node(
-                        endpoint=DataTTL(
-                            requested_peer, time.time() + DEFAULT_TEMP_TIME
-                        )
-                    )
-
-                my_node.disconnect_from_node(disconnect_peer)  # type: ignore
-                my_node.debug_printf(f"Test : Disconnected from {requested_peer}")
-
-            if msg[0] == b"SendData-C":
-                my_node.debug_printf(f"Not doing anything anymore for send command sim")
-
-            if msg[0] == b"SendData-D":
-                requested_peer = int(msg[1].decode("utf-8"))  # type: ignore
-                data = msg[2].decode("utf-8")
-
-                exists = False
-                send_peer: Optional[Node] = None
-                global_peers = my_node.get_global_node_network_by_identity()
-                for peer in global_peers:
-                    if requested_peer == peer.identity.get_value_or_null():  # type: ignore
-                        exists = True
-                        send_peer = peer
-                        break
-
-                if not (exists):
-                    my_node.debug_printf(
-                        f"Sending to peer {requested_peer} but it currently does not exist in global registry. Doing anyway. ERROR!"
-                    )
-                    raise NotImplementedError
-
-                try:
-                    my_node.send_data_to(send_peer, io.BytesIO(data.encode()), find_routes=4)  # type: ignore
-                except ValueError as e:
-                    my_node.debug_printf(
-                        f"Test : Sent data from {identity} to {requested_peer} ERROR! {e}"
-                    )
-
-            if msg[0] == b"SendData-F":
-                requested_peer = int(msg[1].decode("utf-8"))  # type: ignore
-                data = msg[2].decode("utf-8")
-
-                f_data = open(data, "rb")
-
-                exists = False
-                send_peer: Optional[Node] = None
-                global_peers = my_node.get_global_node_network_by_identity()
-                for peer in global_peers:
-                    if requested_peer == peer.identity.get_value_or_null():  # type: ignore
-                        exists = True
-                        send_peer = peer
-                        break
-
-                if not (exists):
-                    my_node.debug_printf(
-                        f"Sending to peer {requested_peer} but it currently does not exist in global registry. Doing anyway. ERROR!"
-                    )
-                    raise NotImplementedError
-
-                try:
-                    my_node.send_data_to(send_peer, f_data, find_routes=4)  # type: ignore
-                except ValueError as e:
-                    my_node.debug_printf(
-                        f"Test : Sent data from {identity} to {requested_peer} ERROR! {e}"
-                    )
-                f_data.close()
-
-            if msg[0] == b"set":
-                key = msg[1].decode("utf-8")
-                val = msg[2].decode("utf-8")
-                my_node.debug_printf(f"Test : Set key")
-                my_node.set(key, val, ttl=time.time() + 60)
-
-            if msg[0] == b"STOP":
-                break
-            if msg[0] == b"print":
-                my_node.debug_dump_kv()
-
-    my_node.stop_communications()
+logger = logging.getLogger(__name__)
 
 
-ctx = zmq.Context()
+if __name__ == "__main__":
 
-peers: dict[int, Any] = {}
-for id_num in range(101, 110 + 1):
+    async def monitor():
+        """Get a count of how many tasks scheduled on the asyncio loop."""
+        while True:
+            await asyncio.sleep(1)
+            logger.debug(f"Tasks currently running: {len(asyncio.all_tasks())}")
 
-    mine, theirs = zpipe(ctx)
-    peers[id_num] = {"soc": mine, "node": None}
-    th = threading.Thread(None, main_worker, args=(id_num, theirs))
-    th.start()
-    peers[id_num]["th"] = th
-
-while True:
-    print("What would you like to do? ")
-    c = ""
-    try:
-        c = input("/? \n")
-    except KeyboardInterrupt:
-        c = "exit"
-    if c == "exit":
-        for peer in peers:
-            peers[peer]["soc"].send_multipart([b"STOP"])
-            peers[peer]["th"].join()
-            print(f"Quit {peer}")
-        break
-
-    if c.find("disconnect") != -1:
-        # first is node origin
-        # second is the node to connect to
-        c_tokens: list[int] = c.split(" ")  # type: ignore
-
-        # Will be converted to int right below
+    async def main():
+        """Main node task"""
         try:
-            for x in range(1, len(c_tokens)):
-                c_tokens[x] = int(c_tokens[x])
-            if len(c_tokens) < 3:
-                raise ValueError
+            mode = sys.argv[1]
         except:
-            print("Bad command")
-            continue
+            print("Please pass in the node number (1-4) like this: python3 test.py 1")
+            sys.exit(1)
 
-        if c_tokens[1] in peers:
-            inp = c_tokens[2]
-            endpoint = f"tcp://127.0.0.1:8{inp}"
+        server_number = int(mode)
+        logger.info(f"SERVE: {server_number}")
 
-            peers[c_tokens[1]]["soc"].send_multipart(
-                [b"Disconnect", endpoint.encode("utf-8")]
+        # asyncio.create_task(monitor())
+        addr_table = [
+            (
+                b"\x00\x22\x00\x05\x04\x03\x02\x01",
+                star.StarAddress("tcp://127.0.0.1:9280"),
+            ),
+            (
+                b"\x40\x00\x00\x00\x00\x00\x00\x00",
+                star.StarAddress("tcp://127.0.0.1:9281"),
+            ),
+            (
+                b"\x80\x00\x00\x00\x00\x00\x00\x00",
+                star.StarAddress("tcp://127.0.0.1:9282"),
+            ),
+            (
+                b"\xB0\x00\x00\x00\x00\x00\x00\x00",
+                star.StarAddress("tcp://127.0.0.1:9283"),
+            ),
+        ]
+        if server_number == 1:
+            node = Node(addr_table[0][0], addr_table[0][1])
+            asyncio.create_task(node.run())
+
+        if server_number == 2:
+            node = Node(addr_table[1][0], addr_table[1][1])
+            asyncio.create_task(node.run())
+
+        if server_number == 3:
+            node = Node(addr_table[2][0], addr_table[2][1])
+            asyncio.create_task(node.run())
+
+        if server_number == 4:
+            node = Node(addr_table[3][0], addr_table[3][1])
+            asyncio.create_task(node.run())
+
+        logger.debug(f"Server up: {server_number}")
+        await asyncio.sleep(5)
+
+        if server_number == 1:
+            logger.info("Connecting Addr#1 to Addr#2")
+            await node.connect_to_peer(addr_table[1][0], addr_table[1][1])
+
+            await asyncio.sleep(10)
+            logger.warning("Final Node1 PEER LIST")
+            node.plugboard.peer_table.fancy_print()
+
+        if server_number == 2:
+            await asyncio.sleep(10)
+            logger.info("Connecting Addr#2 to Addr#3 & 4")
+            await node.connect_to_peer(addr_table[2][0], addr_table[2][1])
+            await node.connect_to_peer(addr_table[3][0], addr_table[3][1])
+
+            logger.warning("Final Node2")
+            node.plugboard.peer_table.fancy_print()
+
+        if server_number == 3 or server_number == 4:
+            await asyncio.sleep(5)
+            logger.warning(f"Final Node{server_number}")
+            node.plugboard.peer_table.fancy_print()
+
+        if server_number == 1:
+            pass
+            await asyncio.sleep(45)
+            pgrm = star.Program(read_pgrm="examples/my_list_program.star")
+            logger.info(
+                f"I: Opening program '{pgrm.saved_data['pgrm_name']}' from {pgrm.saved_data['date_compiled']}\n"
             )
-            # time.sleep(1)
-            # peers[c_tokens[2]]["soc"].send_multipart([b'Disconnect',int.to_bytes(int(c_tokens[1]),1,'big')])
-        else:
-            print("Unknown peer")
-        continue
+            process = await node.start_program(pgrm, b"User")
 
-    if c.find("ls") != -1:
-        # first is node origin
-        # second is the node to connect to
-        c_tokens: list[int] = c.split(" ")  # type: ignore
-
-        # Will be converted to int right below
-        try:
-            c_tokens[1] = int(c_tokens[1])
-        except:
-            print("Bad command")
-            continue
-
-        if c_tokens[1] in peers:
-
-            peers[c_tokens[1]]["soc"].send_multipart([b"ls", endpoint.encode("utf-8")])
-            # time.sleep(1)
-            # peers[c_tokens[2]]["soc"].send_multipart([b'Disconnect',int.to_bytes(int(c_tokens[1]),1,'big')])
-        else:
-            print("Unknown peer")
-        continue
-
-    if c.find("connect") != -1:
-        # first is node origin
-        # second is the node to connect to
-        c_tokens: list[int] = c.split(" ")  # type: ignore
-        try:
-            for x in range(1, len(c_tokens)):
-                c_tokens[x] = int(c_tokens[x])
-            if len(c_tokens) < 3:
-                raise ValueError
-        except:
-            print("Bad command")
-            continue
-        if c_tokens[1] in peers:
-            inp = c_tokens[2]
-            endpoint = f"tcp://127.0.0.1:8{inp}"
-
-            peers[c_tokens[1]]["soc"].send_multipart(
-                [b"Connect", endpoint.encode("utf-8")]
+        elif server_number == 4:
+            pass
+            await asyncio.sleep(40)
+            pgrm = star.Program(read_pgrm="examples/file_program.star")
+            logger.info(
+                f"I: Opening program '{pgrm.saved_data['pgrm_name']}' from {pgrm.saved_data['date_compiled']}\n"
             )
-            # time.sleep(1)
-            # peers[c_tokens[2]]["soc"].send_multipart([b'Connect',int.to_bytes(int(c_tokens[1]),1,'big')])
-        else:
-            print("Unknown peer")
-        continue
+            process = await node.start_program(pgrm, b"Bob")
 
-    # if c.find("sendc") != -1:
-    #     # first is node origin
-    #     # second is the node to connect to
-    #     c_tokens: list[int] = c.split(" ")  # type: ignore
-    #     try:
-    #         for x in range(1, len(c_tokens)):
-    #             c_tokens[x] = int(c_tokens[x])
-    #         if len(c_tokens) < 2:
-    #             raise ValueError
-    #     except:
-    #         print("Bad command")
-    #         continue
-    #     if c_tokens[1] in peers:
-    #         peers[c_tokens[1]]["soc"].send_multipart(
-    #             [b"SendData-C", int.to_bytes(int(c_tokens[2]), 1, "big")]
-    #         )
-    #     else:
-    #         print("Unknown peer")
-    #     continue
+        await asyncio.sleep(1000)
+        logger.critical("Main done!")
 
-    if c.find("fsend") != -1:
-        # first is node origin
-        # second is the node to connect to
-        c_tokens: list[int | str] = c.split(" ")  # type: ignore
-        try:
-            c_tokens[1] = int(c_tokens[1])
-            if len(c_tokens) < 4:
-                raise ValueError
-        except:
-            print("Bad command")
-            continue
-        if c_tokens[1] in peers:
-            inp = c_tokens[2]
-            peers[c_tokens[1]]["soc"].send_multipart(
-                [b"SendData-F", inp.encode("utf-8"), c_tokens[3].encode("utf-8")]  # type: ignore
-            )
-        else:
-            print("Unknown peer")
-        continue
+    logger = logging.getLogger(__name__)
 
-    if c.find("send") != -1:
-        # first is node origin
-        # second is the node to connect to
-        c_tokens: list[int | str] = c.split(" ")  # type: ignore
-        try:
-            c_tokens[1] = int(c_tokens[1])
-            if len(c_tokens) < 4:
-                raise ValueError
-        except:
-            print("Bad command")
-            continue
-        if c_tokens[1] in peers:
-            inp = c_tokens[2]
-            peers[c_tokens[1]]["soc"].send_multipart(
-                [b"SendData-D", inp.encode("utf-8"), c_tokens[3].encode("utf-8")]  # type: ignore
-            )
-        else:
-            print("Unknown peer")
-        continue
+    # create console handler with a higher log level
+    ch = logging.StreamHandler(sys.stdout)
+    ch.setLevel(logging.DEBUG)
+    ch.setFormatter(CustomFormatter())
+    logging.basicConfig(handlers=[ch], level=logging.INFO)
 
-    if c.find("print") != -1:
-        # first is node origin
-        # second is the node to connect to
-        c_tokens: list[int] = c.split(" ")  # type: ignore
-        try:
-            for x in range(1, len(c_tokens)):
-                c_tokens[x] = int(c_tokens[x])
-            if len(c_tokens) < 2:
-                raise ValueError
-        except:
-            print("Bad command")
-            continue
-        if c_tokens[1] in peers:
-            peers[c_tokens[1]]["soc"].send_multipart([b"print"])
-        else:
-            print("Unknown peer")
-        continue
-
-    if c.find("set") != -1:
-        # first is node origin
-        # second is the node to connect to
-        c_tokens: tuple[str, int, str, str] = c.split(" ")  # type: ignore
-        try:
-            c_tokens[1] = int(c_tokens[1])
-            if len(c_tokens) < 3:
-                raise ValueError
-        except:
-            print("Bad command")
-            continue
-
-        if c_tokens[1] in peers:
-            peers[c_tokens[1]]["soc"].send_multipart(
-                [b"set", c_tokens[2].encode("utf-8"), c_tokens[3].encode("utf-8")]  # type: ignore
-            )
-        else:
-            print("Unknown peer")
-        continue
-
-    print("Unknown command \n")
-print("Done")
+    asyncio.get_event_loop().set_debug(True)
+    asyncio.run(main())

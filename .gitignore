@@ -10,7 +10,9 @@ scratchwork/
 src/star/scratchwork/
 *.out
 *.star
+*.debug.json
 src/star/.vscode/
+example.txt
 
 # Compiled Java class files
 *.class

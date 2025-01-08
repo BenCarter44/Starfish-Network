@@ -1,4 +1,4 @@
-from DHT import DHT
+from src.core.DHT import DHT
 
 
 class Number:

@@ -1,6 +1,14 @@
 import sys
 import time
-import star_components as star
+import sys, os
+
+sys.path.append(os.path.join(os.path.dirname(__file__), "..", "src"))
+try:
+    from ..src.core import star_components as star
+except:
+    from core import star_components as star
+
+
 import logging
 
 logger = logging.getLogger(__name__)
@@ -8,6 +16,7 @@ logger = logging.getLogger(__name__)
 
 @star.task("input")
 def input_event(evt: star.Event):
+
     print("Input Event!")
     a = input("Type in a number: ")
     b = input("Type in a second number: ")
