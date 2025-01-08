@@ -10,6 +10,7 @@ import asyncio
 import os
 from typing import Optional
 
+from src.KeepAlive import KeepAlive_Management, TRIGGER_OFFLINE
 from src.communications.PeerService import PeerDiscoveryClient
 from src.util.util import gaussian_bytes
 from .core.star_engine import NodeEngine
@@ -39,6 +40,9 @@ class PlugBoard:
         self.my_addr = node_id
         self.engine = NodeEngine(node_id)
         self.engine.send_event_handler = self.dispatch_event
+
+        self.keep_alive_manager = KeepAlive_Management()
+        self.local_addr.set_keep_alive(self.keep_alive_manager)
 
         self.peer_table = DHT(self.my_addr)
         self.peer_table.update_addresses(node_id)
@@ -72,6 +76,7 @@ class PlugBoard:
             return None
         # logger.debug(f"TP: {tp_b.hex()} - {tp_b}")
         tp = StarAddress.from_bytes(tp_b)
+        tp.set_keep_alive(self.keep_alive_manager)
         return tp
 
     async def add_peer(self, addr: bytes, tp: StarAddress):
@@ -81,7 +86,28 @@ class PlugBoard:
             addr (bytes): Node ID
             tp (StarAddress): Transport Address
         """
-        await self.dht_set(addr, tp.to_bytes(), DHTSelect.PEER_ID)
+        owners, who = await self.dht_set(addr, tp.to_bytes(), DHTSelect.PEER_ID)
+        if addr != self.my_addr:
+            return
+        # Track owners.
+        # who! currently just one owner. TODO.
+        tp = await self.get_peer_transport(who)
+        tp.set_keep_alive(self.keep_alive_manager)
+        channel = tp.get_channel()
+        self.keep_alive_manager.register_channel_service(
+            channel, self.peer_self_cb_offline, TRIGGER_OFFLINE
+        )
+
+    async def peer_self_cb_offline(
+        self,
+    ):  # check if store peer is still storing my address
+        pass
+
+    async def peer_maintain_valid(self):  # store peer maintains connection to client
+        pass
+
+    async def peer_cache_maintain(self):  # cache. Listen for updates from owners.
+        pass
 
     async def update_peers_seen(self, addr_list: set[bytes] | bytes):
         """A method for call by the message services marking a seen peer.
@@ -150,6 +176,7 @@ class PlugBoard:
             peer_addr (bytes): PeerID to reach out to
             address (StarAddress): Transport Address of peer to bootstrap
         """
+        address.set_keep_alive(self.keep_alive_manager)
         peers = await self.peer_discovery_interface.Bootstrap(peer_addr, address)
         for peer in peers:
             peerID = peer.peer_id
@@ -263,7 +290,9 @@ class PlugBoard:
             return  # type: ignore
         return response.data, response.response_code, response.neighbor_addrs
 
-    async def dht_set(self, key: bytes, value: bytes, select: DHTSelect) -> DHTStatus:
+    async def dht_set(
+        self, key: bytes, value: bytes, select: DHTSelect
+    ) -> tuple[DHTStatus, bytes]:
         """Set value to DHT
 
         Args:
@@ -275,8 +304,8 @@ class PlugBoard:
             DHTStatus: Status of operation
         """
 
-        status = await self.dht_interface.StoreItem(key, value, select)
-        return status
+        status, who = await self.dht_interface.StoreItem(key, value, select)
+        return status, who
 
     def dht_cache_store(self, key: bytes, value: bytes, select: DHTSelect):
         """Messaging Services: Store item in DHT cache
@@ -299,7 +328,7 @@ class PlugBoard:
             logger.error("Unknown table selected!")
 
     async def dht_set_plain(
-        self, key: bytes, value: bytes, select: DHTSelect
+        self, key: bytes, value: bytes, select: DHTSelect, last_chain: bytes
     ) -> tuple[bytes, DHTStatus, list[bytes]]:
         """Messaging services: Store item in internal DHT
 
@@ -317,6 +346,23 @@ class PlugBoard:
             self.peer_table.update_addresses(key)
             self.task_table.update_addresses(key)
             r = self.peer_table.set(key, value)
+            if r.response_code == DHTStatus.OWNED:
+                # I own now. Add callback to KeepAlive
+                addr = StarAddress.from_bytes(value)
+                addr.set_keep_alive(self.keep_alive_manager)
+                channel = addr.get_channel()
+                self.keep_alive_manager.register_channel_service(
+                    channel, self.peer_maintain_valid, TRIGGER_OFFLINE
+                )
+            elif r.response_code == DHTStatus.FOUND:
+                # cache.
+                addr = StarAddress.from_bytes(value)
+                addr.set_keep_alive(self.keep_alive_manager)
+                channel = addr.get_channel()
+                self.keep_alive_manager.register_channel_service(
+                    channel, self.peer_cache_maintain, TRIGGER_OFFLINE
+                )
+
         elif select == DHTSelect.TASK_ID:
             # Do not post to cache for Task Alloc.
             # Put your address in the owner field!

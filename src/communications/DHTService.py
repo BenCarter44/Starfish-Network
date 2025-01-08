@@ -55,7 +55,7 @@ class DHTClient:
         value: bytes,
         select: pb_base.DHTSelect,
         nodes_visited: list[bytes] = [],
-    ) -> int:
+    ) -> tuple[pb_base.DHTStatus, bytes]:
         peer_id = self.peer_id
 
         logger.debug("Create StoreItem request")
@@ -78,7 +78,7 @@ class DHTClient:
         # except Exception as e:
         #     logger.error(e)
         logger.debug("Received StoreItem request response")
-        return response.status
+        return response.status, response.who
 
 
 class DHTService(pb.DHTServiceServicer):
@@ -203,6 +203,7 @@ class DHTService(pb.DHTServiceServicer):
                 query_chain=nodes_visited,
                 status=pb_base.DHTStatus.OWNED,
                 select=request.select,
+                who=self.addr,
             )
 
         my_nice = nice_print(self.addr)
@@ -218,9 +219,7 @@ class DHTService(pb.DHTServiceServicer):
             # send to neighbor.
             logger.debug(f"Send out Neighbor: {neighbor.hex()}")
             # internal_callback. Get peer
-            transport: StarAddress = await self.internal_callback.get_peer_transport(
-                addr
-            )
+            transport = await self.internal_callback.get_peer_transport(addr)
             if transport is None:
                 logger.info(f"Transport for {addr.hex()} not found!")
                 continue
@@ -236,6 +235,7 @@ class DHTService(pb.DHTServiceServicer):
                 query_chain=nodes_visited,
                 status=pb_base.DHTStatus.FOUND,
                 select=request.select,
+                who=response.who,
             )
 
         logger.info(f"No Neighbors! Not FOUND for store! Key: {request.key.hex()}")
@@ -244,4 +244,5 @@ class DHTService(pb.DHTServiceServicer):
             query_chain=nodes_visited,
             status=pb_base.DHTStatus.NOT_FOUND,
             select=request.select,
+            who=self.addr,
         )

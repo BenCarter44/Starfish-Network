@@ -46,6 +46,7 @@ message DHT_Store_Response {
     repeated bytes query_chain = 2;
     DHTStatus status = 3;
     DHTSelect select = 4;
+    bytes who = 5;
 }
 
 message PING {
@@ -86,6 +87,14 @@ message Bootstrap_Item {
     TransportAddress addr = 2;
 }
 
+message Heartbeat_Request {
+
+}
+
+message Heartbeat_Response {
+
+}
+
 // /////////////////////////////////////////
 
 service DHTService {
@@ -106,13 +115,21 @@ service TaskService {
     rpc SendEvent(SendEvent_Request) returns (SendEvent_Response) {}
 }
 
-service PingPong {
-
-    // Send PING
-    rpc SendPing(PING) returns (PONG) {}
-}
 
 service PeerService {
 
     rpc Bootstrap(Bootstrap_Request) returns (Bootstrap_Response) {}
+}
+
+//////////////////////////
+
+// Keep Alive Manager
+
+service KeepAliveService {
+
+    // PingPong - Is alive?
+    rpc SendPing(PING) returns (PONG) {}
+    
+    // KeepAlive
+    rpc SendHeartbeat(Heartbeat_Request) returns (Heartbeat_Response) {}
 }
