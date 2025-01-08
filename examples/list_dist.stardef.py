@@ -8,7 +8,6 @@ except:
     from core import star_components as star
 
 import logging
-import sys
 
 logger = logging.getLogger(__name__)
 

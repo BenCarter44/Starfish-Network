@@ -8,7 +8,7 @@ Imagine a table with one hundred table legs. Now, imagine those table legs rando
 
 ---
 
-This is currently a research project for [Benjamin Carter's](https://codingcando.com/) undergraduate capstone under the direction of Professor [Isac Artzi](https://www.gcu.edu/faculty-list) in Grand Canyon University's Artificial Intelligence Research and Design Program (RDP).
+This is currently a research project for [Benjamin Carter's](https://codingcando.com/) undergraduate capstone under the direction of Professor [Dr. Isac Artzi](https://www.gcu.edu/faculty-list) and with a research advisor of Professor [David Demland](https://www.gcu.edu/faculty-list) at Grand Canyon University.
 
 ---
 
@@ -36,25 +36,34 @@ are equal.
 
 **This system currently is a proof-of-concept as of now and is a prototype**
 
+
+**For demo and more info, see the `docs/` folder**
+
 ## Features and Development Outline
 
 #### Current Features Implemented in Prototype
 
-1. Underlying communications protocol
-2. Simple Key-Value All-Node Broadcast Memory
-3. Node-to-node synchronous data transfer (both peers must be awake at the same time).
+1. Distributed processing
+2. Multi-user processing
+3. *STAR* program framework and compiler
+4. Peer Discovery
+5. gRPC-based messaging system
 
 #### Next-To-Be-Implemented Features
 
-4. Distributed File System (uses a Distributed Hash Table System, will be similar to IPFS)
-5. Node-to-node async. data transfer (likely will use the file system and other techniques)
-
+1. Dropout capability
+2. Distributed File System (uses a Distributed Hash Table System, will be similar to IPFS)
+3. Distributed I/O System
+4. Docker Container interface
+ 
 #### Future Features
 
-6. Distributed CPU Processing Engine with functional/async model
-7. Security of all network traffic
-8. Simple bash-like terminal to interact with the distributed computer.
+1. Simple bash-like terminal to interact with the distributed computer.
+2. Security for message passing and in task execution
 
 #### Wishes for way out in the future
-9. Port Docker Container to a WASM approach, running in-browser as a PoC of durability of network
+9. Port Docker Container to a WASM approach or gRPC in browser, PoC of OS running in-browser
 10. ???
+
+
+## For demo and more info, see the `docs/` folder
