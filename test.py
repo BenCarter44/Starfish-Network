@@ -1,51 +1,40 @@
+"""
+Starfish OS - A distributed OS
+
+This is a testing script that runs a single node for the operating system.
+It is these nodes that interact with other nodes in the network, creating the OS.
+"""
+
 import asyncio
 import sys
 from src.node import Node
 import src.core.star_components as star
 
 import logging
+from src.util.log_format import CustomFormatter
 
 logger = logging.getLogger(__name__)
 
 
 if __name__ == "__main__":
 
-    class CustomFormatter(logging.Formatter):
-        grey_dark = "\x1b[38;5;7m"
-        grey = "\x1b[38;5;123m"
-        yellow = "\x1b[33;20m"
-        red = "\x1b[31;20m"
-        bold_red = "\x1b[1m\x1b[38;5;9m"
-        reset = "\x1b[0m"
-        format = "%(asctime)s - %(name)s - %(levelname)s - %(message)s (%(filename)s:%(lineno)d)"  # type: ignore
-
-        FORMATS = {
-            logging.DEBUG: grey_dark + format + reset,  # type: ignore
-            logging.INFO: grey + format + reset,  # type: ignore
-            logging.WARNING: yellow + format + reset,  # type: ignore
-            logging.ERROR: red + format + reset,  # type: ignore
-            logging.CRITICAL: bold_red + format + reset,  # type: ignore
-        }
-
-        def format(self, record):  # type: ignore
-            log_fmt = self.FORMATS.get(record.levelno)
-            formatter = logging.Formatter(log_fmt)
-            return formatter.format(record)
-
     async def monitor():
         """Get a count of how many tasks scheduled on the asyncio loop."""
         while True:
-            return
             await asyncio.sleep(1)
             logger.debug(f"Tasks currently running: {len(asyncio.all_tasks())}")
 
     async def main():
-        # asyncio.create_task(monitor())
-        mode = sys.argv[1]
+        """Main node task"""
+        try:
+            mode = sys.argv[1]
+        except:
+            print("Please pass in the node number (1-4) like this: python3 test.py 1")
+            sys.exit(1)
+
         server_number = int(mode)
         logger.info(f"SERVE: {server_number}")
 
-        """Main function for testing."""
         # asyncio.create_task(monitor())
         addr_table = [
             (
@@ -129,7 +118,7 @@ if __name__ == "__main__":
 
     logger = logging.getLogger(__name__)
 
-    # # create console handler with a higher log level
+    # create console handler with a higher log level
     ch = logging.StreamHandler(sys.stdout)
     ch.setLevel(logging.DEBUG)
     ch.setFormatter(CustomFormatter())
