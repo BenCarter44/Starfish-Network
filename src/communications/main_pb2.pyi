@@ -19,6 +19,8 @@ class DHTStatus(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
     FOUND: _ClassVar[DHTStatus]
     NOT_FOUND: _ClassVar[DHTStatus]
     OWNED: _ClassVar[DHTStatus]
+    OK: _ClassVar[DHTStatus]
+    ERR: _ClassVar[DHTStatus]
 
 class DHTSelect(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
     __slots__ = ()
@@ -31,6 +33,8 @@ UNKNOWN: DHTStatus
 FOUND: DHTStatus
 NOT_FOUND: DHTStatus
 OWNED: DHTStatus
+OK: DHTStatus
+ERR: DHTStatus
 BLANK: DHTSelect
 PEER_ID: DHTSelect
 TASK_ID: DHTSelect
@@ -76,17 +80,19 @@ class DHT_Fetch_Response(_message.Message):
     ) -> None: ...
 
 class DHT_Store_Request(_message.Message):
-    __slots__ = ("key", "value", "query_chain", "status", "select")
+    __slots__ = ("key", "value", "query_chain", "status", "select", "who")
     KEY_FIELD_NUMBER: _ClassVar[int]
     VALUE_FIELD_NUMBER: _ClassVar[int]
     QUERY_CHAIN_FIELD_NUMBER: _ClassVar[int]
     STATUS_FIELD_NUMBER: _ClassVar[int]
     SELECT_FIELD_NUMBER: _ClassVar[int]
+    WHO_FIELD_NUMBER: _ClassVar[int]
     key: bytes
     value: bytes
     query_chain: _containers.RepeatedScalarFieldContainer[bytes]
     status: DHTStatus
     select: DHTSelect
+    who: bytes
     def __init__(
         self,
         key: _Optional[bytes] = ...,
@@ -94,22 +100,158 @@ class DHT_Store_Request(_message.Message):
         query_chain: _Optional[_Iterable[bytes]] = ...,
         status: _Optional[_Union[DHTStatus, str]] = ...,
         select: _Optional[_Union[DHTSelect, str]] = ...,
+        who: _Optional[bytes] = ...,
     ) -> None: ...
 
 class DHT_Store_Response(_message.Message):
-    __slots__ = ("key", "query_chain", "status", "select")
+    __slots__ = ("key", "query_chain", "status", "select", "who")
     KEY_FIELD_NUMBER: _ClassVar[int]
     QUERY_CHAIN_FIELD_NUMBER: _ClassVar[int]
     STATUS_FIELD_NUMBER: _ClassVar[int]
     SELECT_FIELD_NUMBER: _ClassVar[int]
+    WHO_FIELD_NUMBER: _ClassVar[int]
     key: bytes
     query_chain: _containers.RepeatedScalarFieldContainer[bytes]
     status: DHTStatus
     select: DHTSelect
+    who: bytes
     def __init__(
         self,
         key: _Optional[bytes] = ...,
         query_chain: _Optional[_Iterable[bytes]] = ...,
+        status: _Optional[_Union[DHTStatus, str]] = ...,
+        select: _Optional[_Union[DHTSelect, str]] = ...,
+        who: _Optional[bytes] = ...,
+    ) -> None: ...
+
+class DHT_Delete_Request(_message.Message):
+    __slots__ = ("key", "query_chain", "status", "select", "who")
+    KEY_FIELD_NUMBER: _ClassVar[int]
+    QUERY_CHAIN_FIELD_NUMBER: _ClassVar[int]
+    STATUS_FIELD_NUMBER: _ClassVar[int]
+    SELECT_FIELD_NUMBER: _ClassVar[int]
+    WHO_FIELD_NUMBER: _ClassVar[int]
+    key: bytes
+    query_chain: _containers.RepeatedScalarFieldContainer[bytes]
+    status: DHTStatus
+    select: DHTSelect
+    who: bytes
+    def __init__(
+        self,
+        key: _Optional[bytes] = ...,
+        query_chain: _Optional[_Iterable[bytes]] = ...,
+        status: _Optional[_Union[DHTStatus, str]] = ...,
+        select: _Optional[_Union[DHTSelect, str]] = ...,
+        who: _Optional[bytes] = ...,
+    ) -> None: ...
+
+class DHT_Delete_Response(_message.Message):
+    __slots__ = ("status",)
+    STATUS_FIELD_NUMBER: _ClassVar[int]
+    status: DHTStatus
+    def __init__(self, status: _Optional[_Union[DHTStatus, str]] = ...) -> None: ...
+
+class DHT_Delete_Notice_Request(_message.Message):
+    __slots__ = ("key", "status", "select", "who")
+    KEY_FIELD_NUMBER: _ClassVar[int]
+    STATUS_FIELD_NUMBER: _ClassVar[int]
+    SELECT_FIELD_NUMBER: _ClassVar[int]
+    WHO_FIELD_NUMBER: _ClassVar[int]
+    key: bytes
+    status: DHTStatus
+    select: DHTSelect
+    who: bytes
+    def __init__(
+        self,
+        key: _Optional[bytes] = ...,
+        status: _Optional[_Union[DHTStatus, str]] = ...,
+        select: _Optional[_Union[DHTSelect, str]] = ...,
+        who: _Optional[bytes] = ...,
+    ) -> None: ...
+
+class DHT_Delete_Notice_Response(_message.Message):
+    __slots__ = ("status",)
+    STATUS_FIELD_NUMBER: _ClassVar[int]
+    status: DHTStatus
+    def __init__(self, status: _Optional[_Union[DHTStatus, str]] = ...) -> None: ...
+
+class DHT_Update_Request(_message.Message):
+    __slots__ = ("key", "value", "status", "select", "who")
+    KEY_FIELD_NUMBER: _ClassVar[int]
+    VALUE_FIELD_NUMBER: _ClassVar[int]
+    STATUS_FIELD_NUMBER: _ClassVar[int]
+    SELECT_FIELD_NUMBER: _ClassVar[int]
+    WHO_FIELD_NUMBER: _ClassVar[int]
+    key: bytes
+    value: bytes
+    status: DHTStatus
+    select: DHTSelect
+    who: bytes
+    def __init__(
+        self,
+        key: _Optional[bytes] = ...,
+        value: _Optional[bytes] = ...,
+        status: _Optional[_Union[DHTStatus, str]] = ...,
+        select: _Optional[_Union[DHTSelect, str]] = ...,
+        who: _Optional[bytes] = ...,
+    ) -> None: ...
+
+class DHT_Update_Notice_Request(_message.Message):
+    __slots__ = ("key", "value", "status", "select", "who")
+    KEY_FIELD_NUMBER: _ClassVar[int]
+    VALUE_FIELD_NUMBER: _ClassVar[int]
+    STATUS_FIELD_NUMBER: _ClassVar[int]
+    SELECT_FIELD_NUMBER: _ClassVar[int]
+    WHO_FIELD_NUMBER: _ClassVar[int]
+    key: bytes
+    value: bytes
+    status: DHTStatus
+    select: DHTSelect
+    who: bytes
+    def __init__(
+        self,
+        key: _Optional[bytes] = ...,
+        value: _Optional[bytes] = ...,
+        status: _Optional[_Union[DHTStatus, str]] = ...,
+        select: _Optional[_Union[DHTSelect, str]] = ...,
+        who: _Optional[bytes] = ...,
+    ) -> None: ...
+
+class DHT_Update_Response(_message.Message):
+    __slots__ = ("status",)
+    STATUS_FIELD_NUMBER: _ClassVar[int]
+    status: DHTStatus
+    def __init__(self, status: _Optional[_Union[DHTStatus, str]] = ...) -> None: ...
+
+class DHT_Update_Notice_Response(_message.Message):
+    __slots__ = ("status",)
+    STATUS_FIELD_NUMBER: _ClassVar[int]
+    status: DHTStatus
+    def __init__(self, status: _Optional[_Union[DHTStatus, str]] = ...) -> None: ...
+
+class DHT_Register_Notices_Request(_message.Message):
+    __slots__ = ("key", "who", "select")
+    KEY_FIELD_NUMBER: _ClassVar[int]
+    WHO_FIELD_NUMBER: _ClassVar[int]
+    SELECT_FIELD_NUMBER: _ClassVar[int]
+    key: bytes
+    who: bytes
+    select: DHTSelect
+    def __init__(
+        self,
+        key: _Optional[bytes] = ...,
+        who: _Optional[bytes] = ...,
+        select: _Optional[_Union[DHTSelect, str]] = ...,
+    ) -> None: ...
+
+class DHT_Register_Notices_Response(_message.Message):
+    __slots__ = ("status", "select")
+    STATUS_FIELD_NUMBER: _ClassVar[int]
+    SELECT_FIELD_NUMBER: _ClassVar[int]
+    status: DHTStatus
+    select: DHTSelect
+    def __init__(
+        self,
         status: _Optional[_Union[DHTStatus, str]] = ...,
         select: _Optional[_Union[DHTSelect, str]] = ...,
     ) -> None: ...
@@ -185,3 +327,15 @@ class Bootstrap_Item(_message.Message):
         peer_id: _Optional[bytes] = ...,
         addr: _Optional[_Union[_primitives_pb2.TransportAddress, _Mapping]] = ...,
     ) -> None: ...
+
+class Heartbeat_Request(_message.Message):
+    __slots__ = ("custom_data",)
+    CUSTOM_DATA_FIELD_NUMBER: _ClassVar[int]
+    custom_data: bytes
+    def __init__(self, custom_data: _Optional[bytes] = ...) -> None: ...
+
+class Heartbeat_Response(_message.Message):
+    __slots__ = ("custom_data",)
+    CUSTOM_DATA_FIELD_NUMBER: _ClassVar[int]
+    custom_data: bytes
+    def __init__(self, custom_data: _Optional[bytes] = ...) -> None: ...

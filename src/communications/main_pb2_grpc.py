@@ -49,6 +49,36 @@ class DHTServiceStub(object):
             response_deserializer=main__pb2.DHT_Store_Response.FromString,
             _registered_method=True,
         )
+        self.DeleteItem = channel.unary_unary(
+            "/protocol.DHTService/DeleteItem",
+            request_serializer=main__pb2.DHT_Delete_Request.SerializeToString,
+            response_deserializer=main__pb2.DHT_Delete_Response.FromString,
+            _registered_method=True,
+        )
+        self.DeletedNotice = channel.unary_unary(
+            "/protocol.DHTService/DeletedNotice",
+            request_serializer=main__pb2.DHT_Delete_Notice_Request.SerializeToString,
+            response_deserializer=main__pb2.DHT_Delete_Response.FromString,
+            _registered_method=True,
+        )
+        self.UpdateItem = channel.unary_unary(
+            "/protocol.DHTService/UpdateItem",
+            request_serializer=main__pb2.DHT_Update_Request.SerializeToString,
+            response_deserializer=main__pb2.DHT_Update_Response.FromString,
+            _registered_method=True,
+        )
+        self.UpdatedNotice = channel.unary_unary(
+            "/protocol.DHTService/UpdatedNotice",
+            request_serializer=main__pb2.DHT_Update_Notice_Request.SerializeToString,
+            response_deserializer=main__pb2.DHT_Update_Notice_Response.FromString,
+            _registered_method=True,
+        )
+        self.RegisterNotice = channel.unary_unary(
+            "/protocol.DHTService/RegisterNotice",
+            request_serializer=main__pb2.DHT_Register_Notices_Request.SerializeToString,
+            response_deserializer=main__pb2.DHT_Register_Notices_Response.FromString,
+            _registered_method=True,
+        )
 
 
 class DHTServiceServicer(object):
@@ -66,6 +96,36 @@ class DHTServiceServicer(object):
         context.set_details("Method not implemented!")
         raise NotImplementedError("Method not implemented!")
 
+    def DeleteItem(self, request, context):
+        """Delete item from DHT"""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details("Method not implemented!")
+        raise NotImplementedError("Method not implemented!")
+
+    def DeletedNotice(self, request, context):
+        """Deleted notice from DHT"""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details("Method not implemented!")
+        raise NotImplementedError("Method not implemented!")
+
+    def UpdateItem(self, request, context):
+        """Update item from DHT"""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details("Method not implemented!")
+        raise NotImplementedError("Method not implemented!")
+
+    def UpdatedNotice(self, request, context):
+        """Update notice form DHT"""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details("Method not implemented!")
+        raise NotImplementedError("Method not implemented!")
+
+    def RegisterNotice(self, request, context):
+        """Register notice from DHT"""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details("Method not implemented!")
+        raise NotImplementedError("Method not implemented!")
+
 
 def add_DHTServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -78,6 +138,31 @@ def add_DHTServiceServicer_to_server(servicer, server):
             servicer.StoreItem,
             request_deserializer=main__pb2.DHT_Store_Request.FromString,
             response_serializer=main__pb2.DHT_Store_Response.SerializeToString,
+        ),
+        "DeleteItem": grpc.unary_unary_rpc_method_handler(
+            servicer.DeleteItem,
+            request_deserializer=main__pb2.DHT_Delete_Request.FromString,
+            response_serializer=main__pb2.DHT_Delete_Response.SerializeToString,
+        ),
+        "DeletedNotice": grpc.unary_unary_rpc_method_handler(
+            servicer.DeletedNotice,
+            request_deserializer=main__pb2.DHT_Delete_Notice_Request.FromString,
+            response_serializer=main__pb2.DHT_Delete_Response.SerializeToString,
+        ),
+        "UpdateItem": grpc.unary_unary_rpc_method_handler(
+            servicer.UpdateItem,
+            request_deserializer=main__pb2.DHT_Update_Request.FromString,
+            response_serializer=main__pb2.DHT_Update_Response.SerializeToString,
+        ),
+        "UpdatedNotice": grpc.unary_unary_rpc_method_handler(
+            servicer.UpdatedNotice,
+            request_deserializer=main__pb2.DHT_Update_Notice_Request.FromString,
+            response_serializer=main__pb2.DHT_Update_Notice_Response.SerializeToString,
+        ),
+        "RegisterNotice": grpc.unary_unary_rpc_method_handler(
+            servicer.RegisterNotice,
+            request_deserializer=main__pb2.DHT_Register_Notices_Request.FromString,
+            response_serializer=main__pb2.DHT_Register_Notices_Response.SerializeToString,
         ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -140,6 +225,156 @@ class DHTService(object):
             "/protocol.DHTService/StoreItem",
             main__pb2.DHT_Store_Request.SerializeToString,
             main__pb2.DHT_Store_Response.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True,
+        )
+
+    @staticmethod
+    def DeleteItem(
+        request,
+        target,
+        options=(),
+        channel_credentials=None,
+        call_credentials=None,
+        insecure=False,
+        compression=None,
+        wait_for_ready=None,
+        timeout=None,
+        metadata=None,
+    ):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            "/protocol.DHTService/DeleteItem",
+            main__pb2.DHT_Delete_Request.SerializeToString,
+            main__pb2.DHT_Delete_Response.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True,
+        )
+
+    @staticmethod
+    def DeletedNotice(
+        request,
+        target,
+        options=(),
+        channel_credentials=None,
+        call_credentials=None,
+        insecure=False,
+        compression=None,
+        wait_for_ready=None,
+        timeout=None,
+        metadata=None,
+    ):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            "/protocol.DHTService/DeletedNotice",
+            main__pb2.DHT_Delete_Notice_Request.SerializeToString,
+            main__pb2.DHT_Delete_Response.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True,
+        )
+
+    @staticmethod
+    def UpdateItem(
+        request,
+        target,
+        options=(),
+        channel_credentials=None,
+        call_credentials=None,
+        insecure=False,
+        compression=None,
+        wait_for_ready=None,
+        timeout=None,
+        metadata=None,
+    ):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            "/protocol.DHTService/UpdateItem",
+            main__pb2.DHT_Update_Request.SerializeToString,
+            main__pb2.DHT_Update_Response.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True,
+        )
+
+    @staticmethod
+    def UpdatedNotice(
+        request,
+        target,
+        options=(),
+        channel_credentials=None,
+        call_credentials=None,
+        insecure=False,
+        compression=None,
+        wait_for_ready=None,
+        timeout=None,
+        metadata=None,
+    ):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            "/protocol.DHTService/UpdatedNotice",
+            main__pb2.DHT_Update_Notice_Request.SerializeToString,
+            main__pb2.DHT_Update_Notice_Response.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True,
+        )
+
+    @staticmethod
+    def RegisterNotice(
+        request,
+        target,
+        options=(),
+        channel_credentials=None,
+        call_credentials=None,
+        insecure=False,
+        compression=None,
+        wait_for_ready=None,
+        timeout=None,
+        metadata=None,
+    ):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            "/protocol.DHTService/RegisterNotice",
+            main__pb2.DHT_Register_Notices_Request.SerializeToString,
+            main__pb2.DHT_Register_Notices_Response.FromString,
             options,
             channel_credentials,
             insecure,
@@ -233,83 +468,6 @@ class TaskService(object):
         )
 
 
-class PingPongStub(object):
-    """Missing associated documentation comment in .proto file."""
-
-    def __init__(self, channel):
-        """Constructor.
-
-        Args:
-            channel: A grpc.Channel.
-        """
-        self.SendPing = channel.unary_unary(
-            "/protocol.PingPong/SendPing",
-            request_serializer=main__pb2.PING.SerializeToString,
-            response_deserializer=main__pb2.PONG.FromString,
-            _registered_method=True,
-        )
-
-
-class PingPongServicer(object):
-    """Missing associated documentation comment in .proto file."""
-
-    def SendPing(self, request, context):
-        """Send PING"""
-        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
-        context.set_details("Method not implemented!")
-        raise NotImplementedError("Method not implemented!")
-
-
-def add_PingPongServicer_to_server(servicer, server):
-    rpc_method_handlers = {
-        "SendPing": grpc.unary_unary_rpc_method_handler(
-            servicer.SendPing,
-            request_deserializer=main__pb2.PING.FromString,
-            response_serializer=main__pb2.PONG.SerializeToString,
-        ),
-    }
-    generic_handler = grpc.method_handlers_generic_handler(
-        "protocol.PingPong", rpc_method_handlers
-    )
-    server.add_generic_rpc_handlers((generic_handler,))
-    server.add_registered_method_handlers("protocol.PingPong", rpc_method_handlers)
-
-
-# This class is part of an EXPERIMENTAL API.
-class PingPong(object):
-    """Missing associated documentation comment in .proto file."""
-
-    @staticmethod
-    def SendPing(
-        request,
-        target,
-        options=(),
-        channel_credentials=None,
-        call_credentials=None,
-        insecure=False,
-        compression=None,
-        wait_for_ready=None,
-        timeout=None,
-        metadata=None,
-    ):
-        return grpc.experimental.unary_unary(
-            request,
-            target,
-            "/protocol.PingPong/SendPing",
-            main__pb2.PING.SerializeToString,
-            main__pb2.PONG.FromString,
-            options,
-            channel_credentials,
-            insecure,
-            call_credentials,
-            compression,
-            wait_for_ready,
-            timeout,
-            metadata,
-            _registered_method=True,
-        )
-
-
 class PeerServiceStub(object):
     """Missing associated documentation comment in .proto file."""
 
@@ -375,6 +533,144 @@ class PeerService(object):
             "/protocol.PeerService/Bootstrap",
             main__pb2.Bootstrap_Request.SerializeToString,
             main__pb2.Bootstrap_Response.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True,
+        )
+
+
+class KeepAliveServiceStub(object):
+    """////////////////////////
+
+    Keep Alive Manager
+
+    """
+
+    def __init__(self, channel):
+        """Constructor.
+
+        Args:
+            channel: A grpc.Channel.
+        """
+        self.SendPing = channel.unary_unary(
+            "/protocol.KeepAliveService/SendPing",
+            request_serializer=main__pb2.PING.SerializeToString,
+            response_deserializer=main__pb2.PONG.FromString,
+            _registered_method=True,
+        )
+        self.SendHeartbeat = channel.unary_unary(
+            "/protocol.KeepAliveService/SendHeartbeat",
+            request_serializer=main__pb2.Heartbeat_Request.SerializeToString,
+            response_deserializer=main__pb2.Heartbeat_Response.FromString,
+            _registered_method=True,
+        )
+
+
+class KeepAliveServiceServicer(object):
+    """////////////////////////
+
+    Keep Alive Manager
+
+    """
+
+    def SendPing(self, request, context):
+        """PingPong - Is alive?"""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details("Method not implemented!")
+        raise NotImplementedError("Method not implemented!")
+
+    def SendHeartbeat(self, request, context):
+        """KeepAlive"""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details("Method not implemented!")
+        raise NotImplementedError("Method not implemented!")
+
+
+def add_KeepAliveServiceServicer_to_server(servicer, server):
+    rpc_method_handlers = {
+        "SendPing": grpc.unary_unary_rpc_method_handler(
+            servicer.SendPing,
+            request_deserializer=main__pb2.PING.FromString,
+            response_serializer=main__pb2.PONG.SerializeToString,
+        ),
+        "SendHeartbeat": grpc.unary_unary_rpc_method_handler(
+            servicer.SendHeartbeat,
+            request_deserializer=main__pb2.Heartbeat_Request.FromString,
+            response_serializer=main__pb2.Heartbeat_Response.SerializeToString,
+        ),
+    }
+    generic_handler = grpc.method_handlers_generic_handler(
+        "protocol.KeepAliveService", rpc_method_handlers
+    )
+    server.add_generic_rpc_handlers((generic_handler,))
+    server.add_registered_method_handlers(
+        "protocol.KeepAliveService", rpc_method_handlers
+    )
+
+
+# This class is part of an EXPERIMENTAL API.
+class KeepAliveService(object):
+    """////////////////////////
+
+    Keep Alive Manager
+
+    """
+
+    @staticmethod
+    def SendPing(
+        request,
+        target,
+        options=(),
+        channel_credentials=None,
+        call_credentials=None,
+        insecure=False,
+        compression=None,
+        wait_for_ready=None,
+        timeout=None,
+        metadata=None,
+    ):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            "/protocol.KeepAliveService/SendPing",
+            main__pb2.PING.SerializeToString,
+            main__pb2.PONG.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True,
+        )
+
+    @staticmethod
+    def SendHeartbeat(
+        request,
+        target,
+        options=(),
+        channel_credentials=None,
+        call_credentials=None,
+        insecure=False,
+        compression=None,
+        wait_for_ready=None,
+        timeout=None,
+        metadata=None,
+    ):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            "/protocol.KeepAliveService/SendHeartbeat",
+            main__pb2.Heartbeat_Request.SerializeToString,
+            main__pb2.Heartbeat_Response.FromString,
             options,
             channel_credentials,
             insecure,

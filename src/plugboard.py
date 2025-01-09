@@ -41,25 +41,33 @@ class PlugBoard:
         self.engine = NodeEngine(node_id)
         self.engine.send_event_handler = self.dispatch_event
 
-        self.keep_alive_manager = KeepAlive_Management()
+        self.keep_alive_manager = KeepAlive_Management(node_id)
+        self.local_addr = local_addr
         self.local_addr.set_keep_alive(self.keep_alive_manager)
 
         self.peer_table = DHT(self.my_addr)
         self.peer_table.update_addresses(node_id)
         self.peer_table.set(node_id, local_addr.to_bytes())
+        self.cache_subscriptions: dict[DHTSelect, dict[bytes, list[bytes]]] = {
+            DHTSelect.PEER_ID: {self.my_addr: []}
+        }  # stores KEY and peers caching.
+
         self.task_table = DHT(self.my_addr)
         self.task_table.update_addresses(node_id)
-        self.local_addr = local_addr
 
         channel = self.local_addr.get_channel()
         logger.info(f"Creating local channel: {self.local_addr.get_string_channel()}")
-        self.dht_interface = DHTClient(channel, self.my_addr)
+        self.dht_interface = DHTClient(channel, self.my_addr, self.my_addr)
         self.task_interface: TaskPeer = TaskPeer(channel, self.my_addr)
         self.peer_discovery_interface = PeerDiscoveryClient(
             self.my_addr, self.local_addr
         )
         self.seen_peers: set[bytes] = set()
         self.received_rpcs = asyncio.Event()
+
+    def remove_peer_from_address_tables(self, peer):
+        self.peer_table.remove_address(peer)
+        self.task_table.remove_address(peer)
 
     async def get_peer_transport(self, addr: bytes) -> Optional[StarAddress]:
         """Use the DHT to get transport address given Node ID
@@ -86,28 +94,73 @@ class PlugBoard:
             addr (bytes): Node ID
             tp (StarAddress): Transport Address
         """
+        logger.debug(f"Add peer {addr.hex()} at {tp.get_string_channel()}")
         owners, who = await self.dht_set(addr, tp.to_bytes(), DHTSelect.PEER_ID)
+
         if addr != self.my_addr:
             return
         # Track owners.
         # who! currently just one owner. TODO.
-        tp = await self.get_peer_transport(who)
+        logger.debug("Creating listener to storer of my address")
+        tp = await self.get_peer_transport(who)  # type: ignore
+        assert tp is not None
         tp.set_keep_alive(self.keep_alive_manager)
         channel = tp.get_channel()
         self.keep_alive_manager.register_channel_service(
-            channel, self.peer_self_cb_offline, TRIGGER_OFFLINE
+            channel, tp.get_string_channel(), self.peer_self_cb_offline, TRIGGER_OFFLINE
         )
 
     async def peer_self_cb_offline(
-        self,
+        self, peer_id: Optional[bytes]
     ):  # check if store peer is still storing my address
-        pass
+        # peer is no longer storing the address!
+        if peer_id is None:
+            logger.error("Self CB peer ID None!")
+            return
 
-    async def peer_maintain_valid(self):  # store peer maintains connection to client
-        pass
+        logger.info(
+            f"Owner of my transport address {self.my_addr.hex()} went offline. Resending"
+        )
 
-    async def peer_cache_maintain(self):  # cache. Listen for updates from owners.
-        pass
+        # store-er went offline! Resend address.
+        self.remove_peer_from_address_tables(peer_id)
+        await self.add_peer(self.my_addr, self.local_addr)
+
+    async def peer_maintain_valid_offline(self, peer_id: Optional[bytes]):
+        # peer_id went offline. I own the peer's address. Delete
+        if peer_id is None:
+            logger.error("Maintain CB can't be None!")
+            return
+
+        await self.dht_delete_plain(peer_id, DHTSelect.PEER_ID)
+
+    async def send_deletion_notice(self, key, select):
+        for cacher in self.cache_subscriptions[select][key]:
+            self.dht_interface.send_deletion_notice(
+                cacher, key, select
+            )  # tell cachers offline!
+
+    async def peer_cache_maintain_offline(
+        self, peer_id, key
+    ):  # cache. Listen for owner / prev chain to go down.
+
+        tp: StarAddress | None = self.get_peer_transport(key)
+        if tp is None:
+            return
+        kp = self.keep_alive_manager.get_kp_channel(tp)
+        exists = kp.verify()
+        if not (exists):
+            # offline!
+            self.remove_peer_from_address_tables(peer_id)
+            await self.send_deletion_notice(peer_id)
+            return
+
+        # online!
+        self.remove_peer_from_address_tables(peer_id)
+        await self.add_peer(key, tp)
+
+    def get_kp_man(self) -> KeepAlive_Management:
+        return self.keep_alive_manager
 
     async def update_peers_seen(self, addr_list: set[bytes] | bytes):
         """A method for call by the message services marking a seen peer.
@@ -181,7 +234,13 @@ class PlugBoard:
         for peer in peers:
             peerID = peer.peer_id
             addr = StarAddress.from_pb(peer.addr)
-            self.dht_cache_store(peerID, addr.to_bytes(), DHTSelect.PEER_ID)
+            await self.dht_cache_store(
+                peerID, addr.to_bytes(), DHTSelect.PEER_ID, peer_addr
+            )
+
+        # send out my address given the new info.
+        logger.debug("Sending out my address...")
+        await self.add_peer(self.my_addr, self.local_addr)
 
     async def dispatch_event(self, evt: Event):
         """Dispatch an event to either the local engine or to the network
@@ -307,7 +366,9 @@ class PlugBoard:
         status, who = await self.dht_interface.StoreItem(key, value, select)
         return status, who
 
-    def dht_cache_store(self, key: bytes, value: bytes, select: DHTSelect):
+    async def dht_cache_store(
+        self, key: bytes, value: bytes, select: DHTSelect, monitor: bytes
+    ):
         """Messaging Services: Store item in DHT cache
 
         Args:
@@ -316,9 +377,18 @@ class PlugBoard:
             select (DHTSelect): DHT to store under
         """
         if select == DHTSelect.PEER_ID:
+
             self.peer_table.update_addresses(key)
             self.peer_table.set_cache(key, value)
             self.task_table.update_addresses(key)
+
+            # Send to chain.
+            tp = await self.get_peer_transport(monitor)
+            assert tp is not None
+            channel = tp.get_channel()
+            client = DHTClient(channel, monitor, self.my_addr)
+            await client.register_notices(key, select)
+
         elif select == DHTSelect.TASK_ID:
             tv = TaskValue.FromString(value)
             tv.task_data = b""
@@ -352,16 +422,35 @@ class PlugBoard:
                 addr.set_keep_alive(self.keep_alive_manager)
                 channel = addr.get_channel()
                 self.keep_alive_manager.register_channel_service(
-                    channel, self.peer_maintain_valid, TRIGGER_OFFLINE
+                    channel,
+                    addr.get_string_channel(),
+                    lambda: self.peer_maintain_valid_offline(key),
+                    TRIGGER_OFFLINE,
                 )
+                self.cache_subscriptions[select][key] = []
+
             elif r.response_code == DHTStatus.FOUND:
                 # cache.
                 addr = StarAddress.from_bytes(value)
                 addr.set_keep_alive(self.keep_alive_manager)
                 channel = addr.get_channel()
                 self.keep_alive_manager.register_channel_service(
-                    channel, self.peer_cache_maintain, TRIGGER_OFFLINE
+                    channel,
+                    addr.get_string_channel(),
+                    self.peer_cache_maintain_offline,
+                    TRIGGER_OFFLINE,
                 )
+
+                # Send to chain.
+                logger.debug(
+                    f"Set plain cache. Register notices dest: {last_chain.hex()}"
+                )
+                tp = await self.get_peer_transport(last_chain)
+                assert tp is not None
+                channel = tp.get_channel()
+                client = DHTClient(channel, last_chain, self.my_addr)
+                await client.register_notices(key, select)
+                self.cache_subscriptions[select][key] = []
 
         elif select == DHTSelect.TASK_ID:
             # Do not post to cache for Task Alloc.
@@ -376,6 +465,28 @@ class PlugBoard:
             return  # type: ignore
 
         return r.data, r.response_code, r.neighbor_addrs
+
+    async def dht_delete_plain(self, key: bytes, select: DHTSelect):
+        if select == DHTSelect.PEER_ID:
+            if not (self.peer_table.exists(key)):
+                return DHTStatus.ERR
+            self.peer_table.remove(key)
+            self.send_deletion_notice(key, select)
+        return DHTStatus.OK
+
+    async def dht_update_plain(self, key: bytes, select: DHTSelect):
+        pass
+
+    async def dht_delete_notice_plain(self, key: bytes, select: DHTSelect):
+        if select == DHTSelect.PEER_ID:
+            if not (self.peer_table.exists(key)):
+                return DHTStatus.ERR
+            self.peer_table.remove(key)
+            self.send_deletion_notice(key, select)
+        return DHTStatus.OK
+
+    async def dht_update_notice_plain(self, key: bytes, select: DHTSelect):
+        pass
 
 
 #             RPC              RPC

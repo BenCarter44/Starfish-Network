@@ -108,6 +108,14 @@ class DHT:
     def exists(self, key: bytes):
         return key in self.data
 
+    def remove(self, key):
+        del self.data[key]
+        if key in self.cached_data:
+            del self.cached_data[key]
+
+    def remove_address(self, peer):
+        self.addr.remove(peer)
+
     def get(self, key, neighbors=3, hash_func_in=None):
 
         if key in self.data and key not in self.cached_data:

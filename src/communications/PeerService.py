@@ -34,7 +34,7 @@ class PeerDiscoveryClient:
         channel = transport_to.get_channel()
         self.stub = pb.PeerServiceStub(channel)  # connect to the other peer. Not local!
         recv = await self.stub.Bootstrap(req)
-        await channel.close()
+        # await channel.close()
         return recv.value
 
 

@@ -2,6 +2,7 @@
 import random
 from typing import cast
 import uuid
+from src.communications.KeepAliveService import KeepAliveCommService
 from src.communications.PeerService import PeerService
 from src.communications.main_pb2_grpc import add_PeerServiceServicer_to_server
 from src.core.star_components import Program, StarProcess, StarTask
@@ -24,6 +25,8 @@ try:
     from .communications.main_pb2_grpc import (
         add_DHTServiceServicer_to_server,
         add_TaskServiceServicer_to_server,
+        add_PeerServiceServicer_to_server,
+        add_KeepAliveServiceServicer_to_server,
     )
     from .core.star_components import StarAddress
 except:
@@ -32,6 +35,8 @@ except:
     from communications.main_pb2_grpc import (
         add_DHTServiceServicer_to_server,
         add_TaskServiceServicer_to_server,
+        add_PeerServiceServicer_to_server,
+        add_KeepAliveServiceServicer_to_server,
     )
     from core.star_components import StarAddress
 
@@ -63,6 +68,12 @@ class Node:
         )
         add_PeerServiceServicer_to_server(
             servicer=PeerService(self.plugboard, self.addr), server=self.server
+        )
+        add_KeepAliveServiceServicer_to_server(
+            servicer=KeepAliveCommService(
+                self.plugboard, self.addr, self.plugboard.get_kp_man()
+            ),
+            server=self.server,
         )
 
         port = self.transport.get_string_channel()

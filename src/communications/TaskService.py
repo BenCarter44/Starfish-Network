@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 class TaskPeer:
     # Sends requests to network.
-    def __init__(self, channel: grpc.Channel, my_addr: bytes):
+    def __init__(self, channel: grpc.aio.Channel, my_addr: bytes):
         self.stub = pb.TaskServiceStub(channel)
         self.peer_id = my_addr
 

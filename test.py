@@ -62,13 +62,13 @@ if __name__ == "__main__":
             node = Node(addr_table[1][0], addr_table[1][1])
             asyncio.create_task(node.run())
 
-        if server_number == 3:
-            node = Node(addr_table[2][0], addr_table[2][1])
-            asyncio.create_task(node.run())
+        # if server_number == 3:
+        #     node = Node(addr_table[2][0], addr_table[2][1])
+        #     asyncio.create_task(node.run())
 
-        if server_number == 4:
-            node = Node(addr_table[3][0], addr_table[3][1])
-            asyncio.create_task(node.run())
+        # if server_number == 4:
+        #     node = Node(addr_table[3][0], addr_table[3][1])
+        #     asyncio.create_task(node.run())
 
         logger.debug(f"Server up: {server_number}")
         await asyncio.sleep(5)
@@ -81,37 +81,37 @@ if __name__ == "__main__":
             logger.warning("Final Node1 PEER LIST")
             node.plugboard.peer_table.fancy_print()
 
-        if server_number == 2:
-            await asyncio.sleep(10)
-            logger.info("Connecting Addr#2 to Addr#3 & 4")
-            await node.connect_to_peer(addr_table[2][0], addr_table[2][1])
-            await node.connect_to_peer(addr_table[3][0], addr_table[3][1])
+        # if server_number == 2:
+        #     await asyncio.sleep(10)
+        #     logger.info("Connecting Addr#2 to Addr#3 & 4")
+        #     await node.connect_to_peer(addr_table[2][0], addr_table[2][1])
+        #     await node.connect_to_peer(addr_table[3][0], addr_table[3][1])
 
-            logger.warning("Final Node2")
-            node.plugboard.peer_table.fancy_print()
+        #     logger.warning("Final Node2")
+        #     node.plugboard.peer_table.fancy_print()
 
-        if server_number == 3 or server_number == 4:
-            await asyncio.sleep(5)
-            logger.warning(f"Final Node{server_number}")
-            node.plugboard.peer_table.fancy_print()
+        # if server_number == 3 or server_number == 4:
+        #     await asyncio.sleep(5)
+        #     logger.warning(f"Final Node{server_number}")
+        #     node.plugboard.peer_table.fancy_print()
 
-        if server_number == 1:
-            pass
-            await asyncio.sleep(45)
-            pgrm = star.Program(read_pgrm="examples/my_list_program.star")
-            logger.info(
-                f"I: Opening program '{pgrm.saved_data['pgrm_name']}' from {pgrm.saved_data['date_compiled']}\n"
-            )
-            process = await node.start_program(pgrm, b"User")
+        # if server_number == 1:
+        #     pass
+        #     await asyncio.sleep(45)
+        #     pgrm = star.Program(read_pgrm="examples/my_list_program.star")
+        #     logger.info(
+        #         f"I: Opening program '{pgrm.saved_data['pgrm_name']}' from {pgrm.saved_data['date_compiled']}\n"
+        #     )
+        #     process = await node.start_program(pgrm, b"User")
 
-        elif server_number == 4:
-            pass
-            await asyncio.sleep(40)
-            pgrm = star.Program(read_pgrm="examples/file_program.star")
-            logger.info(
-                f"I: Opening program '{pgrm.saved_data['pgrm_name']}' from {pgrm.saved_data['date_compiled']}\n"
-            )
-            process = await node.start_program(pgrm, b"Bob")
+        # elif server_number == 4:
+        #     pass
+        #     await asyncio.sleep(40)
+        #     pgrm = star.Program(read_pgrm="examples/file_program.star")
+        #     logger.info(
+        #         f"I: Opening program '{pgrm.saved_data['pgrm_name']}' from {pgrm.saved_data['date_compiled']}\n"
+        #     )
+        #     process = await node.start_program(pgrm, b"Bob")
 
         await asyncio.sleep(1000)
         logger.critical("Main done!")
@@ -122,7 +122,7 @@ if __name__ == "__main__":
     ch = logging.StreamHandler(sys.stdout)
     ch.setLevel(logging.DEBUG)
     ch.setFormatter(CustomFormatter())
-    logging.basicConfig(handlers=[ch], level=logging.INFO)
+    logging.basicConfig(handlers=[ch], level=logging.DEBUG)
 
     asyncio.get_event_loop().set_debug(True)
     asyncio.run(main())
