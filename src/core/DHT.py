@@ -109,12 +109,14 @@ class DHT:
         return key in self.data
 
     def remove(self, key):
-        del self.data[key]
+        if key in self.data:
+            del self.data[key]
         if key in self.cached_data:
-            del self.cached_data[key]
+            self.cached_data.remove(key)
 
     def remove_address(self, peer):
-        self.addr.remove(peer)
+        if peer in self.addr:
+            self.addr.remove(peer)
 
     def get(self, key, neighbors=3, hash_func_in=None):
 
@@ -157,9 +159,14 @@ class DHT:
         if key in self.data and key not in self.cached_data:
             # owned! Skip!
             self.data[key] = val
-            return
+            return False
         self.data[key] = val
         self.cached_data.add(key)
+
+        logger.info("Peer table:")
+        self.fancy_print()
+
+        return True
 
     def fancy_print(self):
         for x in self.data:
@@ -169,12 +176,13 @@ class DHT:
 
             key = x.hex()
             value = self.data[x]
+            assert value != b""
             if len(value.hex()) > 16:
                 value = value.hex()[0:16]
                 value += "..."
             else:
                 value = value.hex()
-            logger.debug(f"{cache_text}\t[{key}]\t = {value}")
+            logger.info(f"{cache_text}\t[{key}]\t = {value}")
 
     def set(
         self, key, val, neighbors=1, post_to_cache=True, hash_func_in=None
@@ -196,12 +204,12 @@ class DHT:
 
         closest = sorted(self.addr, key=diff_hash)  # sort by hash.
 
-        logger.debug(f"{key.hex()} - MAIN KEY SET")
-        logger.debug(f"Neighbor | Diff Hex")
+        # logger.debug(f"{key.hex()} - MAIN KEY SET")
+        # logger.debug(f"Neighbor | Diff Hex")
         for x in closest:
             tmp_hex = diff_hash(x).hex()
             addr_hex = x.hex()
-            logger.debug(f"{addr_hex} | {tmp_hex}")
+            # logger.debug(f"{addr_hex} | {tmp_hex}")
 
         if len(closest) < neighbors:
             close_neighbors = closest
@@ -214,15 +222,19 @@ class DHT:
             if post_to_cache:
                 self.cached_data.add(key)
                 self.data[key] = val
-                self.fancy_print()
+                # self.fancy_print()
+
+            logger.info("Peer table:")
+            self.fancy_print()
             return DHT_Response(DHTStatus.FOUND, (key, val), close_neighbors)
 
         # if random.random() < 0.5:  # For testing the children update feature.
         #     self.cached_data.add(key)
         #     return DHT_Response("NEIGHBOR_UPDATE_CACHE", (key, val), [closest[-1]])
         self.data[key] = val
+        # self.fancy_print()
+        logger.info("Peer table:")
         self.fancy_print()
-
         return DHT_Response(DHTStatus.OWNED, (key, val), close_neighbors)
 
 

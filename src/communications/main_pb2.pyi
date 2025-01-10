@@ -152,19 +152,16 @@ class DHT_Delete_Response(_message.Message):
     def __init__(self, status: _Optional[_Union[DHTStatus, str]] = ...) -> None: ...
 
 class DHT_Delete_Notice_Request(_message.Message):
-    __slots__ = ("key", "status", "select", "who")
+    __slots__ = ("key", "select", "who")
     KEY_FIELD_NUMBER: _ClassVar[int]
-    STATUS_FIELD_NUMBER: _ClassVar[int]
     SELECT_FIELD_NUMBER: _ClassVar[int]
     WHO_FIELD_NUMBER: _ClassVar[int]
     key: bytes
-    status: DHTStatus
     select: DHTSelect
     who: bytes
     def __init__(
         self,
         key: _Optional[bytes] = ...,
-        status: _Optional[_Union[DHTStatus, str]] = ...,
         select: _Optional[_Union[DHTSelect, str]] = ...,
         who: _Optional[bytes] = ...,
     ) -> None: ...
@@ -176,43 +173,37 @@ class DHT_Delete_Notice_Response(_message.Message):
     def __init__(self, status: _Optional[_Union[DHTStatus, str]] = ...) -> None: ...
 
 class DHT_Update_Request(_message.Message):
-    __slots__ = ("key", "value", "status", "select", "who")
+    __slots__ = ("key", "value", "select", "who")
     KEY_FIELD_NUMBER: _ClassVar[int]
     VALUE_FIELD_NUMBER: _ClassVar[int]
-    STATUS_FIELD_NUMBER: _ClassVar[int]
     SELECT_FIELD_NUMBER: _ClassVar[int]
     WHO_FIELD_NUMBER: _ClassVar[int]
     key: bytes
     value: bytes
-    status: DHTStatus
     select: DHTSelect
     who: bytes
     def __init__(
         self,
         key: _Optional[bytes] = ...,
         value: _Optional[bytes] = ...,
-        status: _Optional[_Union[DHTStatus, str]] = ...,
         select: _Optional[_Union[DHTSelect, str]] = ...,
         who: _Optional[bytes] = ...,
     ) -> None: ...
 
 class DHT_Update_Notice_Request(_message.Message):
-    __slots__ = ("key", "value", "status", "select", "who")
+    __slots__ = ("key", "value", "select", "who")
     KEY_FIELD_NUMBER: _ClassVar[int]
     VALUE_FIELD_NUMBER: _ClassVar[int]
-    STATUS_FIELD_NUMBER: _ClassVar[int]
     SELECT_FIELD_NUMBER: _ClassVar[int]
     WHO_FIELD_NUMBER: _ClassVar[int]
     key: bytes
     value: bytes
-    status: DHTStatus
     select: DHTSelect
     who: bytes
     def __init__(
         self,
         key: _Optional[bytes] = ...,
         value: _Optional[bytes] = ...,
-        status: _Optional[_Union[DHTStatus, str]] = ...,
         select: _Optional[_Union[DHTSelect, str]] = ...,
         who: _Optional[bytes] = ...,
     ) -> None: ...

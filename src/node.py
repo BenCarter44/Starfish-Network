@@ -61,17 +61,32 @@ class Node:
 
         self.server = grpc.aio.server(maximum_concurrent_rpcs=None)
         add_DHTServiceServicer_to_server(
-            servicer=DHTService(self.plugboard, self.addr), server=self.server
+            servicer=DHTService(
+                self.plugboard, self.addr, self.plugboard.keep_alive_manager
+            ),
+            server=self.server,
         )
         add_TaskServiceServicer_to_server(
-            servicer=TaskService(self.plugboard, self.addr), server=self.server
+            servicer=TaskService(
+                self.plugboard,
+                self.addr,
+                self.plugboard.keep_alive_manager,
+            ),
+            server=self.server,
         )
         add_PeerServiceServicer_to_server(
-            servicer=PeerService(self.plugboard, self.addr), server=self.server
+            servicer=PeerService(
+                self.plugboard,
+                self.addr,
+                self.plugboard.keep_alive_manager,
+            ),
+            server=self.server,
         )
         add_KeepAliveServiceServicer_to_server(
             servicer=KeepAliveCommService(
-                self.plugboard, self.addr, self.plugboard.get_kp_man()
+                self.plugboard,
+                self.addr,
+                self.plugboard.get_kp_man(),
             ),
             server=self.server,
         )
@@ -98,7 +113,8 @@ class Node:
     async def peer_discovery_task(self):
         """The peer discovery task. Do round every 5 sec"""
         while True:
-            await asyncio.sleep(5)
+            await asyncio.sleep(10)
+
             if self.is_connected or self.plugboard.received_rpcs.is_set():
                 await self.plugboard.perform_discovery_round()
 

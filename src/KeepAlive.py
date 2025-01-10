@@ -9,6 +9,8 @@ import grpc
 
 import logging
 
+from src.core.star_components import StarAddress
+
 logger = logging.getLogger(__name__)
 
 
@@ -18,25 +20,36 @@ TRIGGER_OFFLINE = 1
 TRIGGER_TIMEOUT = 2
 
 OFFLINE_TIMEOUT = 10
-HEARTBEAT_INTERVAL = 2
+HEARTBEAT_INTERVAL = 1
+FAIL_MAX = 3
 
 
 class KeepAlive_Channel:
-    def __init__(self, channel: grpc.aio.Channel):
+    def __init__(self, channel: grpc.aio.Channel, peer: bytes):
         self.comm = KeepAliveComm(channel)
-        self.connected = False
-        self.callbacks: dict[int, list[Callable]] = {}
+        self.connected = True
+        self.callbacks: dict[int, list[Callable]] = {
+            TRIGGER_OFFLINE: [],
+            TRIGGER_TIMEOUT: [],
+        }
         self.last_seen = 0.0
-        self.peer_id_assoc: Optional[bytes] = None
+        self.peer_id_assoc: bytes = peer
+        self.channel = channel
+        self.kill_count = 0
+        self.is_closed = False
 
     def mark_peer_id(self, peer: bytes):
         self.peer_id_assoc = peer
 
     def add_callbacks(self, trigger: int, callback: Callable):
-        if trigger not in self.callbacks:
-            self.callbacks[trigger] = [callback]
-            return
-        self.callbacks[trigger].append(callback)
+        logger.debug(f"Add callback: {callback} - {trigger}")
+
+        self.callbacks[trigger] = [callback]
+
+        # if trigger not in self.callbacks:
+        #     self.callbacks[trigger] = [callback]
+        #     return
+        # self.callbacks[trigger].append(callback)
 
     def is_connected(self) -> bool:
         return self.connected
@@ -57,138 +70,180 @@ class KeepAlive_Channel:
             self.connected = False
         return self.connected
 
-    async def heartbeat(self, custom_data):
-        try:
-            hb = await self.comm.SendHeartbeat(custom_data)
-        # custom data back.
-        except:
-            # offline! ...
+    async def heartbeat(self, i):
+        logger.debug(f"Send Heartbeat request: {self.peer_id_assoc.hex()}")
+        hb = await self.comm.SendHeartbeat(self.peer_id_assoc)
+        if not (hb):
+            # offline!
+            self.kill_count += 1
+        else:
+            self.update()
+
+        if self.kill_count > FAIL_MAX:
+            await self.mark_offline()
             return
-        self.update()
+
+    async def kill_update(self):
+        self.kill_count += 1
+        if self.kill_count > FAIL_MAX:
+            await self.mark_offline()
+            return
 
     def update(self):
+        # logger.info(f"UPDATE: {self.peer_id_assoc.hex()}")
         self.last_seen = time.time()
         self.connected = True
+        if self.kill_count > 0:
+            self.kill_count -= 1
 
     async def mark_offline(self):
         self.connected = False
+        logger.warning(
+            f"PEER OFFLINE! {self.peer_id_assoc.hex()} CALL: {self.callbacks[TRIGGER_OFFLINE]}"
+        )
+
         for cb in self.callbacks[TRIGGER_OFFLINE]:
-            await cb(self.peer_id_assoc)
+            await cb()
+
+        await self.channel.close()
+        self.is_closed = True
 
     def is_due_for_heartbeat(self):
         return time.time() - self.last_seen > HEARTBEAT_INTERVAL
 
 
 class KeepAlive_Management:
-    def __init__(self, my_addr: bytes):
+    def __init__(self, my_addr: bytes, default_offline):
         asyncio.create_task(self.keep_alive_task())
-        self.channels: dict[grpc.aio.Channel, KeepAlive_Channel] = {}
-        self.custom_data: dict[grpc.aio.Channel, dict[str, Callable]] = {}
-        self.roundrobin_channels: list[grpc.aio.Channel] = []
+        self.channels: dict[str, KeepAlive_Channel] = {}
+        self.roundrobin_channels: list[str] = []
         self.channel_map: dict[str, grpc.aio.Channel] = {}
+        self.rev_channel_map: dict[grpc.aio.Channel, str] = {}
+        self.default_offline = default_offline
+
+    def fancy_print(self):
+        for s in self.channel_map:
+            logger.info(
+                f"{s} : {self.channels[s].is_connected()} - {self.channels[s].last_seen}"
+            )
 
     def get_channel(self, string: str) -> grpc.aio.Channel:
         if string not in self.channel_map:
             self.channel_map[string] = grpc.aio.insecure_channel(string)
+            self.rev_channel_map[self.channel_map[string]] = string
         return self.channel_map[string]
 
-    def get_kp_channel(self, addr) -> KeepAlive_Channel:
+    def get_kp_channel(self, addr: StarAddress, peer: bytes) -> KeepAlive_Channel:
         s = addr.get_string_channel()
         channel = self.get_channel(s)
-        if channel not in self.channels:
-            self.channels[channel] = KeepAlive_Channel(channel)
-            self.custom_data[channel] = {}
-            self.roundrobin_channels.append(channel)
-        return self.channels[channel]
+        if s not in self.channels:
+            logger.debug(f"Create keep alive channel: {s}")
+            self.channels[s] = KeepAlive_Channel(channel, peer)
+
+            async def tmp():
+                await self.default_offline(peer)
+
+            self.channels[s].add_callbacks(TRIGGER_OFFLINE, tmp)
+            self.channel_map[s] = channel
+            self.rev_channel_map[channel] = s
+        return self.channels[s]
 
     async def receive_ping(self, servicer_client):
         # get channel. If I have the channel, update its keep alive
-        channel_recv_peer = servicer_client.replace("ipv4:", "tcp://")
+        channel_recv_peer = servicer_client.replace("ipv4:", "")
         if channel_recv_peer not in self.channel_map:
             return  # I didn't open a channel to it, skip
 
-        channel = self.channel_map[channel_recv_peer]
-        if channel not in self.channels:
+        if channel_recv_peer not in self.channels:
             return  # I don't have any callbacks registered to it.
 
-        self.channels[channel].update()
+        logger.debug(f"Receive ping from: {channel_recv_peer}")
+        self.channels[channel_recv_peer].update()
         return
 
-    async def receive_heartbeat_service(self, servicer_client: str, custom_data_in):
+    async def receive_heartbeat_service(self, out):
+        logger.debug(f"Recv heartbeat request")
         # get channel. If I have the channel, update its keep alive
-        channel_recv_peer = servicer_client.replace("ipv4:", "tcp://")
-        if channel_recv_peer not in self.channel_map:
-            return custom_data_in  # I didn't open a channel to it, skip
+        # channel_recv_peer = servicer_client.replace("ipv4:", "tcp://")
 
-        channel = self.channel_map[channel_recv_peer]
-        if channel not in self.channels:
-            return custom_data_in  # I don't have any callbacks registered to it.
+        # logger.info(f"Receive ping from: {channel_recv_peer}")
+        # if channel_recv_peer not in self.channel_map:
+        #     return custom_data_in  # I didn't open a channel to it, skip
 
-        self.channels[channel].update()
+        # channel = self.channel_map[channel_recv_peer]
+        # s = self.rev_channel_map[channel]
+        # self.channels[channel].update()
+
+        # if channel not in self.channels:
+        #     return custom_data_in  # I don't have any callbacks registered to it.
+
         # do something on heartbeat?
-        return custom_data_in
+        return out
 
     def register_channel_service(
         self,
         channel: grpc.aio.Channel,
         channel_string: str,
+        peer_id: bytes,
         async_callback: Callable,
         trigger: int,
-        custom_data_callback: Optional[Callable] = None,
-        custom_data_label: Optional[str] = None,
         timeout_sec: float = 0,
     ) -> KeepAlive_Channel:
 
-        if channel not in self.channels:
-            self.channels[channel] = KeepAlive_Channel(channel)
-            self.custom_data[channel] = {}
-            self.roundrobin_channels.append(channel)
+        logger.debug(f"Register Channel Service: {channel_string}")
+
+        if channel_string not in self.roundrobin_channels:  # tracking
+            logger.debug(f"Create keep alive channel: {channel_string}")
+
+            if channel_string not in self.channels:  # overall
+                self.channels[channel_string] = KeepAlive_Channel(channel, peer_id)
+                self.channel_map[channel_string] = channel
+                self.rev_channel_map[channel] = channel_string
+
+            self.roundrobin_channels.append(channel_string)
             s = channel_string  # type: ignore
-            self.channel_map[s] = channel
 
         if trigger == TRIGGER_TIMEOUT:
             trigger = timeout_sec * 0.1 + 2  # type: ignore
 
-        self.channels[channel].add_callbacks(trigger, async_callback)
+        self.channels[channel_string].add_callbacks(trigger, async_callback)
 
-        if custom_data_label is None or custom_data_callback is None:
-            return self.channels[channel]
-
-        if custom_data_label in self.custom_data[channel]:
-            self.custom_data[channel][custom_data_label] = custom_data_callback
-        else:
-            self.custom_data[channel][custom_data_label] = custom_data_callback
-
-        return self.channels[channel]
+        return self.channels[channel_string]
 
     async def keep_alive_task(self):
         logger.debug("Keep Alive task running")
         counter = 0
         while True:
-            if len(self.channels) == 0:
+            if len(self.roundrobin_channels) == 0:
                 await asyncio.sleep(
                     1
                 )  # even keepalive delay for everyone... later can do something different.
                 continue
-
-            channel = self.roundrobin_channels[counter]
             counter += 1
-            if counter > len(self.channels):
+            if counter >= len(self.roundrobin_channels):
                 counter = 0
 
-            if not (self.channels[channel].is_due_for_heartbeat()):
+            s = self.roundrobin_channels[counter]
+            if self.channels[s].is_closed:
+                # GONE!
+                del self.channels[s]
+                channel = self.channel_map[s]
+                del self.channel_map[s]
+                del self.rev_channel_map[channel]
+                del self.roundrobin_channels[counter]
                 continue
 
-            # get custom data callbacks.
-            out = {}
-            for lbl, cb in self.custom_data[channel].items():
-                if lbl is None or cb is None:
-                    continue
-                out[lbl] = await cb()
+            if len(self.channels[s].callbacks) == 0:
+                await asyncio.sleep(HEARTBEAT_INTERVAL / len(self.channels))
+                continue
 
-            asyncio.create_task(
-                self.channels[channel].heartbeat(out)
-            )  # heartbeat request.
+            if not (self.channels[s].is_due_for_heartbeat()):
+                await asyncio.sleep(HEARTBEAT_INTERVAL / len(self.channels))
+                continue
+
+            # logger.debug(s)
+            # logger.debug(self.roundrobin_channels)
+            asyncio.create_task(self.channels[s].heartbeat(True))  # heartbeat request.
             await asyncio.sleep(HEARTBEAT_INTERVAL / len(self.channels))
 
 

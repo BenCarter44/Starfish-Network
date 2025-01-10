@@ -19,7 +19,11 @@ logger = logging.getLogger(__name__)
 
 class TaskPeer:
     # Sends requests to network.
-    def __init__(self, channel: grpc.aio.Channel, my_addr: bytes):
+    def __init__(self, transport: StarAddress, my_addr: bytes):
+        channel = transport.get_channel()
+        kp = transport.keep_alive
+        self.kp_channel = kp.get_kp_channel(transport, my_addr)
+
         self.stub = pb.TaskServiceStub(channel)
         self.peer_id = my_addr
 
@@ -27,13 +31,15 @@ class TaskPeer:
         event = evt.to_pb()
         request = pb_base.SendEvent_Request(evt=event)
         response = await self.stub.SendEvent(request)
+        self.kp_channel.update()
         return response
 
 
 class TaskService(pb.TaskServiceServicer):
-    def __init__(self, internal_callback: "PlugBoard", my_addr):
+    def __init__(self, internal_callback: "PlugBoard", my_addr, keep_alive):
         self.internal_callback = internal_callback
         self.addr = my_addr
+        self.keep_alive = keep_alive
 
     async def SendEvent(
         self,
@@ -47,6 +53,10 @@ class TaskService(pb.TaskServiceServicer):
         task: StarTask = evt.target
 
         logger.debug("Get task owner")
+
+        # peer_address = context.peer()
+        # await self.keep_alive.receive_ping(peer_address)
+
         peerID: bytes = await self.internal_callback.get_task_owner(task)
         logger.debug(f"Task: {task.get_id().hex()} OWNED by {peerID.hex()}")
 
@@ -61,8 +71,7 @@ class TaskService(pb.TaskServiceServicer):
             logger.info(f"Transport for {peerID.hex()} not found!")
             return pb_base.SendEvent_Response(status=pb_base.DHTStatus.NOT_FOUND)
 
-        channel = tp.get_channel()
-        taskClient = TaskPeer(channel, self.addr)
+        taskClient = TaskPeer(tp, self.addr)
         response = await taskClient.SendEvent(evt)
-        await channel.close()
+        # await channel.close()
         return pb_base.SendEvent_Response(status=pb_base.DHTStatus.FOUND)

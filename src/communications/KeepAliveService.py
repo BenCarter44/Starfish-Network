@@ -27,18 +27,20 @@ class KeepAliveComm:
         self.stub = pb.KeepAliveServiceStub(channel)
 
     async def SendPing(self, timeout=0.2):
+        logger.debug("SendPing Request")
         request = pb_base.PING(value=int(time.time()))
         response = await self.stub.SendPing(request, timeout=timeout)
         return abs(time.time() - response) < 2
 
     async def SendHeartbeat(self, custom_data, timeout=0.2):
+        # logger.debug("Send Heartbeat Request")
         request = pb_base.Heartbeat_Request(custom_data=dill.dumps(custom_data))
         try:
             response = await self.stub.SendHeartbeat(
                 request, timeout=timeout
             )  # send my heartbeat to peer
         except Exception as e:
-            logger.warning(f"SendHeartbeat error {e}")
+            logger.debug(f"SendHeartbeat error")
             return False
         return dill.loads(response.custom_data)
 
@@ -59,9 +61,9 @@ class KeepAliveCommService(pb.KeepAliveServiceServicer):
         request: pb_base.PING,
         context: grpc.aio.ServicerContext,
     ) -> pb_base.PONG:
-
-        peer_address = context.peer()
-        await self.keep_alive.receive_ping(peer_address)
+        logger.debug("Recv Ping Request")
+        # peer_address = context.peer()
+        # await self.keep_alive.receive_ping(peer_address)
         return pb_base.PONG(value=int(time.time()))
 
     async def SendHeartbeat(
@@ -69,11 +71,9 @@ class KeepAliveCommService(pb.KeepAliveServiceServicer):
         request: pb_base.Heartbeat_Request,
         context: grpc.aio.ServicerContext,
     ) -> pb_base.Heartbeat_Response:
+        # logger.debug("Recv Heartbeat Request")
 
-        peer_address = context.peer()
         data_in = dill.loads(request.custom_data)
 
-        data_out = await self.keep_alive.receive_heartbeat_service(
-            peer_address, data_in
-        )
+        data_out = await self.keep_alive.receive_heartbeat_service(data_in)
         return pb_base.Heartbeat_Response(custom_data=dill.dumps(data_out))
