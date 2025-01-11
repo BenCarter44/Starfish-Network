@@ -9,7 +9,7 @@ watch it execute several programs from the `/examples` directory.
 <br>
 <br>
 If you want to run your own program on the OS, just make another file in `/examples` that 
-follows the STAR framework (see the existing programs, it's pretty simple) and "compile it". Then, you can edit `/test2.py` to run your compiled program.
+follows the STAR framework (see the existing programs, it's pretty simple) and "compile it". Then, **run `simple_executor.py <PATH TO STAR PROGRAM>` to run a STAR program.**
 
 # Running the pre-written example programs
 
@@ -53,6 +53,6 @@ cd ../
 
 1. Make sure the steps for the pre-written programs are working correctly.
 2. Create a program using the STAR framework. See [STAR_FRAMEWORK.md](/docs/STAR_FRAMEWORK.md) for info.
-3. Compile the program
-4. Find the line `star.Program(read_prgm=...` in `/test2.py` and change it to the `.star` file for your program
-5. Start up the OS on the four terminals, and your program will run!
+3. Compile the program (by executing the python program directly. See STAR_FRAMEWORK.md and the `#Compiling` section for more details.)
+4. Run `simple_executor.py <PATH TO STAR PROGRAM>` to run a STAR program
+
