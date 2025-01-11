@@ -38,8 +38,6 @@ if __name__ == "__main__":
         asyncio.create_task(node.run())
         await asyncio.sleep(1)
 
-        # EDIT HERE to
-
         try:
             pgrm = star.Program(read_pgrm=pgrm_name)
         except:
