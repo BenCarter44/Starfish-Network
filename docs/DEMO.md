@@ -9,7 +9,7 @@ watch it execute several programs from the `/examples` directory.
 <br>
 <br>
 If you want to run your own program on the OS, just make another file in `/examples` that 
-follows the STAR framework (see the existing programs, it's pretty simple) and "compile it". Then, **run `simple_executor.py <PATH TO STAR PROGRAM>` to run a STAR program.**
+follows the STAR framework (see the existing programs, it's pretty simple) and "compile it". Then, run `simple_executor.py <PATH TO STAR PROGRAM>` to run a STAR program.
 
 # Running the pre-written example programs
 
