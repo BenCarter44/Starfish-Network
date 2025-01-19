@@ -1,4 +1,13 @@
-import random
+"""A file implementing a Distributed Hash Table Class
+
+By Benjamin Carter - 2025
+
+It is a simple wrapper to the python dict, but also searches a list of 
+peer addresses to send the key to. It doesn't do the actual sending, but rather
+informs the user what peer would be more appropriate for the key to be stored under.
+
+"""
+
 from typing import Any
 import numpy as np
 import dill  # type: ignore
@@ -26,17 +35,19 @@ def xor(a: bytes, b: bytes) -> bytes:
     b_buf = np.frombuffer(b, dtype=np.uint8)
     a_len = a_buf.shape[0]
     b_len = b_buf.shape[0]
+    # append 0s to MSB until same size.
     if a_len > b_len:
         b_buf = np.pad(b_buf, (a_len - b_len, 0), "constant", constant_values=(0,))
     elif b_len > a_len:
         a_buf = np.pad(a_buf, (b_len - a_len, 0), "constant", constant_values=(0,))
-    # append 0s to MSB until same size.
 
     return (a_buf ^ b_buf).tobytes()
 
 
 def hash_func(data: Any) -> bytes:
     """Hash object into bytes
+
+    A basic function to hash a key into bytes. Relies on dill.
 
     Args:
         data (Any): Object to hash
@@ -46,17 +57,15 @@ def hash_func(data: Any) -> bytes:
     """
     return hashlib.sha256(dill.dumps(data)).digest()
 
-    hsh = abs(hash(data))  # need a better one!
-    hsh = hsh.to_bytes(16, "big")
-    return hsh
-
 
 class DHT_Response:
     def __init__(self, response_code: DHTStatus, data: Any, addrs: list[bytes]):
         """Response from DHT class
 
+        A struct.
+
         Args:
-            response_code (str): Response code
+            response_code (DHTStatus): Response code
             data (Any): Value stored at hash table (or None if not found)
             addrs (list[bytes]): neighbor addresses
         """
@@ -70,14 +79,15 @@ class DHT_Response:
 
 class DHT:
     def __init__(self, my_address: bytes):
-        """Create a DHT
+        """A DHT object for one node.
 
         Args:
             my_address (bytes): Address of owner
         """
         self.data: dict[Any, Any] = {}
         self.addr: set[bytes] = set()
-        # for holding data that isn't supposed to be in the dictionary.
+
+        # for holding keys in the dictionary that are only there for caching.
         self.cached_data: set[Any] = set()
         self.my_address: bytes = my_address
 
@@ -87,14 +97,22 @@ class DHT:
 
         self.cached_data.clear()
 
-    def update_addresses(self, addr):
+    def update_addresses(self, addr: set[bytes] | bytes):
         if isinstance(addr, set):
             self.addr = self.addr.union(addr)
         else:
             self.addr.add(addr)
 
-    def fetch_copy(self, owned_only=False):
-        if owned_only:
+    def fetch_dict(self, skip_cache=False):
+        """Fetch a python dict representation.
+
+        Args:
+            skip_cache (bool, optional): True to skip cached values. Defaults to False.
+
+        Returns:
+            dict: Dictionary of the local copy of the DHT.
+        """
+        if skip_cache:
             out = {}
             for i in self.data:
                 if i in self.cached_data:
@@ -108,45 +126,50 @@ class DHT:
     def exists(self, key: bytes):
         return key in self.data
 
-    def remove(self, key):
+    def remove(self, key: bytes):
+        """Remove key from dictionary. Is idempotent.
+
+        Args:
+            key (bytes): Key to remove.
+        """
         if key in self.data:
             del self.data[key]
         if key in self.cached_data:
             self.cached_data.remove(key)
 
-    def remove_address(self, peer):
+    def remove_address(self, peer: bytes):
+        """Remove address from address list.
+
+        Args:
+            peer (bytes): Bytes of peer address.
+        """
         if peer in self.addr:
             self.addr.remove(peer)
 
-    def get(self, key, neighbors=3, hash_func_in=None):
+    def get(self, key: bytes, neighbors=3, ignore: set[bytes] = set()):
+        """Fetch an item from the DHT.
 
+        Args:
+            key (bytes): Key
+            neighbors (int, optional): Number of neighbors to return if not found on local. Defaults to 3.
+
+        Returns:
+            _type_: _description_
+        """
         if key in self.data and key not in self.cached_data:
             return DHT_Response(DHTStatus.OWNED, self.data[key], [])
 
         if key in self.data and key in self.cached_data:
             return DHT_Response(DHTStatus.FOUND, self.data[key], [])
 
-        # Not found, key probably on another node?
-
-        if hash_func_in is None:
-            primary_hash_function = hash_func
-        else:
-            primary_hash_function = hash_func_in
-
-        key_hsh = primary_hash_function(key)
-
         # convert
         def diff_hash(obj):
-            obj_hash = obj  # directly xor the address. # primary_hash_function(obj)
-            return xor(obj_hash, key_hsh)
+            # directly xor the address. They are already bytes that are unique.
+            return xor(obj, key)
 
-        closest = sorted(self.addr, key=diff_hash)  # sort by hash.
+        query_addresses = self.addr.difference(ignore)
 
-        # logger.debug(f"{key_hsh.hex().replace('0','')} - MAIN KEY")
-        # for x in closest:
-        #     tmp_hex = diff_hash(x).hex()
-        #     addr_hex = x.hex()
-        #     logger.debug(f"{tmp_hex.replace('0','')} - {addr_hex.replace('0','')}")
+        closest = sorted(query_addresses, key=diff_hash)  # sort by hash.
 
         if len(closest) < neighbors:
             close_neighbors = closest
@@ -155,20 +178,30 @@ class DHT:
 
         return DHT_Response(DHTStatus.NOT_FOUND, None, close_neighbors)
 
-    def set_cache(self, key, val):
+    def set_cache(self, key: bytes, val: Any):
+        """Set item but mark it as cached.
+
+        This ignores all the distributed algorithms.
+
+        Args:
+            key (bytes): key of object to store
+            val (Any): value of object to store
+
+        Returns:
+            bool: True if cached.
+        """
         if key in self.data and key not in self.cached_data:
-            # owned! Skip!
+            # owned! overwrite!
             self.data[key] = val
             return False
+
         self.data[key] = val
         self.cached_data.add(key)
-
-        logger.info("Peer table:")
-        self.fancy_print()
 
         return True
 
     def fancy_print(self):
+        """Dump values in DHT"""
         for x in self.data:
             cache_text = "OWN  "
             if x in self.cached_data:
@@ -185,31 +218,37 @@ class DHT:
             logger.info(f"{cache_text}\t[{key}]\t = {value}")
 
     def set(
-        self, key, val, neighbors=1, post_to_cache=True, hash_func_in=None
+        self,
+        key: bytes,
+        val: Any,
+        neighbors=1,
+        post_to_cache=True,
+        ignore: set[bytes] = set(),
     ) -> DHT_Response:
+        """Set object in DHT. Forward to neighbors who are closer.
+
+        Args:
+            key (bytes): key
+            val (Any): Value to store
+            neighbors (int, optional): Neighbors to forward who are closer. Defaults to 1.
+            post_to_cache (bool, optional): Add to local cache if there are peers closer. Defaults to True.
+
+        Returns:
+            DHT_Response: _description_
+        """
         if len(key) != 8:
             logger.warning("Key in DHT set is not 8 bytes!")
-        # store in myself. Then, see if there are any closer people to also send to.
-        # if hash_func_in is None:
-        #     primary_hash_function = hash_func
-        # else:
-        #     primary_hash_function = hash_func_in
 
-        # key_hsh = primary_hash_function(key)
+        # store in myself. Then, see if there are any closer people to also send to.
 
         # convert
         def diff_hash(obj):
             obj_hash = obj  # directly xor the address. # primary_hash_function(obj)
             return xor(obj_hash, key)
 
-        closest = sorted(self.addr, key=diff_hash)  # sort by hash.
+        query_addresses = self.addr.difference(ignore)
 
-        # logger.debug(f"{key.hex()} - MAIN KEY SET")
-        # logger.debug(f"Neighbor | Diff Hex")
-        for x in closest:
-            tmp_hex = diff_hash(x).hex()
-            addr_hex = x.hex()
-            # logger.debug(f"{addr_hex} | {tmp_hex}")
+        closest = sorted(query_addresses, key=diff_hash)  # sort by hash.
 
         if len(closest) < neighbors:
             close_neighbors = closest
@@ -222,39 +261,30 @@ class DHT:
             if post_to_cache:
                 self.cached_data.add(key)
                 self.data[key] = val
-                # self.fancy_print()
 
-            logger.info("Peer table:")
-            self.fancy_print()
             return DHT_Response(DHTStatus.FOUND, (key, val), close_neighbors)
 
-        # if random.random() < 0.5:  # For testing the children update feature.
-        #     self.cached_data.add(key)
-        #     return DHT_Response("NEIGHBOR_UPDATE_CACHE", (key, val), [closest[-1]])
         self.data[key] = val
-        # self.fancy_print()
-        logger.info("Peer table:")
-        self.fancy_print()
         return DHT_Response(DHTStatus.OWNED, (key, val), close_neighbors)
 
 
-if __name__ == "__main__":
+# if __name__ == "__main__":
 
-    a = star.StarTask(b"input", False)
-    print(a.get_id())
-    b = star.StarTask(b"input2", True)  # type: ignore
-    print(b.get_id())
+#     a = star.StarTask(b"input", False)
+#     print(a.get_id())
+#     b = star.StarTask(b"input2", True)  # type: ignore
+#     print(b.get_id())
 
-    addresses = [b"Address One", b"Address Two", b"Address Three"]
-    dht_address_1 = DHT(addresses[0])
-    dht_address_2 = DHT(addresses[1])
-    dht_address_3 = DHT(addresses[2])
+#     addresses = [b"Address One", b"Address Two", b"Address Three"]
+#     dht_address_1 = DHT(addresses[0])
+#     dht_address_2 = DHT(addresses[1])
+#     dht_address_3 = DHT(addresses[2])
 
-    dht_address_1.update_addresses(addresses)
-    dht_address_2.update_addresses(addresses)
-    dht_address_3.update_addresses(addresses)
+#     dht_address_1.update_addresses(addresses)
+#     dht_address_2.update_addresses(addresses)
+#     dht_address_3.update_addresses(addresses)
 
-    dht_address_1.set(
-        b, 1, neighbors=2, hash_func_in=star.task_hash, post_to_cache=False
-    )
-    print(dht_address_1.get(b, neighbors=2, hash_func_in=star.task_hash))
+#     dht_address_1.set(
+#         b, 1, neighbors=2, hash_func_in=star.task_hash, post_to_cache=False
+#     )
+#     print(dht_address_1.get(b, neighbors=2, hash_func_in=star.task_hash))

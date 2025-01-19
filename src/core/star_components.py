@@ -63,7 +63,7 @@ class StarProcess:
         Returns:
             pb_p.Process: Protobuf Process object
         """
-        return pb_p.Process(user=self.user_id, process_id=self.process_id)
+        return pb_p.Process.FromString(self.get_all_task_bytes())
 
     @classmethod
     def from_pb(cls, pb):
@@ -87,9 +87,17 @@ class StarProcess:
         Returns:
             StarProcess: Return a StarProcess object
         """
-        ti = pb_p.Process()
-        ti = ti.FromString(b)
-        return cls.from_pb(ti)
+        pb = pb_p.Process.FromString(b)
+        task_list = dill.loads(pb.task_data)
+
+        task_list_new = set()
+        for i, task_b in task_list.items():
+            task = StarTask.from_bytes(task_b)
+            task_list_new.add(task)
+
+        proc = cls(pb.user, pb.process_id)
+        proc.task_list = task_list_new
+        return proc
 
     def add_task(self, i: "StarTask"):
         """Associate a task to a process
@@ -109,6 +117,18 @@ class StarProcess:
             set[StarTask]: Tasks associated with the process
         """
         return self.task_list
+
+    def get_all_task_bytes(self) -> bytes:
+        out = {}
+        for task in self.task_list:
+            out[task.get_id()] = task.to_bytes_with_callable()
+
+        task_data = dill.dumps(out)
+
+        pb = pb_p.Process(
+            user=self.user_id, process_id=self.process_id, task_data=task_data
+        )
+        return pb.SerializeToString()
 
 
 class StarTask:

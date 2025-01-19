@@ -282,10 +282,19 @@ class SendEvent_Request(_message.Message):
     ) -> None: ...
 
 class SendEvent_Response(_message.Message):
-    __slots__ = ("status",)
+    __slots__ = ("status", "remaining", "who")
     STATUS_FIELD_NUMBER: _ClassVar[int]
+    REMAINING_FIELD_NUMBER: _ClassVar[int]
+    WHO_FIELD_NUMBER: _ClassVar[int]
     status: DHTStatus
-    def __init__(self, status: _Optional[_Union[DHTStatus, str]] = ...) -> None: ...
+    remaining: int
+    who: bytes
+    def __init__(
+        self,
+        status: _Optional[_Union[DHTStatus, str]] = ...,
+        remaining: _Optional[int] = ...,
+        who: _Optional[bytes] = ...,
+    ) -> None: ...
 
 class Bootstrap_Request(_message.Message):
     __slots__ = ("peerID", "dial_from")

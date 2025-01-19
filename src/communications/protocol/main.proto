@@ -147,6 +147,8 @@ message SendEvent_Request {
 
 message SendEvent_Response {
     DHTStatus status = 1;
+    int32 remaining = 2;
+    bytes who = 3;
 }
 
 message Bootstrap_Request {

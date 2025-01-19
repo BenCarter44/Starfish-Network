@@ -141,23 +141,40 @@ if __name__ == "__main__":
             logger.warning("Final subscriptions listening")
             node.plugboard.print_cache_subscriptions_listening()
 
-        # if server_number == 1:
-        #     pass
-        #     await asyncio.sleep(45)
-        #     pgrm = star.Program(read_pgrm="examples/my_list_program.star")
-        #     logger.info(
-        #         f"I: Opening program '{pgrm.saved_data['pgrm_name']}' from {pgrm.saved_data['date_compiled']}\n"
-        #     )
-        #     process = await node.start_program(pgrm, b"User")
+        if server_number == 1:
+            pass
+            await asyncio.sleep(5)
+            pgrm = star.Program(read_pgrm="examples/my_list_program.star")
+            logger.info(
+                f"I: Opening program '{pgrm.saved_data['pgrm_name']}' from {pgrm.saved_data['date_compiled']}\n"
+            )
+            process = await node.start_program(pgrm, b"User")
 
-        # elif server_number == 4:
-        #     pass
-        #     await asyncio.sleep(40)
-        #     pgrm = star.Program(read_pgrm="examples/file_program.star")
-        #     logger.info(
-        #         f"I: Opening program '{pgrm.saved_data['pgrm_name']}' from {pgrm.saved_data['date_compiled']}\n"
-        #     )
-        #     process = await node.start_program(pgrm, b"Bob")
+            logger.warning("Final Node1 PEER LIST - task")
+            node.plugboard.peer_table.fancy_print()
+
+            logger.warning("Final Node1 TASK LIST - task")
+            node.plugboard.task_table.fancy_print()
+
+            logger.warning("Final Keep Alive listening")
+            node.plugboard.print_keep_alives()
+
+            logger.warning("Final subscriptions serving")
+            node.plugboard.print_cache_subscriptions_serve()
+
+            logger.warning("Final subscriptions listening")
+            node.plugboard.print_cache_subscriptions_listening()
+
+        elif server_number == 2:
+            pass
+            await asyncio.sleep(20)
+            logger.warning("Final Node1 TASK LIST - task")
+            node.plugboard.task_table.fancy_print()
+            # pgrm = star.Program(read_pgrm="examples/file_program.star")
+            # logger.info(
+            #     f"I: Opening program '{pgrm.saved_data['pgrm_name']}' from {pgrm.saved_data['date_compiled']}\n"
+            # )
+            # process = await node.start_program(pgrm, b"Bob")
 
         await asyncio.sleep(1000)
         logger.critical("Main done!")

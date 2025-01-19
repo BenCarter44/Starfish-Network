@@ -54,20 +54,22 @@ class NodeEngine:
         self.send_event_handler = lambda evt: evt  # replaced by Node.
         self.loop = asyncio.get_event_loop()
         star.BINDINGS = self.return_component_bindings()
+        self.task_to_process: dict[bytes, star.StarProcess] = {}
 
-    def import_task(self, task: star.StarTask):
+    def import_task(self, task: star.StarTask, process: star.StarProcess):
         """Import task into engine.
 
         Args:
             task: (star.StarTask) Task to allocate
 
         """
+        logger.debug(f"Engine import! {task.get_id()}")
         if task in self.hosted_tasks:
             return
 
         self.count_host += 1
-
         self.hosted_tasks[task] = (task, asyncio.Semaphore(1000))
+        self.task_to_process[task.get_id()] = process
 
     def start_program(self, pgrm_exc: ProgramExecutor, local=False):
         """Start program in engine by firing the start event from program.
@@ -85,11 +87,14 @@ class NodeEngine:
 
     ########################## Engine.
 
-    async def recv_event_coro(self, evt: star.Event):
+    async def recv_event_coro(self, evt: star.Event) -> int:
         """ASYNC COROUTINE. Consume a receiving event. Send event to the task.
 
         Args:
             evt (star.Event): Receiving event.
+
+        Returns:
+            (int): number of compute units for that task remaining.
         """
 
         # go here. Now, the event will have an empty user and process bytes. (if from engine)
@@ -102,14 +107,14 @@ class NodeEngine:
         ):
             logger.info("Received sys callback")
             await self.await_recv(evt)
-            return
+            return -1
 
         incoming_target = evt.target
 
         if incoming_target not in self.hosted_tasks:
             logger.warning("Passed in task ID but not hosting. Forwarding")
             await self.out_unified_queue.put(evt)
-            return
+            return -2
 
         if self.hosted_tasks[incoming_target][1].locked():
             # no resources left!
@@ -117,14 +122,14 @@ class NodeEngine:
                 f"Received event: {evt.target}. {self.node_id} No compute units left! Send to network"
             )
             await self.out_unified_queue.put(evt)
-            return
+            return 0
 
         logger.info(f"Received event: {evt.target}. {self.node_id} Waiting....")
         await self.hosted_tasks[incoming_target][1].acquire()  # acquire sem
         logger.info(f"Done Waiting.... Put in Execution Queue")
         exc_task = self.hosted_tasks[incoming_target][0]
         await self.executor_queue.put((exc_task, evt))
-        return
+        return self.hosted_tasks[incoming_target][1]._value
 
     def recv_event(self, evt: star.Event):
         """OUTSIDE API. Consume a receiving event.
@@ -134,6 +139,11 @@ class NodeEngine:
         """
         assert isinstance(evt, star.Event)
         f = asyncio.run_coroutine_threadsafe(self.recv_event_coro(evt), self.loop)
+        v = self.hosted_tasks[evt.target][1]._value - 1
+        if v < 0:
+            return 0
+        else:
+            return v
 
     async def executor_loop(self):
         """ASYNC TASK. Handle the executor queue and pool"""
@@ -192,7 +202,16 @@ class NodeEngine:
         while True:
             item: star.Event = await self.out_unified_queue.get()
             logger.debug(f"SENDING: {item}")
-            await self.send_event_handler(item)
+
+            if item.target.get_id() not in self.task_to_process:
+                logger.error(
+                    "Attempted to send task from engine that is not a currently running process!"
+                )
+                return
+
+            await self.send_event_handler(
+                item, self.task_to_process[item.target.get_id()]
+            )
 
     async def debug_loop(self):
         """ASYNC TASK. Is Alive Debug Loop"""

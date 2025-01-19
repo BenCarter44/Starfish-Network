@@ -27,10 +27,10 @@ class TaskPeer:
         self.stub = pb.TaskServiceStub(channel)
         self.peer_id = my_addr
 
-    async def SendEvent(self, evt: Event) -> pb_base.DHTStatus:
+    async def SendEvent(self, evt: Event, timeout=0.4) -> pb_base.SendEvent_Response:
         event = evt.to_pb()
         request = pb_base.SendEvent_Request(evt=event)
-        response = await self.stub.SendEvent(request)
+        response = await self.stub.SendEvent(request, timeout=timeout)
         self.kp_channel.update()
         return response
 
@@ -62,16 +62,31 @@ class TaskService(pb.TaskServiceServicer):
 
         if peerID == self.addr:
             # It's to me!
-            self.internal_callback.receive_event(evt)
-            return pb_base.SendEvent_Response(status=pb_base.DHTStatus.OWNED)
+            remaining = self.internal_callback.receive_event(evt)
+            return pb_base.SendEvent_Response(
+                status=pb_base.DHTStatus.OWNED, remaining=remaining, who=self.addr
+            )
 
         # Send to peer that owns the task!
         tp = await self.internal_callback.get_peer_transport(peerID)
         if tp is None:
             logger.info(f"Transport for {peerID.hex()} not found!")
-            return pb_base.SendEvent_Response(status=pb_base.DHTStatus.NOT_FOUND)
+            return pb_base.SendEvent_Response(
+                status=pb_base.DHTStatus.NOT_FOUND, remaining=0
+            )
 
-        taskClient = TaskPeer(tp, self.addr)
-        response = await taskClient.SendEvent(evt)
+        taskClient = TaskPeer(tp, peerID)
+        try:
+            response = await taskClient.SendEvent(evt, timeout=0.4)
+        except Exception as e:
+            logger.warning(f"Transport for {peerID.hex()} timeout {e}")
+            return pb_base.SendEvent_Response(
+                pb_base.DHTStatus.ERR, remaining=0, who=peerID
+            )
+
         # await channel.close()
-        return pb_base.SendEvent_Response(status=pb_base.DHTStatus.FOUND)
+        return pb_base.SendEvent_Response(
+            status=pb_base.DHTStatus.FOUND,
+            remaining=response.remaining,
+            who=response.who,
+        )

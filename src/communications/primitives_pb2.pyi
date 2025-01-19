@@ -19,20 +19,24 @@ class TaskIdentifier(_message.Message):
     def __init__(self, user_id: _Optional[bytes] = ..., process_id: _Optional[bytes] = ..., task_id: _Optional[bytes] = ..., callable_data: _Optional[bytes] = ..., pass_id: _Optional[int] = ...) -> None: ...
 
 class TaskValue(_message.Message):
-    __slots__ = ("address", "task_data")
+    __slots__ = ("address", "task_data", "process_data")
     ADDRESS_FIELD_NUMBER: _ClassVar[int]
     TASK_DATA_FIELD_NUMBER: _ClassVar[int]
+    PROCESS_DATA_FIELD_NUMBER: _ClassVar[int]
     address: bytes
     task_data: bytes
-    def __init__(self, address: _Optional[bytes] = ..., task_data: _Optional[bytes] = ...) -> None: ...
+    process_data: bytes
+    def __init__(self, address: _Optional[bytes] = ..., task_data: _Optional[bytes] = ..., process_data: _Optional[bytes] = ...) -> None: ...
 
 class Process(_message.Message):
-    __slots__ = ("user", "process_id")
+    __slots__ = ("user", "process_id", "task_data")
     USER_FIELD_NUMBER: _ClassVar[int]
     PROCESS_ID_FIELD_NUMBER: _ClassVar[int]
+    TASK_DATA_FIELD_NUMBER: _ClassVar[int]
     user: bytes
     process_id: bytes
-    def __init__(self, user: _Optional[bytes] = ..., process_id: _Optional[bytes] = ...) -> None: ...
+    task_data: bytes
+    def __init__(self, user: _Optional[bytes] = ..., process_id: _Optional[bytes] = ..., task_data: _Optional[bytes] = ...) -> None: ...
 
 class TransportAddress(_message.Message):
     __slots__ = ("protocol", "host", "port")

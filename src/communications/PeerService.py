@@ -68,7 +68,7 @@ class PeerService(pb.PeerServiceServicer):
         # peer_address = context.peer()
         # await self.keep_alive.receive_ping(peer_address)
 
-        peers = self.internal_callback.peer_table.fetch_copy()
+        peers = self.internal_callback.peer_table.fetch_dict()
         out = pb_base.Bootstrap_Response()
         for peer, val in peers.items():
             # key: bytes

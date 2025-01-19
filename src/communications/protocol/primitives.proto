@@ -14,11 +14,13 @@ message TaskIdentifier {
 message TaskValue {
     bytes address = 1;
     bytes task_data = 2;
+    bytes process_data = 3;
 }
 
 message Process {
     bytes user = 1;
     bytes process_id = 2;
+    bytes task_data = 3;
 }
 
 message TransportAddress {

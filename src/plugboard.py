@@ -8,7 +8,10 @@ the outside world interacts with.
 
 import asyncio
 import os
+import random
 from typing import Optional
+
+import grpc
 
 from src.KeepAlive import KeepAlive_Management, TRIGGER_OFFLINE
 from src.communications.PeerService import PeerDiscoveryClient
@@ -49,11 +52,13 @@ class PlugBoard:
         self.peer_table.update_addresses(node_id)
         self.peer_table.set(node_id, local_addr.to_bytes())
         self.cache_subscriptions_serve: dict[DHTSelect, dict[bytes, set[bytes]]] = {
-            DHTSelect.PEER_ID: {self.my_addr: set()}
+            DHTSelect.PEER_ID: {self.my_addr: set()},
+            DHTSelect.TASK_ID: {self.my_addr: set()},
         }  # stores KEY and peers caching.
 
         self.cache_subscriptions: dict[DHTSelect, set[bytes]] = {
-            DHTSelect.PEER_ID: set()
+            DHTSelect.PEER_ID: set(),
+            DHTSelect.TASK_ID: set(),
         }
 
         self.task_table = DHT(self.my_addr)
@@ -72,6 +77,9 @@ class PlugBoard:
 
     def print_keep_alives(self):
         self.keep_alive_manager.fancy_print()
+
+    def print_task_table(self):
+        self.task_table.fancy_print()
 
     def print_cache_subscriptions_serve(self):
         for select in self.cache_subscriptions_serve:
@@ -125,7 +133,7 @@ class PlugBoard:
         logger.debug(f"Add peer {addr.hex()} at {tp.get_string_channel()}")
         owners, who = await self.dht_set(addr, tp.to_bytes(), DHTSelect.PEER_ID)
         logger.debug(f"Add peer done")
-        if addr != self.my_addr:  #
+        if addr != self.my_addr:
             return
         # Track owners.
         # who! currently just one owner. TODO.
@@ -141,7 +149,7 @@ class PlugBoard:
             channel,
             tp.get_string_channel(),
             addr,
-            self.peer_self_cb_offline,
+            lambda: self.peer_self_cb_offline(addr),
             TRIGGER_OFFLINE,
         )
 
@@ -303,16 +311,26 @@ class PlugBoard:
         await self.add_peer(self.my_addr, self.local_addr)
         logger.debug("PERFORM BOOTSTRAP DONE")
 
-    async def dispatch_event(self, evt: Event):
+    async def dispatch_event(self, evt: Event, proc: StarProcess):
         """Dispatch an event to either the local engine or to the network
 
         Args:
             evt (Event): Event to dispatch
         """
         # Sends to local.
-        status = await self.task_interface.SendEvent(evt)
-        if status == DHTStatus.NOT_FOUND:
+        resp = await self.task_interface.SendEvent(evt)
+
+        if resp.status == DHTStatus.NOT_FOUND:
             logger.error("Unable to deliver event to node!")
+
+        if resp.remaining == 0:
+            # send out!
+            # There is already an owner, so one is fine.
+            await self.send_out_single_task(proc, evt.target, ignore=[resp.who])
+        else:
+            logger.debug(
+                f"Dispatched event complete: Remaining units: {resp.remaining}"
+            )
 
     def receive_event(self, evt: Event):
         """For messaging service use. Send an event to personal engine
@@ -320,7 +338,7 @@ class PlugBoard:
         Args:
             evt (Event): The event to send
         """
-        self.engine.recv_event(evt)
+        return self.engine.recv_event(evt)
 
     async def get_task_owner(self, task: StarTask) -> bytes:
         """Get the owner of a task (the peerID that the task is being run on)
@@ -347,22 +365,71 @@ class PlugBoard:
         """
         obj = TaskValue.FromString(task_b)
         task = StarTask.from_bytes(obj.task_data)
+        logger.warning(f"Stored Task! {task.get_id().hex()}")
+        self.task_table.fancy_print()
+        proc = StarProcess.from_bytes(obj.process_data)
         assert task.get_callable() != b""
 
-        self.engine.import_task(task)
+        self.engine.import_task(task, proc)
 
-    async def allocate_task(self, task: StarTask):
+    async def allocate_program(self, proc: StarProcess):
         """Node API: Allocate a task to the engine or to network
 
         Args:
-            task (StarTask): Task to allocate
+            task (StarTask): Program to allocate
         """
-        assert task.get_callable() != b""
+
+        for task in proc.get_tasks():
+            assert task.get_callable() != b""
+            who = await self.send_out_single_task(proc, task)
+            logger.info(f"WHO: {who.hex()}")
+            w2 = await self.send_out_single_task(
+                proc, task, [who]
+            )  # require at least two different owners at all times!
+            logger.info(f"WHO2: {w2.hex()}")
+
+    async def send_out_single_task(
+        self, process: StarProcess, task: StarTask, ignore: list[bytes] = []
+    ):
         tv = TaskValue()
-        tv.address = self.my_addr
+        tv.address = self.my_addr  # replace with STORER
         tv.task_data = task.to_bytes_with_callable()
-        value = tv.SerializeToString()
-        await self.dht_set(task.get_id(), value, DHTSelect.TASK_ID)
+        tv.process_data = process.get_all_task_bytes()
+        _, who = await self.dht_set(
+            task.get_id(),
+            tv.SerializeToString(),
+            DHTSelect.TASK_ID,
+            nodes_visited=ignore,
+        )
+
+        # Track owners.
+        # who! currently just one owner. TODO.
+        logger.debug(f"Creating listener to storer of my task - {who.hex()}")
+        logger.debug(f"Who: {who.hex()}")
+        tp = await self.get_peer_transport(who)  # type: ignore
+        assert tp is not None
+        tp.set_keep_alive(self.keep_alive_manager)
+        channel = tp.get_channel()
+        if tp.get_string_channel() == self.local_addr.get_string_channel():
+            logger.debug("Not creating listener to storer of my address as it's me!")
+            return self.my_addr
+        self.keep_alive_manager.register_channel_service(
+            channel,
+            tp.get_string_channel(),
+            who,
+            lambda: self.task_self_cb_offline(process, task, who),
+            TRIGGER_OFFLINE,
+        )
+        return who
+
+    async def task_self_cb_offline(
+        self, process: StarProcess, task: StarTask, who: bytes
+    ):
+        # Owner for task went offline. Respawn
+        logger.warning(f"Storer went offline for task: {task.get_id().hex()}")
+        who2 = await self.send_out_single_task(process, task, ignore=[who])
+        # require at least two different owners at all times!
+        await self.send_out_single_task(process, task, ignore=[who, who2])
 
     async def dht_get(self, key: bytes, select: DHTSelect) -> Optional[bytes]:
         """Get a record from the DHT
@@ -413,7 +480,11 @@ class PlugBoard:
         return response.data, response.response_code, response.neighbor_addrs
 
     async def dht_set(
-        self, key: bytes, value: bytes, select: DHTSelect
+        self,
+        key: bytes,
+        value: bytes,
+        select: DHTSelect,
+        nodes_visited: list[bytes] = [],
     ) -> tuple[DHTStatus, bytes]:
         """Set value to DHT
 
@@ -426,7 +497,9 @@ class PlugBoard:
             DHTStatus: Status of operation
         """
 
-        status, who = await self.dht_interface.StoreItem(key, value, select)
+        status, who = await self.dht_interface.StoreItem(
+            key, value, select, nodes_visited=nodes_visited
+        )
         return status, who
 
     async def dht_cache_store(
@@ -451,10 +524,9 @@ class PlugBoard:
             await self.dht_set_cache_notices(key, value, select, monitor)
 
         elif select == DHTSelect.TASK_ID:
-            tv = TaskValue.FromString(value)
-            tv.task_data = b""
-            value = tv.SerializeToString()
-            self.task_table.set_cache(key, value)
+            r = self.task_table.set_cache(key, value)
+            await self.dht_set_cache_notices(key, value, select, monitor)
+
         else:
             logger.error("Unknown table selected!")
 
@@ -492,16 +564,56 @@ class PlugBoard:
                 key
             ] = set()  # People who connect to me.
 
+        if select == DHTSelect.TASK_ID:
+            # cache.
+            addr = await self.get_peer_transport(last_chain)
+            assert addr is not None
+            channel = addr.get_channel()
+            self.keep_alive_manager.register_channel_service(
+                channel,
+                addr.get_string_channel(),
+                last_chain,
+                lambda: self.task_cache_maintain_offline(last_chain, key, value),
+                TRIGGER_OFFLINE,
+            )
+
+            # Send to chain.
+            logger.debug(f"Set plain cache. Register notices dest: {last_chain.hex()}")
+            client = DHTClient(addr, last_chain, self.my_addr, self.keep_alive_manager)
+            await client.register_notices(key, select)
+            self.cache_subscriptions[select].add(key)  # I am subscribed to updates
+            self.cache_subscriptions_serve[select][
+                key
+            ] = set()  # People who connect to me.
+
         logger.debug("DHT SET CACHE NOTICES DONE")
         logger.info("Listening:")
         self.print_cache_subscriptions_listening()
         logger.info("Serving:")
         self.print_cache_subscriptions_serve()
-        logger.info("Table:")
+        logger.info("Peer Table:")
         self.peer_table.fancy_print()
+        logger.info("Task Table:")
+        self.task_table.fancy_print()
+
+    async def task_cache_maintain_offline(
+        self, monitor: bytes, key: bytes, value: bytes
+    ):
+        self.remove_peer_from_address_tables(monitor)
+        tv = TaskValue.FromString(value)
+        proc = StarProcess.from_bytes(tv.process_data)
+        task = StarTask.from_bytes(tv.task_data)
+        await self.send_out_single_task(proc, task)
+
+        # owner is offline.... dispatch the task.
 
     async def dht_set_plain(
-        self, key: bytes, value: bytes, select: DHTSelect, addr_init: bytes
+        self,
+        key: bytes,
+        value: bytes,
+        select: DHTSelect,
+        addr_init: bytes,
+        ignore: set[bytes] = set(),
     ) -> tuple[bytes, DHTStatus, list[bytes]]:
         """Messaging services: Store item in internal DHT
 
@@ -519,7 +631,7 @@ class PlugBoard:
         if select == DHTSelect.PEER_ID:
             self.peer_table.update_addresses(key)
             self.task_table.update_addresses(key)
-            r = self.peer_table.set(key, value)
+            r = self.peer_table.set(key, value, ignore=ignore)
             if r.response_code == DHTStatus.OWNED:
                 #  Add callback to KeepAlive
                 addr = StarAddress.from_bytes(value)
@@ -549,9 +661,14 @@ class PlugBoard:
             # Do not post to cache for Task Alloc.
             # Put your address in the owner field!
             tsk = TaskValue.FromString(value)
-            tv = TaskValue(address=self.my_addr, task_data=tsk.task_data)
-            r = self.task_table.set(key, tv.SerializeToString(), post_to_cache=False)
+            tsk.address = self.my_addr
+            r = self.task_table.set(
+                key, tsk.SerializeToString(), post_to_cache=False, ignore=ignore
+            )
             if r.response_code == DHTStatus.OWNED:
+                # DO NOTHING.... I can serve cache subs to others though.
+                if key not in self.cache_subscriptions_serve[select]:
+                    self.cache_subscriptions_serve[select][key] = set()
                 self.send_task_to_engine(value)
         else:
             logger.error("Unknown table selected!")

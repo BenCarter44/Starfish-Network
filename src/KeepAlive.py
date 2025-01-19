@@ -44,7 +44,7 @@ class KeepAlive_Channel:
     def add_callbacks(self, trigger: int, callback: Callable):
         logger.debug(f"Add callback: {callback} - {trigger}")
 
-        self.callbacks[trigger] = [callback]
+        self.callbacks[trigger].append(callback)
 
         # if trigger not in self.callbacks:
         #     self.callbacks[trigger] = [callback]
@@ -71,8 +71,11 @@ class KeepAlive_Channel:
         return self.connected
 
     async def heartbeat(self, i):
-        logger.debug(f"Send Heartbeat request: {self.peer_id_assoc.hex()}")
-        hb = await self.comm.SendHeartbeat(self.peer_id_assoc)
+        # logger.debug(f"Send Heartbeat request: {self.peer_id_assoc.hex()}")
+        try:
+            hb = await self.comm.SendHeartbeat(self.peer_id_assoc)
+        except:
+            hb = False
         if not (hb):
             # offline!
             self.kill_count += 1
@@ -162,7 +165,7 @@ class KeepAlive_Management:
         return
 
     async def receive_heartbeat_service(self, out):
-        logger.debug(f"Recv heartbeat request")
+        # logger.debug(f"Recv heartbeat request")
         # get channel. If I have the channel, update its keep alive
         # channel_recv_peer = servicer_client.replace("ipv4:", "tcp://")
 
@@ -271,11 +274,15 @@ Callbacks:
 Allocation req receiver: Do nothing
 Allocation req sender: track store peers. When offline, send out value again. (standard)
 
+Storage - sends all task data to engine.
+
 Cache:
-Open connection to OWNER / recent chain. When offline, send out value again (add old peer to chain)
+Open connection to OWNER / recent chain. When offline, send out value again (standard) - store only task
+done. 
 
 Event sender (this means that I also am an engine for a different task!!)
-If timeout: Send out the requested task to network with ignore chain of old PEER.
+If timeout: Send out the requested task to network with ignore chain of old PEER. STORE
+
 
 CHANGE: Cache also stores callable. This allows cache to spawn tasks!
 """

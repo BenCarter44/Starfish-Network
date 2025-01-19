@@ -90,14 +90,14 @@ class DHTClient:
             query_chain=nodes_visited,
             who=self.peer_id,
         )
-        request.query_chain.append(peer_id)
+        # request.query_chain.append(peer_id)
         # for x in request.query_chain:
         #     logger.debug(f"Visited: {x.hex()}")
 
         try:
             response = await self.stub.StoreItem(request, timeout=timeout)
         except Exception as e:
-            logger.debug(f"StoreItem error")
+            logger.warning(f"StoreItem error")
             await self.kp_channel.kill_update()
             return pb_base.DHTStatus.ERR, b""
 
@@ -330,26 +330,28 @@ class DHTService(pb.DHTServiceServicer):
         val = request.value.hex()
         if len(val) > 32:
             val = val[0:32] + "..."
-        logger.debug(f'[{request.key.hex()}] = "{val}"')
-        # if request.select == pb_base.DHTSelect.PEER_ID:
-        #     # peer_id = nice_print(request.key)
-        #     # peer_id = request.key.decode("utf-8")
-        #     val = StarAddress.from_bytes(request.value)
-        #     logger.debug(
-        #         f"Decoded PEER: [{request.key.hex()}] = {val.get_string_channel()}"  # type: ignore
-        #     )
-        # elif request.select == pb_base.DHTSelect.TASK_ID:
+        if request.select == pb_base.DHTSelect.PEER_ID:
+            # peer_id = nice_print(request.key)
+            # peer_id = request.key.decode("utf-8")
+            val = StarAddress.from_bytes(request.value)
+            logger.debug(
+                f"PEER: [{request.key.hex()}] = {val.get_string_channel()}"  # type: ignore
+            )
+        elif request.select == pb_base.DHTSelect.TASK_ID:
+            logger.debug(f'T: [{request.key.hex()}] = "{val}"')
         #     task_addr = nice_print(request.key)  # task ID in bytes
 
         nodes_visited: list[bytes] = request.query_chain  # type: ignore
-        # for x in nodes_visited:
-        #     logger.debug(f"Visited: {x.hex()}")
+        if request.select == pb_base.DHTSelect.TASK_ID:
+            for x in nodes_visited:
+                logger.debug(f"Visited: {x.hex()}")
         peers_update = set(nodes_visited)
         await self.internal_callback.update_peers_seen(peers_update)  # internal.
 
         # Initial query has no callback!
+        # Need to test: ignore all addresses that are in ignore list.
         data, status, neighbors = await self.internal_callback.dht_set_plain(
-            request.key, request.value, request.select, request.who
+            request.key, request.value, request.select, request.who, ignore=peers_update
         )
         nodes_visited.append(self.addr)
 

@@ -114,7 +114,7 @@ class Node:
         """The peer discovery task. Do round every 5 sec"""
         while True:
             await asyncio.sleep(10)
-
+            return
             if self.is_connected or self.plugboard.received_rpcs.is_set():
                 await self.plugboard.perform_discovery_round()
 
@@ -146,14 +146,13 @@ class Node:
         for task in task_list:
             proc.add_task(task)
 
-        for task in proc.get_tasks():
-            await self.plugboard.allocate_task(task)  # includes callable inside.
+        await self.plugboard.allocate_program(proc)  # includes callable inside.
 
         # logger.info(f"Task DHT of {self.addr.hex()}")
-        # print(self.plugboard.task_table.fetch_copy())
+        # print(self.plugboard.task_table.fetch_dict())
 
         program.start.target.attach_to_process(proc)
         # await asyncio.sleep(100)
         logger.info(f"Start Event: {program.start.target.get_id().hex()}")
-        await self.plugboard.dispatch_event(program.start)
+        await self.plugboard.dispatch_event(program.start, proc)
         return proc
