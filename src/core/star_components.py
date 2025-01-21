@@ -271,6 +271,7 @@ class StarAddress:
         self.protocol = self.protocol.encode("utf-8")
         self.host = self.host.encode("utf-8")
         self.port = str(self.port).encode("utf-8")
+        self.keep_alive = None
 
     def to_bytes(self) -> bytes:
         return self.to_pb().SerializeToString()
@@ -296,7 +297,12 @@ class StarAddress:
 
     def get_channel(self) -> grpc.aio.Channel:
         string = f"{self.host.decode('utf-8')}:{self.port.decode('utf-8')}"
-        return grpc.aio.insecure_channel(string)
+        if self.keep_alive is None:
+            raise ValueError("Please attach to KeepAlive Management first")
+        return self.keep_alive.get_channel(string)
+
+    def set_keep_alive(self, kp):
+        self.keep_alive = kp
 
     def get_string_channel(self):
         string = f"{self.host.decode('utf-8')}:{self.port.decode('utf-8')}"
