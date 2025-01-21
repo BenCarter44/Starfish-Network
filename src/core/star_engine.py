@@ -1,6 +1,7 @@
 import concurrent
 import concurrent.futures
 import functools
+import random
 from threading import Thread
 import threading
 from typing import Any, Callable, Optional, cast
@@ -131,13 +132,17 @@ class NodeEngine:
         await self.executor_queue.put((exc_task, evt))
         return self.hosted_tasks[incoming_target][1]._value
 
-    def recv_event(self, evt: star.Event):
+    def recv_event(self, evt: star.Event, increment=False):
         """OUTSIDE API. Consume a receiving event.
 
         Args:
             evt (star.Event): Receiving event.
         """
         assert isinstance(evt, star.Event)
+
+        if increment:
+            evt.nonce += 1
+
         f = asyncio.run_coroutine_threadsafe(self.recv_event_coro(evt), self.loop)
         v = self.hosted_tasks[evt.target][1]._value - 1
         if v < 0:
@@ -151,6 +156,8 @@ class NodeEngine:
         with concurrent.futures.ThreadPoolExecutor() as pool:
             while True:
                 task, evt = await self.executor_queue.get()  # get the task
+                evt_copy = evt.to_bytes()
+                task.hold_past_event = evt
                 func = task.get_callable()
                 if func is None:
                     logger.error("Function is NONE! skipping.")
@@ -171,11 +178,18 @@ class NodeEngine:
                         pool, functools.partial(func, evt, task)
                     )
 
-                out_future.add_done_callback(functools.partial(self.finish_task, task))
+                out_future.add_done_callback(
+                    functools.partial(
+                        self.finish_task, task, star.Event.from_bytes(evt_copy)
+                    )
+                )
                 # await send_to_out_queue(out)
 
     def finish_task(
-        self, task: star.StarTask, evt_future: concurrent.futures.Future[star.Event]
+        self,
+        task: star.StarTask,
+        old_event: star.Event,
+        evt_future: concurrent.futures.Future[star.Event],
     ):
         """Callback. Send out event generated from task.
 
@@ -183,13 +197,15 @@ class NodeEngine:
             evt (star.Event): Receiving event.
         """
         evt = evt_future.result()
+        evt.origin = old_event
+        evt.nonce = old_event.nonce
         if evt.system is not None and evt.system["await"] and evt.system["initial"]:
             evt.system["initial"] = False
 
         # clear out the user/proc id and replace it with the task.
         evt.target.attach_to_process_task(task)
 
-        logger.info(f"EX Done. Send Target: {evt.target}.")
+        logger.info(f"EX Done. Send Target: {evt.target}. Origin: {old_event.target}")
 
         # assume the condition is none. It will already have condition or not
         async def send_quick(evt):
@@ -209,9 +225,13 @@ class NodeEngine:
                 )
                 return
 
-            await self.send_event_handler(
-                item, self.task_to_process[item.target.get_id()]
-            )
+            try:
+                await self.send_event_handler(
+                    item, self.task_to_process[item.target.get_id()]
+                )
+            except Exception as e:
+                logger.critical(e)
+                sys.exit(2)
 
     async def debug_loop(self):
         """ASYNC TASK. Is Alive Debug Loop"""

@@ -274,11 +274,15 @@ class TaskAllocate_Response(_message.Message):
     def __init__(self, status: _Optional[_Union[DHTStatus, str]] = ...) -> None: ...
 
 class SendEvent_Request(_message.Message):
-    __slots__ = ("evt",)
+    __slots__ = ("evt", "who")
     EVT_FIELD_NUMBER: _ClassVar[int]
+    WHO_FIELD_NUMBER: _ClassVar[int]
     evt: _primitives_pb2.Event
+    who: bytes
     def __init__(
-        self, evt: _Optional[_Union[_primitives_pb2.Event, _Mapping]] = ...
+        self,
+        evt: _Optional[_Union[_primitives_pb2.Event, _Mapping]] = ...,
+        who: _Optional[bytes] = ...,
     ) -> None: ...
 
 class SendEvent_Response(_message.Message):
@@ -339,3 +343,48 @@ class Heartbeat_Response(_message.Message):
     CUSTOM_DATA_FIELD_NUMBER: _ClassVar[int]
     custom_data: bytes
     def __init__(self, custom_data: _Optional[bytes] = ...) -> None: ...
+
+class SendMonitor_Request(_message.Message):
+    __slots__ = ("process_data", "who", "task")
+    PROCESS_DATA_FIELD_NUMBER: _ClassVar[int]
+    WHO_FIELD_NUMBER: _ClassVar[int]
+    TASK_FIELD_NUMBER: _ClassVar[int]
+    process_data: bytes
+    who: bytes
+    task: _primitives_pb2.TaskIdentifier
+    def __init__(
+        self,
+        process_data: _Optional[bytes] = ...,
+        who: _Optional[bytes] = ...,
+        task: _Optional[_Union[_primitives_pb2.TaskIdentifier, _Mapping]] = ...,
+    ) -> None: ...
+
+class SendMonitor_Response(_message.Message):
+    __slots__ = ("status",)
+    STATUS_FIELD_NUMBER: _ClassVar[int]
+    status: DHTStatus
+    def __init__(self, status: _Optional[_Union[DHTStatus, str]] = ...) -> None: ...
+
+class SendCheckpoint_Request(_message.Message):
+    __slots__ = ("process_data", "who", "event_origin", "event_to")
+    PROCESS_DATA_FIELD_NUMBER: _ClassVar[int]
+    WHO_FIELD_NUMBER: _ClassVar[int]
+    EVENT_ORIGIN_FIELD_NUMBER: _ClassVar[int]
+    EVENT_TO_FIELD_NUMBER: _ClassVar[int]
+    process_data: bytes
+    who: bytes
+    event_origin: bytes
+    event_to: bytes
+    def __init__(
+        self,
+        process_data: _Optional[bytes] = ...,
+        who: _Optional[bytes] = ...,
+        event_origin: _Optional[bytes] = ...,
+        event_to: _Optional[bytes] = ...,
+    ) -> None: ...
+
+class SendCheckpoint_Response(_message.Message):
+    __slots__ = ("status",)
+    STATUS_FIELD_NUMBER: _ClassVar[int]
+    status: DHTStatus
+    def __init__(self, status: _Optional[_Union[DHTStatus, str]] = ...) -> None: ...

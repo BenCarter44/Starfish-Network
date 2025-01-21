@@ -24,6 +24,14 @@ except:
     from ..communications import primitives_pb2 as pb_p
 
 
+def and_bytes(a: bytes, b: bytes):
+    assert len(a) == len(b)
+    c = (int.from_bytes(a, "big") & int.from_bytes(b, "big")).to_bytes(
+        max(len(a), len(b)), "big"
+    )
+    return c
+
+
 def pad_bytes(b: bytes, l: int) -> bytes:
     """Pad bytes on left (most significant bit first, big endian)
 
@@ -130,6 +138,16 @@ class StarProcess:
         )
         return pb.SerializeToString()
 
+    def get_id(self) -> bytes:
+        # first 32 bytes are routing
+        # second 32 bytes are user bytes
+        # third 32 bytes are process ID bytes
+        # fourth 32 bytes are task bytes
+        custom = self.user_id + self.process_id + pad_bytes(b"", 2)  # 0 for task_id.
+        # custom_bytes = pad_bytes(custom, 32)
+        # return custom_bytes + self.user_id + self.process_id + self.name
+        return custom
+
 
 class StarTask:
     def __init__(
@@ -142,6 +160,8 @@ class StarTask:
         self.nice_name = ""
         self.runtime_data: Optional[dict[str, bytes]] = None
         self.pass_id = pass_id
+
+        self.hold_past_event = None
 
     def to_bytes(self) -> bytes:
         """Serialize StarTask to bytes
@@ -250,6 +270,12 @@ class StarTask:
         # return custom_bytes + self.user_id + self.process_id + self.name
         return custom
 
+    def get_process_id(self):
+        # Keep first 6 bytes
+        mask = b"\xFF\xFF\xFF\xFF\xFF\xFF\x00\x00"
+        process_id = and_bytes(self.get_id(), mask)
+        return process_id
+
     def __hash__(self):
         return hash(self.get_id())
 
@@ -351,10 +377,12 @@ class Event:
         self.data = data
         self.system = None
         self.target = None
+        self.origin = None
         self.is_target_conditional = False  # used for compiler only
 
         self.owned_user_id: Optional[bytes] = None
         self.owned_process_id: Optional[bytes] = None
+        self.nonce = 0
 
     def to_bytes(self) -> bytes:
         return self.to_pb().SerializeToString()
@@ -364,27 +392,58 @@ class Event:
         if self.target is None:
             task_to = StarTask(b"", b"", b"")
 
+        event_origin = self.origin
+        if self.origin is None:
+            event_origin = b""
+        else:
+            logger.debug(self.origin.target)
+            logger.debug(self.target)
+            self.origin.origin = None  # No recursion.
+            logger.debug(self.origin.target)
+            event_origin = self.origin.to_bytes()
+
         return pb_p.Event(
             task_to=task_to.to_pb(),
+            task_from=event_origin,
             data=dill.dumps(self.data, fmode=dill.FILE_FMODE),
             system_data=dill.dumps(self.system, fmode=dill.FILE_FMODE),
+            nonce=self.nonce,
         )
+
+    def __hash__(self):
+        # A Event is the same as another event if the NONCE and TARGET are the same!
+        dt = (self.target.get_id(), self.nonce)
+        return hash(dt)
+
+    def __eq__(self, other):
+        if isinstance(other, Event):
+            return (
+                self.target.get_id() == other.target.get_id()
+                and other.nonce == self.nonce
+            )
+        return False
 
     @classmethod
     def from_pb(cls, pb):
         data = dill.loads(pb.data)
         system = dill.loads(pb.system_data)
         task_to = pb.task_to
+        evt_from = pb.task_from
+        if evt_from == b"":
+            evt_from = None
+        else:
+            evt_from = cls.from_bytes(evt_from)
 
         out = cls(data)
         out.system = system
         out.target = StarTask.from_pb(task_to)
+        out.origin = evt_from
+        out.nonce = pb.nonce
         return out
 
     @classmethod
     def from_bytes(cls, b):
-        ti = pb_p.Event()
-        ti = ti.FromString(b)
+        ti = pb_p.Event.FromString(b)
         return cls.from_pb(ti)
 
     def clear_system(self) -> None:
@@ -604,10 +663,12 @@ def dispatch_event(evt: Event, originating_task: StarTask) -> None:
     evt.target.task_id = originating_task.runtime_data[evt.target_string]
 
     evt.target.attach_to_process_task(originating_task)
+    evt.origin = originating_task.hold_past_event
+
     logger.info(evt.target)
     logger.info(f"SEND: {evt.data}")
     f = BINDINGS["dispatch_event"]
-    return f(evt)
+    return f(evt, increment=True)
 
 
 # Currently global for program. --> a program is simply a list of Tasks with Callable.

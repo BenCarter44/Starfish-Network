@@ -97,7 +97,7 @@ class DHTClient:
         try:
             response = await self.stub.StoreItem(request, timeout=timeout)
         except Exception as e:
-            logger.warning(f"StoreItem error")
+            logger.warning(f"StoreItem error {e}")
             await self.kp_channel.kill_update()
             return pb_base.DHTStatus.ERR, b""
 

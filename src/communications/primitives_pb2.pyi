@@ -49,11 +49,15 @@ class TransportAddress(_message.Message):
     def __init__(self, protocol: _Optional[bytes] = ..., host: _Optional[bytes] = ..., port: _Optional[bytes] = ...) -> None: ...
 
 class Event(_message.Message):
-    __slots__ = ("task_to", "data", "system_data")
+    __slots__ = ("task_to", "task_from", "data", "system_data", "nonce")
     TASK_TO_FIELD_NUMBER: _ClassVar[int]
+    TASK_FROM_FIELD_NUMBER: _ClassVar[int]
     DATA_FIELD_NUMBER: _ClassVar[int]
     SYSTEM_DATA_FIELD_NUMBER: _ClassVar[int]
+    NONCE_FIELD_NUMBER: _ClassVar[int]
     task_to: TaskIdentifier
+    task_from: bytes
     data: bytes
     system_data: bytes
-    def __init__(self, task_to: _Optional[_Union[TaskIdentifier, _Mapping]] = ..., data: _Optional[bytes] = ..., system_data: _Optional[bytes] = ...) -> None: ...
+    nonce: int
+    def __init__(self, task_to: _Optional[_Union[TaskIdentifier, _Mapping]] = ..., task_from: _Optional[bytes] = ..., data: _Optional[bytes] = ..., system_data: _Optional[bytes] = ..., nonce: _Optional[int] = ...) -> None: ...

@@ -14,6 +14,7 @@ from typing import Optional
 import grpc
 
 from src.KeepAlive import KeepAlive_Management, TRIGGER_OFFLINE
+from src.TaskMonitor import MonitorService
 from src.communications.PeerService import PeerDiscoveryClient
 from src.util.util import gaussian_bytes
 from .core.star_engine import NodeEngine
@@ -74,6 +75,10 @@ class PlugBoard:
         )
         self.seen_peers: set[bytes] = set()
         self.received_rpcs = asyncio.Event()
+        self.monitor_service = MonitorService()
+
+        # Process ID --> Peer ID
+        self.monitor_servers: dict[bytes, bytes] = {}
 
     def print_keep_alives(self):
         self.keep_alive_manager.fancy_print()
@@ -102,7 +107,7 @@ class PlugBoard:
         self.peer_table.remove_address(peer)
         self.task_table.remove_address(peer)
 
-    async def get_peer_transport(self, addr: bytes) -> Optional[StarAddress]:
+    async def get_peer_transport(self, addr: bytes, ignore=[]) -> Optional[StarAddress]:
         """Use the DHT to get transport address given Node ID
 
         Args:
@@ -113,7 +118,7 @@ class PlugBoard:
         """
         logger.debug("GET PEER TRANSPORT")
         # Peer ID. Get StarAddress
-        tp_b = await self.dht_get(addr, DHTSelect.PEER_ID)
+        tp_b = await self.dht_get(addr, DHTSelect.PEER_ID, ignore=ignore)
         if tp_b is None:
             logger.debug("DONE PEER TRANSPORT NONE")
             return None
@@ -317,20 +322,24 @@ class PlugBoard:
         Args:
             evt (Event): Event to dispatch
         """
+        logger.info(f"Dispatch event to task: {evt.target.get_id().hex()}")
+        logger.debug(evt)
+        assert str(evt).find("Event object") != -1
         # Sends to local.
         resp = await self.task_interface.SendEvent(evt)
 
         if resp.status == DHTStatus.NOT_FOUND:
             logger.error("Unable to deliver event to node!")
 
-        if resp.remaining == 0:
-            # send out!
-            # There is already an owner, so one is fine.
-            await self.send_out_single_task(proc, evt.target, ignore=[resp.who])
-        else:
-            logger.debug(
-                f"Dispatched event complete: Remaining units: {resp.remaining}"
-            )
+        logger.info(f"Dispatch event DONE!")
+        # if resp.remaining == 0:
+        #     # send out!
+        #     # There is already an owner, so one is fine.
+        #     await self.send_out_single_task(proc, evt.target, ignore=[resp.who])
+        # else:
+        #     logger.debug(
+        #         f"Dispatched event complete: Remaining units: {resp.remaining}"
+        #     )
 
     def receive_event(self, evt: Event):
         """For messaging service use. Send an event to personal engine
@@ -357,12 +366,13 @@ class PlugBoard:
         tv = TaskValue.FromString(out)
         return tv.address
 
-    def send_task_to_engine(self, task_b: bytes):
+    async def send_task_to_engine(self, task_b: bytes):
         """Messaging Services API: Import a task for execution onto personal engine
 
         Args:
             task_b (bytes): TaskValue stored as bytes.
         """
+
         obj = TaskValue.FromString(task_b)
         task = StarTask.from_bytes(obj.task_data)
         logger.warning(f"Stored Task! {task.get_id().hex()}")
@@ -370,7 +380,51 @@ class PlugBoard:
         proc = StarProcess.from_bytes(obj.process_data)
         assert task.get_callable() != b""
 
+        # Require a Monitor!
+        await self.cb_monitor_offline(proc, task)
+
         self.engine.import_task(task, proc)
+
+    async def cb_monitor_offline(
+        self, proc: StarProcess, task: StarTask, monitor_peer_old: bytes = b""
+    ):
+        assert task.get_callable() != b""
+        # On monitor fail, pick a new monitor
+
+        # Pick a random node (later adjust to be one that is close.)
+        # Don't pick where it came from or myself
+        monitor_peer = self.peer_table.get_random_key(
+            set([self.my_addr, monitor_peer_old])
+        )
+        if monitor_peer is None:
+            logger.warning(
+                "There are no other peers send to monitor! You need more peers! Operating solo!"
+            )
+            return
+
+        assert monitor_peer is not None
+
+        tp: StarAddress | None = await self.get_peer_transport(monitor_peer)
+        assert tp is not None
+
+        task_peer = TaskPeer(tp, monitor_peer)
+
+        await task_peer.SendMonitor_Request(proc, self.my_addr, task)  # have monitor!
+
+        self.monitor_servers[proc.get_id()] = monitor_peer
+
+        async def tmp():
+            self.remove_peer_from_address_tables(monitor_peer)
+            await self.cb_monitor_offline(proc, task, monitor_peer)
+
+        kp_channel = self.keep_alive_manager.register_channel_service(
+            tp.get_channel(),
+            tp.get_string_channel(),
+            monitor_peer,
+            tmp,
+            TRIGGER_OFFLINE,
+        )
+        kp_channel.update()
 
     async def allocate_program(self, proc: StarProcess):
         """Node API: Allocate a task to the engine or to network
@@ -383,10 +437,10 @@ class PlugBoard:
             assert task.get_callable() != b""
             who = await self.send_out_single_task(proc, task)
             logger.info(f"WHO: {who.hex()}")
-            w2 = await self.send_out_single_task(
-                proc, task, [who]
-            )  # require at least two different owners at all times!
-            logger.info(f"WHO2: {w2.hex()}")
+            # w2 = await self.send_out_single_task(
+            #     proc, task, [who]
+            # )  # require at least two different owners at all times!
+            # logger.info(f"WHO2: {w2.hex()}")
 
     async def send_out_single_task(
         self, process: StarProcess, task: StarTask, ignore: list[bytes] = []
@@ -395,6 +449,7 @@ class PlugBoard:
         tv.address = self.my_addr  # replace with STORER
         tv.task_data = task.to_bytes_with_callable()
         tv.process_data = process.get_all_task_bytes()
+        assert task.get_callable() != b""
         _, who = await self.dht_set(
             task.get_id(),
             tv.SerializeToString(),
@@ -406,7 +461,7 @@ class PlugBoard:
         # who! currently just one owner. TODO.
         logger.debug(f"Creating listener to storer of my task - {who.hex()}")
         logger.debug(f"Who: {who.hex()}")
-        tp = await self.get_peer_transport(who)  # type: ignore
+        tp = await self.get_peer_transport(who, ignore=ignore)  # type: ignore
         assert tp is not None
         tp.set_keep_alive(self.keep_alive_manager)
         channel = tp.get_channel()
@@ -427,11 +482,79 @@ class PlugBoard:
     ):
         # Owner for task went offline. Respawn
         logger.warning(f"Storer went offline for task: {task.get_id().hex()}")
-        who2 = await self.send_out_single_task(process, task, ignore=[who])
-        # require at least two different owners at all times!
-        await self.send_out_single_task(process, task, ignore=[who, who2])
 
-    async def dht_get(self, key: bytes, select: DHTSelect) -> Optional[bytes]:
+        # Don't send anything anywhere. Have monitor do that.
+        # who2 = await self.send_out_single_task(process, task, ignore=[who])
+        # # require at least two different owners at all times!
+        # await self.send_out_single_task(process, task, ignore=[who, who2])
+
+    async def receive_monitor_request(
+        self, proc: StarProcess, who: bytes, task: StarTask
+    ):
+        self.monitor_service.add_process(proc, who)
+        # Add keepalive
+
+        tp = await self.get_peer_transport(who)
+        assert tp is not None
+        assert task.get_callable() != b""
+        self.keep_alive_manager.register_channel_service(
+            tp.get_channel(),
+            tp.get_string_channel(),
+            who,
+            lambda: self.cb_owner_offline(
+                proc,
+                task,
+                who,
+            ),
+            TRIGGER_OFFLINE,
+        )
+
+    async def cb_owner_offline(self, proc: StarProcess, task: StarTask, who: bytes):
+        logger.warning("CB OWNER OFFLINE")
+        # Owner is offline!
+        await self.send_out_single_task(proc, task, ignore=[who, self.my_addr])
+        evt = self.monitor_service.recall_most_recent_event(
+            who, task.get_process_id(), task.get_id()
+        )
+        if evt is None:
+            logger.debug("No event found. Skip")
+            return
+        logger.warning("CB OWNER OFFLINE Dispatch Resume Event!")
+        await self.dispatch_event(evt, proc)  # resume execution.
+        # Send out the task to someone else!
+
+    async def receive_checkpoint(
+        self, proc: bytes, who: bytes, event_origin: Event | None, event_to: Event
+    ):
+        # called from server SendCheckpoint()
+
+        self.monitor_service.add_checkpoint(who, event_origin, event_to)
+
+    async def send_checkpoint(
+        self,
+        proc_id: bytes,
+        event_origin: Event | None,
+        event_target: Event,
+    ):
+        # Called from send_event()
+        # Alert my monitor
+
+        logger.debug(self.monitor_servers)
+        if proc_id not in self.monitor_servers:
+            logger.warning(f"No monitor found for process: {proc_id}")
+            return
+        monitor_peer = self.monitor_servers[proc_id]
+        logger.debug(f"Send checkpoint {monitor_peer.hex()}")
+        tp = await self.get_peer_transport(monitor_peer)
+        assert tp is not None
+        taskClient = TaskPeer(tp, monitor_peer)
+        await taskClient.SendCheckpoint(
+            proc_id, event_origin, event_target, self.my_addr
+        )
+
+    async def dht_get(
+        self, key: bytes, select: DHTSelect, ignore=[]
+    ) -> Optional[bytes]:
         """Get a record from the DHT
 
         Args:
@@ -443,7 +566,7 @@ class PlugBoard:
         """
         # It tries my local loopback.... interface is on local loopback.
         value, status, select_in = await self.dht_interface.FetchItem(
-            key, select
+            key, select, nodes_visited=ignore
         )  # send out.
         if (
             status != DHTStatus.FOUND and status != DHTStatus.OWNED
@@ -600,10 +723,12 @@ class PlugBoard:
         self, monitor: bytes, key: bytes, value: bytes
     ):
         self.remove_peer_from_address_tables(monitor)
-        tv = TaskValue.FromString(value)
-        proc = StarProcess.from_bytes(tv.process_data)
-        task = StarTask.from_bytes(tv.task_data)
-        await self.send_out_single_task(proc, task)
+
+        # Don't have cache send out another task. Rely on monitor.
+        # tv = TaskValue.FromString(value)
+        # proc = StarProcess.from_bytes(tv.process_data)
+        # task = StarTask.from_bytes(tv.task_data)
+        # await self.send_out_single_task(proc, task)
 
         # owner is offline.... dispatch the task.
 
@@ -669,7 +794,7 @@ class PlugBoard:
                 # DO NOTHING.... I can serve cache subs to others though.
                 if key not in self.cache_subscriptions_serve[select]:
                     self.cache_subscriptions_serve[select][key] = set()
-                self.send_task_to_engine(value)
+                await self.send_task_to_engine(value)
         else:
             logger.error("Unknown table selected!")
             return  # type: ignore

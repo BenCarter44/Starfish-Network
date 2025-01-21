@@ -8,6 +8,7 @@ informs the user what peer would be more appropriate for the key to be stored un
 
 """
 
+import random
 from typing import Any
 import numpy as np
 import dill  # type: ignore
@@ -102,6 +103,13 @@ class DHT:
             self.addr = self.addr.union(addr)
         else:
             self.addr.add(addr)
+
+    def get_random_key(self, ignore: set[bytes] = set()):
+        k = set(self.data.keys())
+        use = k.difference(ignore)
+        if len(use) == 0:
+            return None
+        return random.choice(list(use))
 
     def fetch_dict(self, skip_cache=False):
         """Fetch a python dict representation.

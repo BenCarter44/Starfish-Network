@@ -8,7 +8,6 @@ message TaskIdentifier {
     bytes task_id = 3;
     bytes callable_data = 4;
     int32 pass_id = 5;
-
 }
 
 message TaskValue {
@@ -32,7 +31,9 @@ message TransportAddress {
 message Event {
     // PeerIdentifier addr_from = 1; 
     TaskIdentifier task_to = 1;
+    bytes task_from = 5; // itself!
     bytes data = 2;
     bytes system_data = 3;
+    int32 nonce = 4;
 
 }

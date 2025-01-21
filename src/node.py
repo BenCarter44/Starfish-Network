@@ -5,7 +5,7 @@ import uuid
 from src.communications.KeepAliveService import KeepAliveCommService
 from src.communications.PeerService import PeerService
 from src.communications.main_pb2_grpc import add_PeerServiceServicer_to_server
-from src.core.star_components import Program, StarProcess, StarTask
+from src.core.star_components import Event, Program, StarProcess, StarTask
 from src.plugboard import PlugBoard
 
 # except:
@@ -114,7 +114,7 @@ class Node:
         """The peer discovery task. Do round every 5 sec"""
         while True:
             await asyncio.sleep(10)
-            return
+            # return
             if self.is_connected or self.plugboard.received_rpcs.is_set():
                 await self.plugboard.perform_discovery_round()
 
@@ -152,7 +152,9 @@ class Node:
         # print(self.plugboard.task_table.fetch_dict())
 
         program.start.target.attach_to_process(proc)
+
         # await asyncio.sleep(100)
         logger.info(f"Start Event: {program.start.target.get_id().hex()}")
+        program.start.nonce = 0
         await self.plugboard.dispatch_event(program.start, proc)
         return proc

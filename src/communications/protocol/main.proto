@@ -143,6 +143,7 @@ message TaskAllocate_Response {
 
 message SendEvent_Request {
     Event evt = 1;
+    bytes who = 2;
 }
 
 message SendEvent_Response {
@@ -171,6 +172,27 @@ message Heartbeat_Request {
 
 message Heartbeat_Response {
     bytes custom_data = 1;
+}
+
+message SendMonitor_Request {
+    bytes process_data = 1; // Process.
+    bytes who = 2;
+    TaskIdentifier task = 3;
+}
+
+message SendMonitor_Response {
+    DHTStatus status = 1;
+}
+
+message SendCheckpoint_Request {
+    bytes process_data = 1; // Process.
+    bytes who = 2;
+    bytes event_origin = 3;
+    bytes event_to = 4;
+}
+
+message SendCheckpoint_Response {
+    DHTStatus status = 1;
 }
 
 // /////////////////////////////////////////
@@ -207,6 +229,13 @@ service TaskService {
 
     // Send Event
     rpc SendEvent(SendEvent_Request) returns (SendEvent_Response) {}
+
+    // Request Process Monitor
+    rpc SendMonitorRequest(SendMonitor_Request) returns (SendMonitor_Response) {}
+
+    // Send checkpoint
+    rpc SendCheckpoint(SendCheckpoint_Request) returns (SendCheckpoint_Response) {}
+
 }
 
 

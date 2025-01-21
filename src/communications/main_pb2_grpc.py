@@ -402,6 +402,18 @@ class TaskServiceStub(object):
             response_deserializer=main__pb2.SendEvent_Response.FromString,
             _registered_method=True,
         )
+        self.SendMonitorRequest = channel.unary_unary(
+            "/protocol.TaskService/SendMonitorRequest",
+            request_serializer=main__pb2.SendMonitor_Request.SerializeToString,
+            response_deserializer=main__pb2.SendMonitor_Response.FromString,
+            _registered_method=True,
+        )
+        self.SendCheckpoint = channel.unary_unary(
+            "/protocol.TaskService/SendCheckpoint",
+            request_serializer=main__pb2.SendCheckpoint_Request.SerializeToString,
+            response_deserializer=main__pb2.SendCheckpoint_Response.FromString,
+            _registered_method=True,
+        )
 
 
 class TaskServiceServicer(object):
@@ -417,6 +429,18 @@ class TaskServiceServicer(object):
         context.set_details("Method not implemented!")
         raise NotImplementedError("Method not implemented!")
 
+    def SendMonitorRequest(self, request, context):
+        """Request Process Monitor"""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details("Method not implemented!")
+        raise NotImplementedError("Method not implemented!")
+
+    def SendCheckpoint(self, request, context):
+        """Send checkpoint"""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details("Method not implemented!")
+        raise NotImplementedError("Method not implemented!")
+
 
 def add_TaskServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -424,6 +448,16 @@ def add_TaskServiceServicer_to_server(servicer, server):
             servicer.SendEvent,
             request_deserializer=main__pb2.SendEvent_Request.FromString,
             response_serializer=main__pb2.SendEvent_Response.SerializeToString,
+        ),
+        "SendMonitorRequest": grpc.unary_unary_rpc_method_handler(
+            servicer.SendMonitorRequest,
+            request_deserializer=main__pb2.SendMonitor_Request.FromString,
+            response_serializer=main__pb2.SendMonitor_Response.SerializeToString,
+        ),
+        "SendCheckpoint": grpc.unary_unary_rpc_method_handler(
+            servicer.SendCheckpoint,
+            request_deserializer=main__pb2.SendCheckpoint_Request.FromString,
+            response_serializer=main__pb2.SendCheckpoint_Response.SerializeToString,
         ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -456,6 +490,66 @@ class TaskService(object):
             "/protocol.TaskService/SendEvent",
             main__pb2.SendEvent_Request.SerializeToString,
             main__pb2.SendEvent_Response.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True,
+        )
+
+    @staticmethod
+    def SendMonitorRequest(
+        request,
+        target,
+        options=(),
+        channel_credentials=None,
+        call_credentials=None,
+        insecure=False,
+        compression=None,
+        wait_for_ready=None,
+        timeout=None,
+        metadata=None,
+    ):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            "/protocol.TaskService/SendMonitorRequest",
+            main__pb2.SendMonitor_Request.SerializeToString,
+            main__pb2.SendMonitor_Response.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True,
+        )
+
+    @staticmethod
+    def SendCheckpoint(
+        request,
+        target,
+        options=(),
+        channel_credentials=None,
+        call_credentials=None,
+        insecure=False,
+        compression=None,
+        wait_for_ready=None,
+        timeout=None,
+        metadata=None,
+    ):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            "/protocol.TaskService/SendCheckpoint",
+            main__pb2.SendCheckpoint_Request.SerializeToString,
+            main__pb2.SendCheckpoint_Response.FromString,
             options,
             channel_credentials,
             insecure,
