@@ -100,6 +100,8 @@ class KeepAlive_Channel:
             self.kill_count -= 1
 
     async def mark_offline(self):
+        if self.is_closed:
+            return
         self.connected = False
         logger.warning(
             f"PEER OFFLINE! {self.peer_id_assoc.hex()} CALL: {self.callbacks[TRIGGER_OFFLINE]}"
@@ -150,6 +152,18 @@ class KeepAlive_Management:
             self.channel_map[s] = channel
             self.rev_channel_map[channel] = s
         return self.channels[s]
+
+    async def test(self, tp: StarAddress, peer: bytes):
+        if tp is None:
+            return False
+
+        kp = self.get_kp_channel(tp, peer)
+        start = kp.kill_count
+        if not (kp.is_connected()):
+            return False
+        await kp.heartbeat(False)
+        return kp.kill_count == start and kp.is_connected()
+        # return kp.is_connected()
 
     async def receive_ping(self, servicer_client):
         # get channel. If I have the channel, update its keep alive

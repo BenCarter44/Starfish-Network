@@ -144,7 +144,7 @@ if __name__ == "__main__":
         if server_number == 1:
             pass
             await asyncio.sleep(5)
-            pgrm = star.Program(read_pgrm="examples/my_list_program.star")
+            pgrm = star.Program(read_pgrm="examples/my_program.star")
             logger.info(
                 f"I: Opening program '{pgrm.saved_data['pgrm_name']}' from {pgrm.saved_data['date_compiled']}\n"
             )
@@ -185,7 +185,7 @@ if __name__ == "__main__":
     ch = logging.StreamHandler(sys.stdout)
     ch.setLevel(logging.DEBUG)
     ch.setFormatter(CustomFormatter())
-    logging.basicConfig(handlers=[ch], level=logging.DEBUG)
+    logging.basicConfig(handlers=[ch], level=logging.WARNING)
 
     asyncio.get_event_loop().set_debug(True)
     asyncio.run(main())

@@ -29,6 +29,12 @@ class DHTSelect(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
     TASK_ID: _ClassVar[DHTSelect]
     FILE_ID: _ClassVar[DHTSelect]
 
+class MODE(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
+    __slots__ = ()
+    NA: _ClassVar[MODE]
+    FORWARD: _ClassVar[MODE]
+    BACKWARD: _ClassVar[MODE]
+
 UNKNOWN: DHTStatus
 FOUND: DHTStatus
 NOT_FOUND: DHTStatus
@@ -39,6 +45,9 @@ BLANK: DHTSelect
 PEER_ID: DHTSelect
 TASK_ID: DHTSelect
 FILE_ID: DHTSelect
+NA: MODE
+FORWARD: MODE
+BACKWARD: MODE
 
 class DHT_Fetch_Request(_message.Message):
     __slots__ = ("key", "query_chain", "status", "select")
@@ -366,21 +375,24 @@ class SendMonitor_Response(_message.Message):
     def __init__(self, status: _Optional[_Union[DHTStatus, str]] = ...) -> None: ...
 
 class SendCheckpoint_Request(_message.Message):
-    __slots__ = ("process_data", "who", "event_origin", "event_to")
+    __slots__ = ("process_data", "who", "event_origin", "event_to", "mode")
     PROCESS_DATA_FIELD_NUMBER: _ClassVar[int]
     WHO_FIELD_NUMBER: _ClassVar[int]
     EVENT_ORIGIN_FIELD_NUMBER: _ClassVar[int]
     EVENT_TO_FIELD_NUMBER: _ClassVar[int]
+    MODE_FIELD_NUMBER: _ClassVar[int]
     process_data: bytes
     who: bytes
     event_origin: bytes
     event_to: bytes
+    mode: MODE
     def __init__(
         self,
         process_data: _Optional[bytes] = ...,
         who: _Optional[bytes] = ...,
         event_origin: _Optional[bytes] = ...,
         event_to: _Optional[bytes] = ...,
+        mode: _Optional[_Union[MODE, str]] = ...,
     ) -> None: ...
 
 class SendCheckpoint_Response(_message.Message):

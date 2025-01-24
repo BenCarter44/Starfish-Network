@@ -114,7 +114,7 @@ class Node:
         """The peer discovery task. Do round every 5 sec"""
         while True:
             await asyncio.sleep(10)
-            # return
+            return
             if self.is_connected or self.plugboard.received_rpcs.is_set():
                 await self.plugboard.perform_discovery_round()
 
@@ -156,5 +156,5 @@ class Node:
         # await asyncio.sleep(100)
         logger.info(f"Start Event: {program.start.target.get_id().hex()}")
         program.start.nonce = 0
-        await self.plugboard.dispatch_event(program.start, proc)
+        await self.plugboard.dispatch_event(program.start)
         return proc

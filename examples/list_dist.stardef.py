@@ -33,14 +33,14 @@ def input_event(evt: star.Event, task_id: star.StarTask):
     return evt_new
 
 
-@star.task("cast_numbers")
+@star.task("cast_numbers", checkpoint=False)
 def cast_numbers(evt):
     evt.data["a"] = int(evt.data["a"])
     evt.data["b"] = int(evt.data["b"])
     return evt
 
 
-@star.task("run_total")
+@star.task("run_total", checkpoint=False)
 def run_total(evt):
     total = evt.data.get("a") + evt.data.get("b")
 
@@ -91,7 +91,7 @@ def print_odd(evt):
     return evt_new
 
 
-@star.task("to_capital")
+@star.task("to_capital", checkpoint=False)
 def to_cap(evt: star.Event):
     evt.data["token"] = evt.data.get("token").upper()
     return evt
@@ -122,6 +122,7 @@ def list_intro(evt, task_id: star.StarTask):
     print(string)
     evt_new = star.Event()
     evt_new.set_target("input")
+    print(evt)
     return evt_new
 
 

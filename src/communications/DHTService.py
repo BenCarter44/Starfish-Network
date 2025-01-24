@@ -78,7 +78,7 @@ class DHTClient:
     ) -> tuple[pb_base.DHTStatus, bytes]:
         peer_id = self.peer_id
 
-        logger.debug("Create StoreItem request")
+        logger.debug(f"Create StoreItem request. send to {self.peer_id.hex()}")
         val = value.hex()
         if len(val) > 32:
             val = val[0:32] + "..."
@@ -383,6 +383,7 @@ class DHTService(pb.DHTServiceServicer):
                 logger.info(f"Transport for {addr.hex()} not found!")
                 continue
 
+            logger.debug(transport.get_string_channel())
             dhtClient = DHTClient(transport, addr, self.addr, self.keep_alive)
             response, who = await dhtClient.StoreItem(
                 request.key, request.value, request.select, nodes_visited=nodes_visited
@@ -475,7 +476,7 @@ class DHTService(pb.DHTServiceServicer):
         request: pb_base.DHT_Register_Notices_Request,
         context: grpc.aio.ServicerContext,
     ) -> pb_base.DHT_Register_Notices_Response:
-        logger.warning(
+        logger.debug(
             f"Recv Register Notice Request Server from {request.who.hex()} for [{request.key.hex()}]"
         )
 

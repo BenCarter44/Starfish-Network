@@ -5,18 +5,20 @@ from typing import ClassVar as _ClassVar, Mapping as _Mapping, Optional as _Opti
 DESCRIPTOR: _descriptor.FileDescriptor
 
 class TaskIdentifier(_message.Message):
-    __slots__ = ("user_id", "process_id", "task_id", "callable_data", "pass_id")
+    __slots__ = ("user_id", "process_id", "task_id", "callable_data", "pass_id", "monitor_peer")
     USER_ID_FIELD_NUMBER: _ClassVar[int]
     PROCESS_ID_FIELD_NUMBER: _ClassVar[int]
     TASK_ID_FIELD_NUMBER: _ClassVar[int]
     CALLABLE_DATA_FIELD_NUMBER: _ClassVar[int]
     PASS_ID_FIELD_NUMBER: _ClassVar[int]
+    MONITOR_PEER_FIELD_NUMBER: _ClassVar[int]
     user_id: bytes
     process_id: bytes
     task_id: bytes
     callable_data: bytes
     pass_id: int
-    def __init__(self, user_id: _Optional[bytes] = ..., process_id: _Optional[bytes] = ..., task_id: _Optional[bytes] = ..., callable_data: _Optional[bytes] = ..., pass_id: _Optional[int] = ...) -> None: ...
+    monitor_peer: bytes
+    def __init__(self, user_id: _Optional[bytes] = ..., process_id: _Optional[bytes] = ..., task_id: _Optional[bytes] = ..., callable_data: _Optional[bytes] = ..., pass_id: _Optional[int] = ..., monitor_peer: _Optional[bytes] = ...) -> None: ...
 
 class TaskValue(_message.Message):
     __slots__ = ("address", "task_data", "process_data")
@@ -49,15 +51,21 @@ class TransportAddress(_message.Message):
     def __init__(self, protocol: _Optional[bytes] = ..., host: _Optional[bytes] = ..., port: _Optional[bytes] = ...) -> None: ...
 
 class Event(_message.Message):
-    __slots__ = ("task_to", "task_from", "data", "system_data", "nonce")
+    __slots__ = ("task_to", "task_from", "task_pre", "data", "system_data", "nonce", "is_checkpoint", "target_string")
     TASK_TO_FIELD_NUMBER: _ClassVar[int]
     TASK_FROM_FIELD_NUMBER: _ClassVar[int]
+    TASK_PRE_FIELD_NUMBER: _ClassVar[int]
     DATA_FIELD_NUMBER: _ClassVar[int]
     SYSTEM_DATA_FIELD_NUMBER: _ClassVar[int]
     NONCE_FIELD_NUMBER: _ClassVar[int]
+    IS_CHECKPOINT_FIELD_NUMBER: _ClassVar[int]
+    TARGET_STRING_FIELD_NUMBER: _ClassVar[int]
     task_to: TaskIdentifier
     task_from: bytes
+    task_pre: bytes
     data: bytes
     system_data: bytes
     nonce: int
-    def __init__(self, task_to: _Optional[_Union[TaskIdentifier, _Mapping]] = ..., task_from: _Optional[bytes] = ..., data: _Optional[bytes] = ..., system_data: _Optional[bytes] = ..., nonce: _Optional[int] = ...) -> None: ...
+    is_checkpoint: int
+    target_string: str
+    def __init__(self, task_to: _Optional[_Union[TaskIdentifier, _Mapping]] = ..., task_from: _Optional[bytes] = ..., task_pre: _Optional[bytes] = ..., data: _Optional[bytes] = ..., system_data: _Optional[bytes] = ..., nonce: _Optional[int] = ..., is_checkpoint: _Optional[int] = ..., target_string: _Optional[str] = ...) -> None: ...

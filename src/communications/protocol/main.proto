@@ -20,6 +20,12 @@ enum DHTSelect {
     FILE_ID = 3;
 }
 
+enum MODE {
+    NA = 0;
+    FORWARD = 1;
+    BACKWARD = 2;
+}
+
 message DHT_Fetch_Request {
     bytes key = 1;
     repeated bytes query_chain = 2;
@@ -189,6 +195,7 @@ message SendCheckpoint_Request {
     bytes who = 2;
     bytes event_origin = 3;
     bytes event_to = 4;
+    MODE mode = 5;
 }
 
 message SendCheckpoint_Response {

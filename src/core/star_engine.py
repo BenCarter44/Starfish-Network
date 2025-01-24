@@ -55,7 +55,7 @@ class NodeEngine:
         self.send_event_handler = lambda evt: evt  # replaced by Node.
         self.loop = asyncio.get_event_loop()
         star.BINDINGS = self.return_component_bindings()
-        self.task_to_process: dict[bytes, star.StarProcess] = {}
+        # self.task_to_process: dict[bytes, star.StarProcess] = {}
 
     def import_task(self, task: star.StarTask, process: star.StarProcess):
         """Import task into engine.
@@ -70,7 +70,7 @@ class NodeEngine:
 
         self.count_host += 1
         self.hosted_tasks[task] = (task, asyncio.Semaphore(1000))
-        self.task_to_process[task.get_id()] = process
+        # self.task_to_process[task.get_id()] = process
 
     def start_program(self, pgrm_exc: ProgramExecutor, local=False):
         """Start program in engine by firing the start event from program.
@@ -125,12 +125,26 @@ class NodeEngine:
             await self.out_unified_queue.put(evt)
             return 0
 
-        logger.info(f"Received event: {evt.target}. {self.node_id} Waiting....")
+        a = None
+        if evt.origin is not None:
+            a = evt.origin.target.get_id().hex()
+        logger.info(
+            f"Received event: {evt.target}. Org: {a} {self.node_id.hex()} Waiting...."
+        )
         await self.hosted_tasks[incoming_target][1].acquire()  # acquire sem
         logger.info(f"Done Waiting.... Put in Execution Queue")
+
+        evt.target.monitor = self.hosted_tasks[incoming_target][0].monitor
+
         exc_task = self.hosted_tasks[incoming_target][0]
         await self.executor_queue.put((exc_task, evt))
         return self.hosted_tasks[incoming_target][1]._value
+
+    def update_monitor(self, task: star.StarTask, monitor: bytes):
+        if task not in self.hosted_tasks:
+            logger.info(f"Not found {task.get_id()} monitor")
+            return
+        self.hosted_tasks[task][0].monitor = monitor
 
     def recv_event(self, evt: star.Event, increment=False):
         """OUTSIDE API. Consume a receiving event.
@@ -142,6 +156,15 @@ class NodeEngine:
 
         if increment:
             evt.nonce += 1
+
+        if evt.target not in self.hosted_tasks:
+            logger.warning("Passed in task ID but not hosting. Forwarding")
+
+            async def tmp():
+                await self.out_unified_queue.put(evt)
+
+            asyncio.run_coroutine_threadsafe(tmp(), self.loop)
+            return -3
 
         f = asyncio.run_coroutine_threadsafe(self.recv_event_coro(evt), self.loop)
         v = self.hosted_tasks[evt.target][1]._value - 1
@@ -156,17 +179,36 @@ class NodeEngine:
         with concurrent.futures.ThreadPoolExecutor() as pool:
             while True:
                 task, evt = await self.executor_queue.get()  # get the task
-                evt_copy = evt.to_bytes()
+                if evt.origin is None or evt.is_checkpoint:
+                    evt_copy = evt.to_bytes()  # old event (set to current)
+                else:
+                    evt_copy = evt.origin.to_bytes()  # keep the same old event.
+
+                if evt.origin_previous is None or evt.is_checkpoint:
+                    if evt.origin is None:
+                        evt_copy_pre = evt_copy  # old event (set to current)
+                    else:
+                        evt_copy_pre = evt.origin.to_bytes()
+                else:
+                    evt_copy_pre = (
+                        evt.origin_previous.to_bytes()
+                    )  # keep the same old event.
+
                 task.hold_past_event = evt
+                task.hold_past_event_pre = star.StarTask.from_bytes(evt_copy_pre)
                 func = task.get_callable()
                 if func is None:
                     logger.error("Function is NONE! skipping.")
                     continue
 
                 logger.info(
-                    f"EX Queue: {evt}. Total Workers Alloc: {len(pool._threads)} Total Workers: {pool._max_workers}."
+                    f"EX Queue: {task}. Total Workers Alloc: {len(pool._threads)} Total Workers: {pool._max_workers}."
                 )
-                logger.info(f"Run: {task}")
+                a = None
+                if evt.origin is not None:
+                    a = evt.origin.target.get_id()
+
+                logger.info(f"Run: {task} Org: {a}")
                 logger.debug(func)
 
                 if not (task.pass_id):
@@ -180,7 +222,10 @@ class NodeEngine:
 
                 out_future.add_done_callback(
                     functools.partial(
-                        self.finish_task, task, star.Event.from_bytes(evt_copy)
+                        self.finish_task,
+                        task,
+                        star.Event.from_bytes(evt_copy),
+                        star.Event.from_bytes(evt_copy_pre),
                     )
                 )
                 # await send_to_out_queue(out)
@@ -189,6 +234,7 @@ class NodeEngine:
         self,
         task: star.StarTask,
         old_event: star.Event,
+        old_event_pre: star.Event,
         evt_future: concurrent.futures.Future[star.Event],
     ):
         """Callback. Send out event generated from task.
@@ -197,7 +243,13 @@ class NodeEngine:
             evt (star.Event): Receiving event.
         """
         evt = evt_future.result()
+        if evt is None:
+            logger.error("Malformed event! Dropping!")
+            return
+
+        # if evt.is_checkpoint:  # only track if IS CHECKPOINT.
         evt.origin = old_event
+        evt.origin_previous = old_event_pre
         evt.nonce = old_event.nonce
         if evt.system is not None and evt.system["await"] and evt.system["initial"]:
             evt.system["initial"] = False
@@ -205,7 +257,9 @@ class NodeEngine:
         # clear out the user/proc id and replace it with the task.
         evt.target.attach_to_process_task(task)
 
-        logger.info(f"EX Done. Send Target: {evt.target}. Origin: {old_event.target}")
+        logger.info(
+            f"EX Done. Send Target: {evt.target}. Origin: {old_event.target} Origin-Pre: {old_event_pre.target}. Monitor: {old_event.target.monitor}. Monitor-pre: {old_event_pre.target.monitor}"
+        )
 
         # assume the condition is none. It will already have condition or not
         async def send_quick(evt):
@@ -219,16 +273,15 @@ class NodeEngine:
             item: star.Event = await self.out_unified_queue.get()
             logger.debug(f"SENDING: {item}")
 
-            if item.target.get_id() not in self.task_to_process:
-                logger.error(
-                    "Attempted to send task from engine that is not a currently running process!"
-                )
-                return
-
+            # if item.target.get_id() not in self.task_to_process:
+            #     logger.error(
+            #         "Attempted to send task from engine that is not a currently running process!"
+            #     )
+            #     return
+            # await self.send_event_handler(item)
             try:
-                await self.send_event_handler(
-                    item, self.task_to_process[item.target.get_id()]
-                )
+                await self.send_event_handler(item)
+                pass
             except Exception as e:
                 logger.critical(e)
                 sys.exit(2)

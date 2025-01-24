@@ -162,6 +162,9 @@ class StarTask:
         self.pass_id = pass_id
 
         self.hold_past_event = None
+        self.hold_past_event_pre = None
+        self.hold_process: Optional[StarProcess] = None
+        self.monitor = b""
 
     def to_bytes(self) -> bytes:
         """Serialize StarTask to bytes
@@ -191,6 +194,7 @@ class StarTask:
             task_id=self.task_id,
             callable_data=c if include_callable else b"",
             pass_id=self.pass_id,
+            monitor_peer=self.monitor,
         )
 
     def to_bytes_with_callable(self) -> bytes:
@@ -220,6 +224,7 @@ class StarTask:
             r = {}
         out.callable = c
         out.runtime_data = r
+        out.monitor = pb.monitor_peer
         # logger.debug(f"From PB: {out.callable}")
         return out
 
@@ -378,11 +383,14 @@ class Event:
         self.system = None
         self.target = None
         self.origin = None
+        self.origin_previous = None
         self.is_target_conditional = False  # used for compiler only
+        self.is_checkpoint = True
 
         self.owned_user_id: Optional[bytes] = None
         self.owned_process_id: Optional[bytes] = None
         self.nonce = 0
+        self.target_string = ""
 
     def to_bytes(self) -> bytes:
         return self.to_pb().SerializeToString()
@@ -402,13 +410,25 @@ class Event:
             logger.debug(self.origin.target)
             event_origin = self.origin.to_bytes()
 
-        return pb_p.Event(
+        event_origin_previous = self.origin_previous
+        if self.origin_previous is None:
+            event_origin_previous = b""
+        else:
+            self.origin_previous.origin = None  # No recursion.
+            event_origin_previous = self.origin_previous.to_bytes()
+
+        evt_out = pb_p.Event(
             task_to=task_to.to_pb(),
             task_from=event_origin,
+            task_pre=event_origin_previous,
             data=dill.dumps(self.data, fmode=dill.FILE_FMODE),
             system_data=dill.dumps(self.system, fmode=dill.FILE_FMODE),
             nonce=self.nonce,
+            is_checkpoint=self.is_checkpoint,
+            target_string=self.target_string,
         )
+
+        return evt_out
 
     def __hash__(self):
         # A Event is the same as another event if the NONCE and TARGET are the same!
@@ -429,16 +449,25 @@ class Event:
         system = dill.loads(pb.system_data)
         task_to = pb.task_to
         evt_from = pb.task_from
+        evt_pre = pb.task_pre
         if evt_from == b"":
             evt_from = None
         else:
             evt_from = cls.from_bytes(evt_from)
 
+        if evt_pre == b"":
+            evt_pre = None
+        else:
+            evt_pre = cls.from_bytes(evt_pre)
+
         out = cls(data)
         out.system = system
         out.target = StarTask.from_pb(task_to)
         out.origin = evt_from
+        out.origin_previous = evt_pre
         out.nonce = pb.nonce
+        out.is_checkpoint = pb.is_checkpoint
+        out.target_string = pb.target_string
         return out
 
     @classmethod
@@ -463,6 +492,7 @@ class Event:
         try:
             i = target.get_id()  # type: ignore
             self.target = target
+            # self.target_string = target
             return
         except:
             pass  # Not a StarTask .... isinstance doesn't work for some reason on programs
@@ -478,8 +508,8 @@ class Event:
             b"",
         )
         task_identifier.set_nice_name(target)
-        self.target = task_identifier
         self.target_string = target
+        self.target = task_identifier
 
     def set_conditional_target(self, target: StarTask | str) -> None:
         """Set target task of event.
@@ -502,8 +532,8 @@ class Event:
             b"",
         )
         task_identifier.set_nice_name(target)
-        self.target = task_identifier
         self.target_string = target
+        self.target = task_identifier
 
 
 class AwaitGroup:
@@ -598,6 +628,7 @@ class AwaitEvent:
         evt.system["previous"] = evt
         evt.system["node"] = BINDINGS["get_node_id"]()
         evt.system["trigger"] = trigger  # expect response.
+        evt.is_checkpoint = False
 
         self.trigger = trigger
         dispatch_event(
@@ -664,7 +695,8 @@ def dispatch_event(evt: Event, originating_task: StarTask) -> None:
 
     evt.target.attach_to_process_task(originating_task)
     evt.origin = originating_task.hold_past_event
-
+    evt.origin_previous = originating_task.hold_past_event_pre
+    evt.is_checkpoint = False
     logger.info(evt.target)
     logger.info(f"SEND: {evt.data}")
     f = BINDINGS["dispatch_event"]
@@ -758,7 +790,7 @@ class Program:
 #     return task_to_id
 
 
-def task(name: str, pass_task_id=False):
+def task(name: str, pass_task_id=False, checkpoint=True):
     """Decorator for building a task
 
     Args:
@@ -785,7 +817,7 @@ def task(name: str, pass_task_id=False):
         # task_identifier.set_nice_name(name)
         # task_identifier.set_callable(f_wrap)
         # f_wrap(Event(), StarTask(b"", b"", b"", False))
-        preview_task_list.append((name, f_wrap, pass_task_id))
+        preview_task_list.append((name, f_wrap, pass_task_id, checkpoint))
 
         return f_wrap
 
@@ -837,16 +869,31 @@ def compile(start_event: Event) -> Program:
     # do unconditional tasks first
     counter = 0
     task_to_id = {}
-    for name, f_wrap, pass_task_id in preview_task_list:
+    task_to_checkpoint = {}
+    for name, f_wrap, pass_task_id, checkpoint in preview_task_list:
         task_to_id[name] = int.to_bytes(counter, 2, "big", signed=False)
+        task_to_checkpoint[name] = checkpoint
         counter += 1
 
-    for name, f_wrap, pass_task_id in preview_task_list:
+    print(task_to_checkpoint)
+
+    for name, f_wrap, pass_task_id, checkpoint in preview_task_list:
         # print(name, f_wrap)
         def edit_ti(func):
             def edit_task_id(*args, **kwargs):
                 e = func(*args, **kwargs)
+                # print(e.target_string, "ENGINE")
+                if e.target_string is None:
+                    logger.error(
+                        "Program error: Did you forget a event.set_target()? Target unknwon. Dropping."
+                    )
+                    return None
                 e.target.task_id = task_to_id[e.target_string]
+
+                if e.target_string not in task_to_checkpoint:
+                    e.is_checkpoint = False  # Conditional task. Mark False
+                else:
+                    e.is_checkpoint = task_to_checkpoint[e.target_string]
                 return e
 
             return edit_task_id
@@ -872,6 +919,7 @@ def compile(start_event: Event) -> Program:
                 task_id_out, lambda_condition = token
                 if lambda_condition(evt):
                     e.set_target(task_id_out)
+                    e.is_checkpoint = False  # no checkpoint on conditional.
                     break
             return e
 
@@ -896,6 +944,10 @@ def compile(start_event: Event) -> Program:
                 def edit_task_id(*args, **kwargs):
                     e = func(*args, **kwargs)
                     e.target.task_id = task_to_id[e.target_string]
+                    if e.target_string not in task_to_checkpoint:
+                        e.is_checkpoint = False  # Conditional task. Mark False
+                    else:
+                        e.is_checkpoint = task_to_checkpoint[e.target_string]
                     return e
 
                 return edit_task_id
@@ -920,6 +972,7 @@ def compile(start_event: Event) -> Program:
         task.runtime_data = task_to_id
 
     start_event.target.task_id = task_to_id[start_event.target_string]
+    start_event.is_checkpoint = True
     logger.info(f"Start: {start_event.target}")
     program = Program(task_list=task_list, start_event=start_event)
     # program.show_dependencies()

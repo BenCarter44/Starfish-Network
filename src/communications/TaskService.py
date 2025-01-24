@@ -52,6 +52,7 @@ class TaskPeer:
         event_to: Event,
         addr_of_engine: bytes,
         timeout=0.4,
+        backwards=False,
     ):
         proc_data = proc
         if event_origin is None:
@@ -59,11 +60,16 @@ class TaskPeer:
         else:
             event_origin_bytes = event_origin.to_bytes()
 
+        mode = pb_base.MODE.FORWARD
+        if backwards:
+            mode = pb_base.MODE.BACKWARD
+
         request = pb_base.SendCheckpoint_Request(
             process_data=proc_data,
             who=addr_of_engine,
             event_origin=event_origin_bytes,
             event_to=event_to.to_bytes(),
+            mode=mode,
         )
         response = await self.stub.SendCheckpoint(request, timeout=timeout)
         self.kp_channel.update()
@@ -95,12 +101,38 @@ class TaskService(pb.TaskServiceServicer):
         peerID: bytes = await self.internal_callback.get_task_owner(task)
         logger.debug(f"Task: {task.get_id().hex()} OWNED by {peerID.hex()}")
 
-        # Check-in to monitor -- ALWAYS SEND.... Change later to checkpoint events
-        logger.debug(evt.origin)
-        logger.debug(evt)
-        await self.internal_callback.send_checkpoint(
-            evt.target.get_process_id(), evt.origin, evt
-        )
+        if peerID == b"":
+            return pb_base.SendEvent_Response(
+                status=pb_base.DHTStatus.NOT_FOUND,
+                remaining=-11,
+                who=self.addr,
+            )
+
+        # see if event is a checkpoint event.
+
+        if evt.is_checkpoint:
+            # Check-in to monitor --
+            logger.debug(evt.origin)
+            logger.debug(evt)
+
+            task_to = evt.target
+            if evt.origin is None:
+                logger.warning("Send checkpoint when evt.origin is none????")
+            else:
+                task_to = evt.origin.target
+
+            if request.who == self.addr and peerID != self.addr:
+                # the request came from me and I don't own it.... don't send a checkpoint
+                pass
+            else:
+                # tell the next person checkpoint.
+                await self.internal_callback.send_checkpoint_forward(
+                    task_to.get_id(), evt.origin, evt
+                )
+                # tell the previous person that we are good.
+                await self.internal_callback.send_checkpoint_backward(
+                    task_to.get_id(), evt.origin, evt.origin_previous, evt
+                )
 
         if peerID == self.addr:
             # It's to me!
@@ -157,7 +189,7 @@ class TaskService(pb.TaskServiceServicer):
 
         proc = request.process_data
         who = request.who
-        event_origin = request.event_origin
+        event_origin: Event | None = request.event_origin  # type: ignore
 
         if request.event_origin == b"":
             event_origin = None
@@ -166,8 +198,13 @@ class TaskService(pb.TaskServiceServicer):
 
         event_to = request.event_to
 
+        if request.mode == pb_base.FORWARD:
+            forwards = True
+        else:
+            forwards = False
+
         await self.internal_callback.receive_checkpoint(
-            proc, who, event_origin, Event.from_bytes(event_to)
+            proc, who, event_origin, Event.from_bytes(event_to), forwards
         )
 
         return pb_base.SendCheckpoint_Response(status=pb_base.DHTStatus.FOUND)

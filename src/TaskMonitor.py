@@ -15,13 +15,13 @@ class MonitorService:
                                 ---sub key--      
         """
 
-    def add_process(self, proc: StarProcess, peer_id: bytes):
+    def add_process(self, proc: StarProcess, peer_id: bytes, task: StarTask):
+        logger.warning(
+            f"Add process to monitor: {proc.get_id().hex()} machine: {peer_id.hex()} - task: {task.get_id().hex()}"
+        )
         key = (proc.get_id(), peer_id)
         if key in self.process_table:
             return
-        logger.warning(
-            f"Add process to monitor: {proc.get_id().hex()} machine: {peer_id.hex()}"
-        )
 
         self.process_table[key] = {}
         self.process_table_reverse[key] = {}
@@ -49,7 +49,7 @@ class MonitorService:
             origin_target_nonce = origin_event.nonce
 
         logger.warning(
-            f"Add checkpoint: proc: {process_id.hex()} machine: {peer_id.hex()} origin_event: {origin_target.hex()}-{origin_target_nonce} recent-event: {recent_event.target.get_id()}-{recent_event.nonce}"
+            f"Add checkpoint: proc: {process_id.hex()} machine: {peer_id.hex()} origin_event: {origin_target.hex()}-{origin_target_nonce} recent-event: {recent_event.target.get_id().hex()}-{recent_event.nonce}"
         )
 
         self.process_table[key][origin_target] = recent_event
@@ -59,6 +59,47 @@ class MonitorService:
             old_origin_event = self.process_table_reverse[key][origin_event]
             del self.process_table[key][old_origin_event]
             del self.process_table_reverse[key][origin_event]
+
+    def remove_checkpoint(
+        self, peer_id: bytes, origin_event: Event | None, recent_event: Event
+    ):
+        # Keep first 6 bytes
+        process_id = recent_event.target.get_process_id()
+
+        key = (process_id, peer_id)
+        logger.debug(key)
+        logger.debug(self.process_table)
+        if key not in self.process_table:
+            # logger.info(f"False 1 {key} - {list(self.process_table.keys())}")
+            return False
+
+        # automatically factors in NONCE
+
+        if origin_event is None:
+            origin_event = b""  # type: ignore
+            origin_target = b""
+            origin_target_nonce = 0
+        else:
+            origin_target = origin_event.target.get_id()
+            origin_target_nonce = origin_event.nonce
+
+        logger.warning(
+            f"Remove checkpoint: proc: {process_id.hex()} machine: {peer_id.hex()} origin_event: {origin_target.hex()}-{origin_target_nonce} recent-event: {recent_event.target.get_id().hex()}-{recent_event.nonce}"
+        )
+
+        if (
+            origin_target not in self.process_table[key]
+            or recent_event not in self.process_table_reverse[key]
+        ):
+            # logger.info(f"False 2 {origin_target.hex()} - {self.process_table[key]}")
+            # logger.info(
+            #     f"False 2 {recent_event.target.get_id()} - {self.process_table_reverse[key]}"
+            # )
+            return False
+
+        del self.process_table[key][origin_target]
+        del self.process_table_reverse[key][recent_event]
+        return True
 
     def recall_most_recent_event(
         self, peer_id: bytes, process_id: bytes, task_id: bytes
