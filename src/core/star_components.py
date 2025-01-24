@@ -536,142 +536,142 @@ class Event:
         self.target = task_identifier
 
 
-class AwaitGroup:
-    """Group of AwaitEvent()"""
+# class AwaitGroup:
+#     """Group of AwaitEvent()"""
 
-    def __init__(
-        self,
-        *,
-        originating_task: StarTask,
-        return_event: Optional[Event] = None,
-        flood_time_delay=0.01,  # 1 msec
-    ):
-        """Create group of await events.
+#     def __init__(
+#         self,
+#         *,
+#         originating_task: StarTask,
+#         return_event: Optional[Event] = None,
+#         flood_time_delay=0.01,  # 1 msec
+#     ):
+#         """Create group of await events.
 
-        Args:
-            originating_task (TaskIdentifier): TaskID of origin task
-            return_event (Optional[Event], optional): Not Implemented! Fire this event when all tasks in group finish. Defaults to None.
-            flood_time_delay (float, optional): Short delay between add_event calls. Defaults to 0.001.
-        """
-        self.return_event = return_event
-        self.awaits: list[AwaitEvent] = []
-        self.origin_task = originating_task
-        self.flood_time_delay = flood_time_delay
-        if return_event is not None:
-            raise NotImplementedError(
-                "Return event on await group not implemented yet!"
-            )
+#         Args:
+#             originating_task (TaskIdentifier): TaskID of origin task
+#             return_event (Optional[Event], optional): Not Implemented! Fire this event when all tasks in group finish. Defaults to None.
+#             flood_time_delay (float, optional): Short delay between add_event calls. Defaults to 0.001.
+#         """
+#         self.return_event = return_event
+#         self.awaits: list[AwaitEvent] = []
+#         self.origin_task = originating_task
+#         self.flood_time_delay = flood_time_delay
+#         if return_event is not None:
+#             raise NotImplementedError(
+#                 "Return event on await group not implemented yet!"
+#             )
 
-    def add_event(self, evt: Event) -> None:
-        """Add event to group. Automatically sends out the event
+#     def add_event(self, evt: Event) -> None:
+#         """Add event to group. Automatically sends out the event
 
-        Args:
-            evt (Event): Event to add.
-        """
-        await_evt = AwaitEvent(evt, self.origin_task)
-        time.sleep(self.flood_time_delay)  # something is wrong with the delays. TODO.
-        self.awaits.append(await_evt)
+#         Args:
+#             evt (Event): Event to add.
+#         """
+#         await_evt = AwaitEvent(evt, self.origin_task)
+#         time.sleep(self.flood_time_delay)  # something is wrong with the delays. TODO.
+#         self.awaits.append(await_evt)
 
-    def wait_result_for_all(self, timeout=2.0) -> list[Event]:
-        """Wait for events in the group to finish.
+#     def wait_result_for_all(self, timeout=2.0) -> list[Event]:
+#         """Wait for events in the group to finish.
 
-        Args:
-            timeout (float, optional): Timeout per each event in seconds. Defaults to 2.0.
+#         Args:
+#             timeout (float, optional): Timeout per each event in seconds. Defaults to 2.0.
 
-        Returns:
-            list[Event]: Returned events.
-        """
+#         Returns:
+#             list[Event]: Returned events.
+#         """
 
-        if not (IS_ENGINE):
-            return []
+#         if not (IS_ENGINE):
+#             return []
 
-        out: list[Event] = []
-        for x in self.awaits:
-            out.append(x.wait_for_result(timeout=timeout))
+#         out: list[Event] = []
+#         for x in self.awaits:
+#             out.append(x.wait_for_result(timeout=timeout))
 
-        return out
+#         return out
 
-    def close(self):
-        """Free the await event group from engine."""
-        for x in self.awaits:
-            x.cleanup()
+#     def close(self):
+#         """Free the await event group from engine."""
+#         for x in self.awaits:
+#             x.cleanup()
 
-    # will need override. wait()
+#     # will need override. wait()
 
 
-class AwaitEvent:
-    """Used to create events in a task while being able to track their completion."""
+# class AwaitEvent:
+#     """Used to create events in a task while being able to track their completion."""
 
-    def __init__(
-        self,
-        evt: Event,
-        originating_task: StarTask,
-    ):
-        """Create Awaitable Event. Immediately sends out on creation.
+#     def __init__(
+#         self,
+#         evt: Event,
+#         originating_task: StarTask,
+#     ):
+#         """Create Awaitable Event. Immediately sends out on creation.
 
-        Args:
-            evt (Event): Event
-            originating_task (TaskIdentifier): origin TaskID
-        """
-        evt.target.attach_to_process_task(originating_task)
-        self.evt = evt
+#         Args:
+#             evt (Event): Event
+#             originating_task (TaskIdentifier): origin TaskID
+#         """
+#         evt.target.attach_to_process_task(originating_task)
+#         self.evt = evt
 
-        # create trigger and place in list.
+#         # create trigger and place in list.
 
-        f = BINDINGS["create_trigger"]
-        trigger = f(originating_task)
+#         f = BINDINGS["create_trigger"]
+#         trigger = f(originating_task)
 
-        # tsk = star.create_dynamic_task(f, condition=None)
-        evt.define_system()
-        evt.system["await"] = True
-        evt.system["initial"] = True
-        evt.system["previous"] = evt
-        evt.system["node"] = BINDINGS["get_node_id"]()
-        evt.system["trigger"] = trigger  # expect response.
-        evt.is_checkpoint = False
+#         # tsk = star.create_dynamic_task(f, condition=None)
+#         evt.define_system()
+#         evt.system["await"] = True
+#         evt.system["initial"] = True
+#         evt.system["previous"] = evt
+#         evt.system["node"] = BINDINGS["get_node_id"]()
+#         evt.system["trigger"] = trigger  # expect response.
+#         evt.is_checkpoint = False
 
-        self.trigger = trigger
-        dispatch_event(
-            evt, originating_task
-        )  # original event. This will then send back event to dynamic task
+#         self.trigger = trigger
+#         dispatch_event(
+#             evt, originating_task
+#         )  # original event. This will then send back event to dynamic task
 
-        # dynamic task will read the event, and then set AwaitEvent to ready()
-        #
+#         # dynamic task will read the event, and then set AwaitEvent to ready()
+#         #
 
-        # set await asyncio.event()
-        # async trigger for when event is triggered
+#         # set await asyncio.event()
+#         # async trigger for when event is triggered
 
-    def wait_for_result(self, timeout: float = 2.0) -> Event:
-        """Wait for result of event. Return returned event when done.
+#     def wait_for_result(self, timeout: float = 2.0) -> Event:
+#         """Wait for result of event. Return returned event when done.
 
-        Args:
-            timeout (float, optional): Timeout to wait. Defaults to 2.0.
+#         Args:
+#             timeout (float, optional): Timeout to wait. Defaults to 2.0.
 
-        Returns:
-            Event: Returned event.
-        """
-        if not (IS_ENGINE):
-            return  # type: ignore
-        f = BINDINGS["await_trigger"]
-        return f(self.trigger, timeout=timeout)
+#         Returns:
+#             Event: Returned event.
+#         """
+#         if not (IS_ENGINE):
+#             return  # type: ignore
+#         f = BINDINGS["await_trigger"]
+#         return f(self.trigger, timeout=timeout)
 
-    def is_ready(self) -> bool:
-        """Check if event is ready.
+#     def is_ready(self) -> bool:
+#         """Check if event is ready.
 
-        Returns:
-            bool: True if ready.
-        """
-        if not (IS_ENGINE):
-            return  # type: ignore
-        f = BINDINGS["is_trigger_ready"]
-        return f(self.trigger)
+#         Returns:
+#             bool: True if ready.
+#         """
+#         if not (IS_ENGINE):
+#             return  # type: ignore
+#         f = BINDINGS["is_trigger_ready"]
+#         return f(self.trigger)
 
-    def cleanup(self):
-        """Cleanup awaited event"""
-        if not (IS_ENGINE):
-            return  # type: ignore
-        f = BINDINGS["cleanup_trigger"]
-        return f(self.trigger)
+#     def cleanup(self):
+#         """Cleanup awaited event"""
+#         if not (IS_ENGINE):
+#             return  # type: ignore
+#         f = BINDINGS["cleanup_trigger"]
+#         return f(self.trigger)
 
 
 def dispatch_event(evt: Event, originating_task: StarTask) -> None:
@@ -875,7 +875,7 @@ def compile(start_event: Event) -> Program:
         task_to_checkpoint[name] = checkpoint
         counter += 1
 
-    print(task_to_checkpoint)
+    logger.debug(task_to_checkpoint)
 
     for name, f_wrap, pass_task_id, checkpoint in preview_task_list:
         # print(name, f_wrap)

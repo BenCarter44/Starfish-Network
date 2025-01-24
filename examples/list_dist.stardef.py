@@ -21,46 +21,25 @@ def input_event(evt: star.Event, task_id: star.StarTask):
     evt_new.data = {"a": a, "b": b}
     evt_new.set_target("cast_numbers")
 
-    # print("Await!")
-    awaitable = star.AwaitEvent(evt_new, task_id)
-    evt_out = awaitable.wait_for_result(timeout=30)
-    # print("Done Await!")
-
-    evt_new = star.Event()
-    evt_new.data = {"a": evt_out.data["a"], "b": evt_out.data["b"]}
-    evt_new.set_target("run_total")
-
     return evt_new
 
 
 @star.task("cast_numbers", checkpoint=False)
 def cast_numbers(evt):
-    evt.data["a"] = int(evt.data["a"])
-    evt.data["b"] = int(evt.data["b"])
-    return evt
+    evt_new = star.Event()
+    evt_new.data["a"] = int(evt.data["a"])
+    evt_new.data["b"] = int(evt.data["b"])
+    evt_new.set_target("run_total")
+    return evt_new
 
 
 @star.task("run_total", checkpoint=False)
 def run_total(evt):
+    evt_new = star.Event()
     total = evt.data.get("a") + evt.data.get("b")
-
-    # f = star_os.open("/path/to/distributed/file")
-    # f.close()
-
-    # d = star_os.open_datapipe("/path/to/data/pipe.pipe")
-    # d.close()
-
-    evt.data["total"] = total
-
-    if evt.system is None:
-        evt.set_conditional_target("print_conditional")
-
-    # evt_new = star.Event(2, 4)
-    # evt_new.total = total
-    # time.sleep(5)
-    # evt_new.set_target("print_conditional")
-
-    return evt
+    evt_new.data["total"] = total
+    evt_new.set_conditional_target("print_conditional")
+    return evt_new
 
 
 # Condition: total % 2 == 0
@@ -91,38 +70,14 @@ def print_odd(evt):
     return evt_new
 
 
-@star.task("to_capital", checkpoint=False)
-def to_cap(evt: star.Event):
-    evt.data["token"] = evt.data.get("token").upper()
-    return evt
-
-
 # Condition: None
 @star.task("list_intro", pass_task_id=True)
 def list_intro(evt, task_id: star.StarTask):
     i = input("Please type a string: ")
-
-    await_group = star.AwaitGroup(originating_task=task_id)
-    for index, token in enumerate(i):
-        # create a await event for each.
-        evt = star.Event()
-        evt.data["index"] = index
-        evt.data["token"] = token
-        evt.set_target("to_capital")
-        await_group.add_event(evt)
-
-    results = await_group.wait_result_for_all(timeout=30)
-    string = list(" " * len(i))
-    for result in results:
-        string[result.data["index"]] = result.data["token"]
-
-    await_group.close()
-
-    string = "".join(string)  # type: ignore
+    string = i.upper()
     print(string)
     evt_new = star.Event()
     evt_new.set_target("input")
-    print(evt)
     return evt_new
 
 

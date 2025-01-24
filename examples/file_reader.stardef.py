@@ -20,11 +20,8 @@ def read_file(evt: star.Event, task: star.StarTask):
     f = open("example.txt", "w+")
 
     evt_new = star.Event()
-    evt_new.data["count"] = evt.data["count"]
-    evt_new.set_target("counter_add")
-    aw = star.AwaitEvent(evt_new, task)
-    evt_ret = aw.wait_for_result()
-    counter = evt_ret.data["count"]
+    evt_new.data["count"] = evt.data["count"] + 1
+    counter = evt.data["count"]
 
     f.write(str(counter))
     f.write("\n")
@@ -32,17 +29,9 @@ def read_file(evt: star.Event, task: star.StarTask):
 
     time.sleep(1)
 
-    evt_out = star.Event()
-    evt_out.set_target("read_file")
-    evt_out.data["count"] = counter
+    evt_new.set_target("read_file")
 
-    return evt_out
-
-
-@star.task("counter_add")
-def counter(evt):
-    evt.data["count"] = evt.data["count"] + 1
-    return evt
+    return evt_new
 
 
 ##################################################################################
