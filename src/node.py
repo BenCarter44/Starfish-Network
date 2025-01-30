@@ -2,9 +2,10 @@
 import random
 from typing import cast
 import uuid
+from src.communications.KeepAliveService import KeepAliveCommService
 from src.communications.PeerService import PeerService
 from src.communications.main_pb2_grpc import add_PeerServiceServicer_to_server
-from src.core.star_components import Program, StarProcess, StarTask
+from src.core.star_components import Event, Program, StarProcess, StarTask
 from src.plugboard import PlugBoard
 
 # except:
@@ -24,6 +25,8 @@ try:
     from .communications.main_pb2_grpc import (
         add_DHTServiceServicer_to_server,
         add_TaskServiceServicer_to_server,
+        add_PeerServiceServicer_to_server,
+        add_KeepAliveServiceServicer_to_server,
     )
     from .core.star_components import StarAddress
 except:
@@ -32,6 +35,8 @@ except:
     from communications.main_pb2_grpc import (
         add_DHTServiceServicer_to_server,
         add_TaskServiceServicer_to_server,
+        add_PeerServiceServicer_to_server,
+        add_KeepAliveServiceServicer_to_server,
     )
     from core.star_components import StarAddress
 
@@ -56,13 +61,34 @@ class Node:
 
         self.server = grpc.aio.server(maximum_concurrent_rpcs=None)
         add_DHTServiceServicer_to_server(
-            servicer=DHTService(self.plugboard, self.addr), server=self.server
+            servicer=DHTService(
+                self.plugboard, self.addr, self.plugboard.keep_alive_manager
+            ),
+            server=self.server,
         )
         add_TaskServiceServicer_to_server(
-            servicer=TaskService(self.plugboard, self.addr), server=self.server
+            servicer=TaskService(
+                self.plugboard,
+                self.addr,
+                self.plugboard.keep_alive_manager,
+            ),
+            server=self.server,
         )
         add_PeerServiceServicer_to_server(
-            servicer=PeerService(self.plugboard, self.addr), server=self.server
+            servicer=PeerService(
+                self.plugboard,
+                self.addr,
+                self.plugboard.keep_alive_manager,
+            ),
+            server=self.server,
+        )
+        add_KeepAliveServiceServicer_to_server(
+            servicer=KeepAliveCommService(
+                self.plugboard,
+                self.addr,
+                self.plugboard.get_kp_man(),
+            ),
+            server=self.server,
         )
 
         port = self.transport.get_string_channel()
@@ -87,7 +113,8 @@ class Node:
     async def peer_discovery_task(self):
         """The peer discovery task. Do round every 5 sec"""
         while True:
-            await asyncio.sleep(5)
+            await asyncio.sleep(10)
+            # return
             if self.is_connected or self.plugboard.received_rpcs.is_set():
                 await self.plugboard.perform_discovery_round()
 
@@ -119,14 +146,15 @@ class Node:
         for task in task_list:
             proc.add_task(task)
 
-        for task in proc.get_tasks():
-            await self.plugboard.allocate_task(task)  # includes callable inside.
+        await self.plugboard.allocate_program(proc)  # includes callable inside.
 
         # logger.info(f"Task DHT of {self.addr.hex()}")
-        # print(self.plugboard.task_table.fetch_copy())
+        # print(self.plugboard.task_table.fetch_dict())
 
         program.start.target.attach_to_process(proc)
+
         # await asyncio.sleep(100)
         logger.info(f"Start Event: {program.start.target.get_id().hex()}")
+        program.start.nonce = 0
         await self.plugboard.dispatch_event(program.start)
         return proc

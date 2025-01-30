@@ -13,21 +13,26 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+@star.task("start")
+def start_event(evt: star.Event):
+
+    evt_new = star.Event()
+    evt_new.data["counter"] = 0
+    evt_new.set_target("input")
+    return evt_new
+
+
 @star.task("input")
 def input_event(evt: star.Event):
 
-    print("Input Event!")
+    print(f"Query: {evt.data['counter']}")
     a = input("Type in a number: ")
     b = input("Type in a second number: ")
 
     evt_new = star.Event()
-    data = {
-        "a": int(a),
-        "b": int(b),
-    }
+    data = {"a": int(a), "b": int(b), "counter": evt.data["counter"] + 1}
     evt_new.data = data
     evt_new.set_target("run_total")
-
     return evt_new
 
 
@@ -36,9 +41,7 @@ def run_total(evt):
     total = evt.data["a"] + evt.data["b"]
 
     evt_new = star.Event()
-    data = {
-        "total": total,
-    }
+    data = {"total": total, "counter": evt.data["counter"]}
     evt_new.data = data
     # time.sleep(2)
     evt_new.set_conditional_target("print_conditional")
@@ -53,7 +56,7 @@ def print_even(evt):
     total = evt.data.get("total")
     print(f"The total is even! {total}")
 
-    evt_new = star.Event(data={"total": total})
+    evt_new = star.Event(data={"total": total, "counter": evt.data["counter"]})
     evt_new.set_target("input")
 
     return evt_new
@@ -79,7 +82,7 @@ def print_even(evt):
 def print_odd(evt):
     print(f"The total is odd! {evt.data.get('total')}")
 
-    evt_new = star.Event()
+    evt_new = star.Event(data={"counter": evt.data["counter"]})
     evt_new.set_target("input")
 
     return evt_new
@@ -119,6 +122,6 @@ if __name__ == "__main__":
     logger.info("Compiler start")
 
     start_event = star.Event()
-    start_event.set_target("input")
+    start_event.set_target("start")
     pgrm = star.compile(start_event=start_event)
     pgrm.save("my_program.star")

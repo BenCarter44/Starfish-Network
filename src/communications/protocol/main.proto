@@ -9,6 +9,8 @@ enum DHTStatus {
     FOUND = 1;
     NOT_FOUND = 2;
     OWNED = 3;
+    OK = 4;
+    ERR = 5;
 }
 
 enum DHTSelect {
@@ -16,6 +18,12 @@ enum DHTSelect {
     PEER_ID = 1;
     TASK_ID = 2;
     FILE_ID = 3;
+}
+
+enum MODE {
+    NA = 0;
+    FORWARD = 1;
+    BACKWARD = 2;
 }
 
 message DHT_Fetch_Request {
@@ -39,11 +47,86 @@ message DHT_Store_Request {
     repeated bytes query_chain = 3;
     DHTStatus status = 4;
     DHTSelect select = 5;
+    bytes who = 6;
 }
 
 message DHT_Store_Response {
     bytes key = 1;
     repeated bytes query_chain = 2;
+    DHTStatus status = 3;
+    DHTSelect select = 4;
+    bytes who = 5;
+}
+
+message DHT_Delete_Request {
+    bytes key = 1;
+    repeated bytes query_chain = 2;
+    DHTStatus status = 3;
+    DHTSelect select = 4;
+    bytes who = 5;
+}
+
+message DHT_Delete_Response {
+    // bytes key = 1;
+    // repeated bytes query_chain = 2;
+    DHTStatus status = 3;
+    // DHTSelect select = 4;
+    // bytes who = 5;
+}
+
+message DHT_Delete_Notice_Request {
+    bytes key = 1;
+    DHTSelect select = 4;
+    bytes who = 5;
+}
+
+message DHT_Delete_Notice_Response {
+    // bytes key = 1;
+    // repeated bytes query_chain = 2;
+    DHTStatus status = 3;
+    // DHTSelect select = 4;
+    // bytes who = 5;
+}
+
+message DHT_Update_Request {
+    bytes key = 1;
+    bytes value = 2;
+    DHTSelect select = 4;
+    bytes who = 5;
+}
+
+message DHT_Update_Notice_Request {
+    bytes key = 1;
+    bytes value = 2;
+    DHTSelect select = 4;
+    bytes who = 5;
+}
+
+message DHT_Update_Response {
+    // bytes key = 1;
+    // repeated bytes query_chain = 2;
+    DHTStatus status = 3;
+    // DHTSelect select = 4;
+    // bytes who = 5;
+}
+
+message DHT_Update_Notice_Response {
+    // bytes key = 1;
+    // repeated bytes query_chain = 2;
+    DHTStatus status = 3;
+    // DHTSelect select = 4;
+    // bytes who = 5;
+}
+
+message DHT_Register_Notices_Request {
+    bytes key = 1;
+    bytes who = 2;
+    DHTSelect select = 3;
+}
+
+message DHT_Register_Notices_Response {
+    // bytes key = 1;
+    // bytes who = 2;
     DHTStatus status = 3;
     DHTSelect select = 4;
 }
@@ -66,10 +149,13 @@ message TaskAllocate_Response {
 
 message SendEvent_Request {
     Event evt = 1;
+    bytes who = 2;
 }
 
 message SendEvent_Response {
     DHTStatus status = 1;
+    int32 remaining = 2;
+    bytes who = 3;
 }
 
 message Bootstrap_Request {
@@ -86,6 +172,36 @@ message Bootstrap_Item {
     TransportAddress addr = 2;
 }
 
+message Heartbeat_Request {
+    bytes custom_data = 1;  
+}
+
+message Heartbeat_Response {
+    bytes custom_data = 1;
+}
+
+message SendMonitor_Request {
+    bytes process_data = 1; // Process.
+    bytes who = 2;
+    TaskIdentifier task = 3;
+}
+
+message SendMonitor_Response {
+    DHTStatus status = 1;
+}
+
+message SendCheckpoint_Request {
+    bytes process_data = 1; // Process.
+    bytes who = 2;
+    bytes event_origin = 3;
+    bytes event_to = 4;
+    MODE mode = 5;
+}
+
+message SendCheckpoint_Response {
+    DHTStatus status = 1;
+}
+
 // /////////////////////////////////////////
 
 service DHTService {
@@ -95,6 +211,22 @@ service DHTService {
 
     // Store item from DHT
     rpc StoreItem(DHT_Store_Request) returns (DHT_Store_Response) {}
+
+    // Delete item from DHT
+    rpc DeleteItem(DHT_Delete_Request) returns (DHT_Delete_Response) {}
+
+    // Deleted notice from DHT
+    rpc DeletedNotice(DHT_Delete_Notice_Request) returns (DHT_Delete_Response) {}
+
+    // Update item from DHT
+    rpc UpdateItem(DHT_Update_Request) returns (DHT_Update_Response) {}
+
+    // Update notice form DHT
+    rpc UpdatedNotice(DHT_Update_Notice_Request) returns (DHT_Update_Notice_Response) {}
+
+    // Register notice from DHT
+    rpc RegisterNotice(DHT_Register_Notices_Request) returns (DHT_Register_Notices_Response) {}
+
 }
 
 service TaskService {
@@ -104,15 +236,30 @@ service TaskService {
 
     // Send Event
     rpc SendEvent(SendEvent_Request) returns (SendEvent_Response) {}
+
+    // Request Process Monitor
+    rpc SendMonitorRequest(SendMonitor_Request) returns (SendMonitor_Response) {}
+
+    // Send checkpoint
+    rpc SendCheckpoint(SendCheckpoint_Request) returns (SendCheckpoint_Response) {}
+
 }
 
-service PingPong {
-
-    // Send PING
-    rpc SendPing(PING) returns (PONG) {}
-}
 
 service PeerService {
 
     rpc Bootstrap(Bootstrap_Request) returns (Bootstrap_Response) {}
+}
+
+//////////////////////////
+
+// Keep Alive Manager
+
+service KeepAliveService {
+
+    // PingPong - Is alive?
+    rpc SendPing(PING) returns (PONG) {}
+    
+    // KeepAlive
+    rpc SendHeartbeat(Heartbeat_Request) returns (Heartbeat_Response) {}
 }

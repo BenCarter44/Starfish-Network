@@ -77,41 +77,104 @@ if __name__ == "__main__":
             logger.info("Connecting Addr#1 to Addr#2")
             await node.connect_to_peer(addr_table[1][0], addr_table[1][1])
 
-            await asyncio.sleep(10)
+            await asyncio.sleep(5)
             logger.warning("Final Node1 PEER LIST")
             node.plugboard.peer_table.fancy_print()
 
-        if server_number == 2:
-            await asyncio.sleep(10)
+            logger.warning("Final Keep Alive listening")
+            node.plugboard.print_keep_alives()
+
+            logger.warning("Final subscriptions serving")
+            node.plugboard.print_cache_subscriptions_serve()
+
+            logger.warning("Final subscriptions listening")
+            node.plugboard.print_cache_subscriptions_listening()
+
+        elif server_number == 2:
+            await asyncio.sleep(7)
             logger.info("Connecting Addr#2 to Addr#3 & 4")
             await node.connect_to_peer(addr_table[2][0], addr_table[2][1])
-            await node.connect_to_peer(addr_table[3][0], addr_table[3][1])
+            # await node.connect_to_peer(addr_table[3][0], addr_table[3][1])
 
             logger.warning("Final Node2")
             node.plugboard.peer_table.fancy_print()
 
-        if server_number == 3 or server_number == 4:
-            await asyncio.sleep(5)
-            logger.warning(f"Final Node{server_number}")
+            logger.warning("Final Keep Alive listening")
+            node.plugboard.print_keep_alives()
+
+            logger.warning("Final subscriptions serving")
+            node.plugboard.print_cache_subscriptions_serve()
+
+            logger.warning("Final subscriptions listening")
+            node.plugboard.print_cache_subscriptions_listening()
+
+        elif server_number == 3:
+            await asyncio.sleep(10)
+            logger.info("Connecting Addr#2 to Addr#3 & 4")
+            await node.connect_to_peer(addr_table[3][0], addr_table[3][1])
+            # await node.connect_to_peer(addr_table[3][0], addr_table[3][1])
+
+            logger.warning("Final Node2")
             node.plugboard.peer_table.fancy_print()
+
+            logger.warning("Final Keep Alive listening")
+            node.plugboard.print_keep_alives()
+
+            logger.warning("Final subscriptions serving")
+            node.plugboard.print_cache_subscriptions_serve()
+
+            logger.warning("Final subscriptions listening")
+            node.plugboard.print_cache_subscriptions_listening()
+
+        if server_number == 4:
+            await asyncio.sleep(15)
+
+            logger.warning("Final Node2")
+            node.plugboard.peer_table.fancy_print()
+
+            logger.warning("Final Keep Alive listening")
+            node.plugboard.print_keep_alives()
+
+            logger.warning("Final subscriptions serving")
+            node.plugboard.print_cache_subscriptions_serve()
+
+            logger.warning("Final subscriptions listening")
+            node.plugboard.print_cache_subscriptions_listening()
 
         if server_number == 1:
             pass
-            await asyncio.sleep(45)
-            pgrm = star.Program(read_pgrm="examples/my_list_program.star")
+            await asyncio.sleep(5)
+            pgrm = star.Program(read_pgrm="examples/my_program.star")
             logger.info(
                 f"I: Opening program '{pgrm.saved_data['pgrm_name']}' from {pgrm.saved_data['date_compiled']}\n"
             )
             process = await node.start_program(pgrm, b"User")
 
-        elif server_number == 4:
+            logger.warning("Final Node1 PEER LIST - task")
+            node.plugboard.peer_table.fancy_print()
+
+            logger.warning("Final Node1 TASK LIST - task")
+            node.plugboard.task_table.fancy_print()
+
+            logger.warning("Final Keep Alive listening")
+            node.plugboard.print_keep_alives()
+
+            logger.warning("Final subscriptions serving")
+            node.plugboard.print_cache_subscriptions_serve()
+
+            logger.warning("Final subscriptions listening")
+            node.plugboard.print_cache_subscriptions_listening()
+
+        elif server_number == 2:
             pass
-            await asyncio.sleep(40)
-            pgrm = star.Program(read_pgrm="examples/file_program.star")
-            logger.info(
-                f"I: Opening program '{pgrm.saved_data['pgrm_name']}' from {pgrm.saved_data['date_compiled']}\n"
-            )
-            process = await node.start_program(pgrm, b"Bob")
+            await asyncio.sleep(20)
+            logger.warning("Final Node1 TASK LIST - task")
+            node.plugboard.task_table.fancy_print()
+            # pgrm = star.Program(read_pgrm="examples/file_program.star")
+            # logger.info(
+            #     f"I: Opening program '{pgrm.saved_data['pgrm_name']}' from {pgrm.saved_data['date_compiled']}\n"
+            # )
+            # process = await node.start_program(pgrm, b"Bob")
 
         await asyncio.sleep(1000)
         logger.critical("Main done!")
@@ -122,7 +185,7 @@ if __name__ == "__main__":
     ch = logging.StreamHandler(sys.stdout)
     ch.setLevel(logging.DEBUG)
     ch.setFormatter(CustomFormatter())
-    logging.basicConfig(handlers=[ch], level=logging.INFO)
+    logging.basicConfig(handlers=[ch], level=logging.WARNING)
 
     asyncio.get_event_loop().set_debug(True)
     asyncio.run(main())
