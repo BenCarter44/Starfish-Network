@@ -16,8 +16,8 @@ class MonitorService:
         """
 
     def add_process(self, proc: StarProcess, peer_id: bytes, task: StarTask):
-        logger.warning(
-            f"Add process to monitor: {proc.get_id().hex()} machine: {peer_id.hex()} - task: {task.get_id().hex()}"
+        logger.debug(
+            f"TASK - Add process to monitor: {proc.get_id().hex()} machine: {peer_id.hex()} - task: {task.get_id().hex()}"
         )
         key = (proc.get_id(), peer_id)
         if key in self.process_table:
@@ -33,8 +33,8 @@ class MonitorService:
         process_id = recent_event.target.get_process_id()
 
         key = (process_id, peer_id)
-        logger.debug(key)
-        logger.debug(self.process_table)
+        logger.debug(f"TASK - {key}")
+        logger.debug(f"TASK - {self.process_table}")
         if key not in self.process_table:
             raise ValueError("Process + Machine pair not in table!")
 
@@ -48,8 +48,8 @@ class MonitorService:
             origin_target = origin_event.target.get_id()
             origin_target_nonce = origin_event.nonce
 
-        logger.warning(
-            f"Add checkpoint: proc: {process_id.hex()} machine: {peer_id.hex()} origin_event: {origin_target.hex()}-{origin_target_nonce} recent-event: {recent_event.target.get_id().hex()}-{recent_event.nonce}"
+        logger.debug(
+            f"TASK - Add checkpoint: proc: {process_id.hex()} machine: {peer_id.hex()} origin_event: {origin_target.hex()}-{origin_target_nonce} recent-event: {recent_event.target.get_id().hex()}-{recent_event.nonce}"
         )
 
         self.process_table[key][origin_target] = recent_event
@@ -67,8 +67,8 @@ class MonitorService:
         process_id = recent_event.target.get_process_id()
 
         key = (process_id, peer_id)
-        logger.debug(key)
-        logger.debug(self.process_table)
+        logger.debug(f"TASK - {key}")
+        logger.debug(f"TASK - {self.process_table}")
         if key not in self.process_table:
             # logger.info(f"False 1 {key} - {list(self.process_table.keys())}")
             return False
@@ -83,8 +83,8 @@ class MonitorService:
             origin_target = origin_event.target.get_id()
             origin_target_nonce = origin_event.nonce
 
-        logger.warning(
-            f"Remove checkpoint: proc: {process_id.hex()} machine: {peer_id.hex()} origin_event: {origin_target.hex()}-{origin_target_nonce} recent-event: {recent_event.target.get_id().hex()}-{recent_event.nonce}"
+        logger.debug(
+            f"TASK - Remove checkpoint: proc: {process_id.hex()} machine: {peer_id.hex()} origin_event: {origin_target.hex()}-{origin_target_nonce} recent-event: {recent_event.target.get_id().hex()}-{recent_event.nonce}"
         )
 
         if (
@@ -110,8 +110,8 @@ class MonitorService:
         if key not in self.process_table:
             return None
 
-        logger.debug(self.process_table)
-        logger.debug(key)
-        logger.debug(task_id)
+        logger.debug(f"TASK - {self.process_table}")
+        logger.debug(f"TASK - {key}")
+        logger.debug(f"TASK - {task_id}")
 
         return self.process_table[key].get(task_id)

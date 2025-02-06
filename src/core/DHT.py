@@ -13,36 +13,11 @@ from typing import Any
 import numpy as np
 import dill  # type: ignore
 import hashlib
-import src.core.star_components as star
 import logging
 from src.communications.main_pb2 import DHTStatus
+from src.util.util import xor
 
 logger = logging.getLogger(__name__)
-
-
-def xor(a: bytes, b: bytes) -> bytes:
-    """Calculate XOR of bytes
-
-    Padded with 0's for longest
-
-    Args:
-        a (bytes): bytes
-        b (bytes): bytes
-
-    Returns:
-        bytes: a ^ b
-    """
-    a_buf = np.frombuffer(a, dtype=np.uint8)
-    b_buf = np.frombuffer(b, dtype=np.uint8)
-    a_len = a_buf.shape[0]
-    b_len = b_buf.shape[0]
-    # append 0s to MSB until same size.
-    if a_len > b_len:
-        b_buf = np.pad(b_buf, (a_len - b_len, 0), "constant", constant_values=(0,))
-    elif b_len > a_len:
-        a_buf = np.pad(a_buf, (b_len - a_len, 0), "constant", constant_values=(0,))
-
-    return (a_buf ^ b_buf).tobytes()
 
 
 def hash_func(data: Any) -> bytes:
@@ -223,7 +198,7 @@ class DHT:
                 value += "..."
             else:
                 value = value.hex()
-            logger.info(f"{cache_text}\t[{key}]\t = {value}")
+            logger.info(f"DHT - {cache_text}\t[{key}]\t = {value}")
 
     def set(
         self,
@@ -245,7 +220,7 @@ class DHT:
             DHT_Response: _description_
         """
         if len(key) != 8:
-            logger.warning("Key in DHT set is not 8 bytes!")
+            logger.warning(f"DHT - Key in DHT set is not 8 bytes!")
 
         # store in myself. Then, see if there are any closer people to also send to.
 

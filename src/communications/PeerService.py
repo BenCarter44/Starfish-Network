@@ -29,7 +29,7 @@ class PeerDiscoveryClient:
     async def Bootstrap(
         self, peerID_to: bytes, transport_to: StarAddress, timeout=0.2
     ) -> list[pb_base.Bootstrap_Item]:
-        logger.debug(f"Create Bootstrap Request for {peerID_to.hex()}")
+        logger.debug(f"DISCOVERY - Create Bootstrap Request for {peerID_to.hex()}")
         req = pb_base.Bootstrap_Request(
             peerID=self.peer_id, dial_from=self.transport.to_pb()
         )
@@ -41,7 +41,7 @@ class PeerDiscoveryClient:
         try:
             recv = await self.stub.Bootstrap(req)
         except Exception as e:
-            logger.debug(f"Deletion notice error")
+            logger.debug(f"DISCOVERY - Deletion notice error")
             await channel_kp.kill_update()
             return []
 
@@ -62,7 +62,7 @@ class PeerService(pb.PeerServiceServicer):
 
         peerID = request.peerID
         transport_address = StarAddress.from_pb(request.dial_from)
-        logger.debug(f"Got Bootstrap Request from {peerID.hex()}")
+        logger.debug(f"DISCOVERY - Got Bootstrap Request from {peerID.hex()}")
         await self.internal_callback.add_peer(peerID, transport_address)
 
         # peer_address = context.peer()

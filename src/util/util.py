@@ -1,3 +1,4 @@
+import os
 import numpy as np
 
 
@@ -65,6 +66,124 @@ def decompress_bytes_to_str(b: bytes) -> str:
         character = token - 1 + 65
         out += chr(character)
     return out
+
+
+def and_bytes(a: bytes, b: bytes):
+    assert len(a) == len(b)
+    c = (int.from_bytes(a, "big") & int.from_bytes(b, "big")).to_bytes(
+        max(len(a), len(b)), "big"
+    )
+    return c
+
+
+def or_bytes(a: bytes, b: bytes):
+    assert len(a) == len(b)
+    c = (int.from_bytes(a, "big") | int.from_bytes(b, "big")).to_bytes(
+        max(len(a), len(b)), "big"
+    )
+    return c
+
+
+def not_bytes(input_bytes: bytes) -> bytes:
+    """
+    Perform a bitwise NOT operation on a bytes object.
+
+    Args:
+        input_bytes (bytes): The input bytes object.
+
+    Returns:
+        bytes: A new bytes object with the bitwise NOT applied to each byte.
+    """
+    return bytes(~b & 0xFF for b in input_bytes)
+
+
+def xor_bytes(a: bytes, b: bytes):
+    assert len(a) == len(b)
+    c = (int.from_bytes(a, "big") ^ int.from_bytes(b, "big")).to_bytes(
+        max(len(a), len(b)), "big"
+    )
+    assert c == xor(a, b)
+    return c
+
+
+def xor(a: bytes, b: bytes) -> bytes:
+    """Calculate XOR of bytes
+
+    Padded with 0's for longest
+
+    Args:
+        a (bytes): bytes
+        b (bytes): bytes
+
+    Returns:
+        bytes: a ^ b
+    """
+    a_buf = np.frombuffer(a, dtype=np.uint8)
+    b_buf = np.frombuffer(b, dtype=np.uint8)
+    a_len = a_buf.shape[0]
+    b_len = b_buf.shape[0]
+    # append 0s to MSB until same size.
+    if a_len > b_len:
+        b_buf = np.pad(b_buf, (a_len - b_len, 0), "constant", constant_values=(0,))
+    elif b_len > a_len:
+        a_buf = np.pad(a_buf, (b_len - a_len, 0), "constant", constant_values=(0,))
+
+    return (a_buf ^ b_buf).tobytes()
+
+
+def pad_bytes(b: bytes, l: int) -> bytes:
+    """Pad bytes on left (most significant bit first, big endian)
+
+    Args:
+        b (bytes): bytes to pad
+        l (int): length
+
+    Returns:
+        bytes: The padded bytes
+    """
+    data = bytearray(b)
+    padding_byte = b"\x00"
+    data = data.rjust(l, padding_byte)  # pad on MSB
+    return bytes(data)
+
+
+import base64
+
+
+def encode_to_base32(data: bytes) -> str:
+    """
+    Encodes bytes to a Base32 string.
+
+    Args:
+        data (bytes): The bytes to encode.
+
+    Returns:
+        str: Base32 encoded string.
+    """
+    s = base64.b32encode(data).decode("utf-8")
+    return s.replace("=", "").lower()
+
+
+def decode_from_base32(encoded_data: str) -> bytes:
+    """
+    Decodes bytes to a Base32 string.
+
+    Args:
+        data (str): The string to decode.
+
+    Returns:
+        bytes: bytes
+    """
+    while len(encoded_data) % 8 > 0:
+        encoded_data += "="
+    return base64.b32decode(encoded_data.upper())
+
+
+def join_paths(*paths: str) -> str:
+    normalized_paths = [
+        path.replace("\\", os.sep).replace("/", os.sep) for path in paths
+    ]
+    return os.path.join(*normalized_paths)
 
 
 if __name__ == "__main2__":

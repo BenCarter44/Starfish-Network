@@ -27,7 +27,7 @@ class KeepAliveComm:
         self.stub = pb.KeepAliveServiceStub(channel)
 
     async def SendPing(self, timeout=0.2):
-        logger.debug("SendPing Request")
+        logger.debug(f"KEEPALIVE - SendPing Request")
         request = pb_base.PING(value=int(time.time()))
         response = await self.stub.SendPing(request, timeout=timeout)
         return abs(time.time() - response) < 2
@@ -40,7 +40,7 @@ class KeepAliveComm:
                 request, timeout=timeout
             )  # send my heartbeat to peer
         except Exception as e:
-            logger.debug(f"SendHeartbeat error")
+            logger.debug(f"KEEPALIVE - SendHeartbeat error")
             return False
         return dill.loads(response.custom_data)
 
@@ -61,7 +61,7 @@ class KeepAliveCommService(pb.KeepAliveServiceServicer):
         request: pb_base.PING,
         context: grpc.aio.ServicerContext,
     ) -> pb_base.PONG:
-        logger.debug("Recv Ping Request")
+        logger.debug(f"KEEPALIVE - Recv Ping Request")
         # peer_address = context.peer()
         # await self.keep_alive.receive_ping(peer_address)
         return pb_base.PONG(value=int(time.time()))

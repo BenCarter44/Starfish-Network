@@ -42,7 +42,7 @@ class KeepAlive_Channel:
         self.peer_id_assoc = peer
 
     def add_callbacks(self, trigger: int, callback: Callable):
-        logger.debug(f"Add callback: {callback} - {trigger}")
+        logger.debug(f"KEEPALIVE - Add callback: {callback} - {trigger}")
 
         self.callbacks[trigger].append(callback)
 
@@ -71,7 +71,7 @@ class KeepAlive_Channel:
         return self.connected
 
     async def heartbeat(self, i):
-        # logger.debug(f"Send Heartbeat request: {self.peer_id_assoc.hex()}")
+        logger.debug(f"KEEPALIVE - Send Heartbeat request: {self.peer_id_assoc.hex()}")
         try:
             hb = await self.comm.SendHeartbeat(self.peer_id_assoc)
         except:
@@ -104,7 +104,7 @@ class KeepAlive_Channel:
             return
         self.connected = False
         logger.warning(
-            f"PEER OFFLINE! {self.peer_id_assoc.hex()} CALL: {self.callbacks[TRIGGER_OFFLINE]}"
+            f"KEEPALIVE - PEER OFFLINE! {self.peer_id_assoc.hex()} CALL: {self.callbacks[TRIGGER_OFFLINE]}"
         )
 
         for cb in self.callbacks[TRIGGER_OFFLINE]:
@@ -129,7 +129,7 @@ class KeepAlive_Management:
     def fancy_print(self):
         for s in self.channel_map:
             logger.info(
-                f"{s} : {self.channels[s].is_connected()} - {self.channels[s].last_seen}"
+                f"KEEPALIVE - {s} : {self.channels[s].is_connected()} - {self.channels[s].last_seen}"
             )
 
     def get_channel(self, string: str) -> grpc.aio.Channel:
@@ -142,7 +142,7 @@ class KeepAlive_Management:
         s = addr.get_string_channel()
         channel = self.get_channel(s)
         if s not in self.channels:
-            logger.debug(f"Create keep alive channel: {s}")
+            logger.debug(f"KEEPALIVE - Create keep alive channel: {s}")
             self.channels[s] = KeepAlive_Channel(channel, peer)
 
             async def tmp():
@@ -174,7 +174,7 @@ class KeepAlive_Management:
         if channel_recv_peer not in self.channels:
             return  # I don't have any callbacks registered to it.
 
-        logger.debug(f"Receive ping from: {channel_recv_peer}")
+        logger.debug(f"KEEPALIVE - Receive ping from: {channel_recv_peer}")
         self.channels[channel_recv_peer].update()
         return
 
@@ -207,10 +207,10 @@ class KeepAlive_Management:
         timeout_sec: float = 0,
     ) -> KeepAlive_Channel:
 
-        logger.debug(f"Register Channel Service: {channel_string}")
+        logger.debug(f"KEEPALIVE - Register Channel Service: {channel_string}")
 
         if channel_string not in self.roundrobin_channels:  # tracking
-            logger.debug(f"Create keep alive channel: {channel_string}")
+            logger.debug(f"KEEPALIVE - Create keep alive channel: {channel_string}")
 
             if channel_string not in self.channels:  # overall
                 self.channels[channel_string] = KeepAlive_Channel(channel, peer_id)
@@ -228,7 +228,7 @@ class KeepAlive_Management:
         return self.channels[channel_string]
 
     async def keep_alive_task(self):
-        logger.debug("Keep Alive task running")
+        logger.debug("KEEPALIVE - Keep Alive task running")
         counter = 0
         while True:
             if len(self.roundrobin_channels) == 0:

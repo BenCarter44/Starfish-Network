@@ -93,13 +93,13 @@ class TaskService(pb.TaskServiceServicer):
 
         task: StarTask = evt.target
 
-        logger.debug("Get task owner")
+        logger.debug(f"TASK - Get task owner")
 
         # peer_address = context.peer()
         # await self.keep_alive.receive_ping(peer_address)
 
         peerID: bytes = await self.internal_callback.get_task_owner(task)
-        logger.debug(f"Task: {task.get_id().hex()} OWNED by {peerID.hex()}")
+        logger.debug(f"TASK - Task: {task.get_id().hex()} OWNED by {peerID.hex()}")
 
         if peerID == b"":
             return pb_base.SendEvent_Response(
@@ -112,12 +112,12 @@ class TaskService(pb.TaskServiceServicer):
 
         if evt.is_checkpoint:
             # Check-in to monitor --
-            logger.debug(evt.origin)
-            logger.debug(evt)
+            logger.debug(f"TASK - {evt.origin}")
+            logger.debug(f"TASK - {evt}")
 
             task_to = evt.target
             if evt.origin is None:
-                logger.warning("Send checkpoint when evt.origin is none????")
+                logger.warning(f"TASK - Send checkpoint when evt.origin is none????")
             else:
                 task_to = evt.origin.target
 
@@ -146,7 +146,7 @@ class TaskService(pb.TaskServiceServicer):
         # Send to peer that owns the task!
         tp = await self.internal_callback.get_peer_transport(peerID)
         if tp is None:
-            logger.info(f"Transport for {peerID.hex()} not found!")
+            logger.info(f"TASK - Transport for {peerID.hex()} not found!")
             return pb_base.SendEvent_Response(
                 status=pb_base.DHTStatus.NOT_FOUND, remaining=0
             )
@@ -155,7 +155,7 @@ class TaskService(pb.TaskServiceServicer):
         try:
             response = await taskClient.SendEvent(evt, timeout=0.4)
         except Exception as e:
-            logger.warning(f"Transport for {peerID.hex()} timeout {e}")
+            logger.warning(f"TASK - Transport for {peerID.hex()} timeout {e}")
             return pb_base.SendEvent_Response(
                 pb_base.DHTStatus.ERR, remaining=0, who=peerID
             )

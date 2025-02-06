@@ -26,6 +26,23 @@ enum MODE {
     BACKWARD = 2;
 }
 
+enum FILE_TYPE {
+    FILE = 0;
+    IO = 1;
+    DIR = 2;
+    CHUNK = 3; // not used.
+}
+
+enum FILE_REQUEST {
+    READ = 0;
+    WRITE = 1;
+    SEEK = 2;
+    CREATE = 3;
+    CLOSE = 4;
+    OPEN = 5;
+    TELL = 6;
+}
+
 message DHT_Fetch_Request {
     bytes key = 1;
     repeated bytes query_chain = 2;
@@ -204,6 +221,47 @@ message SendCheckpoint_Response {
 
 // /////////////////////////////////////////
 
+message FileGeneric {
+    FILE_TYPE type = 1;
+    bytes contents = 2;
+    bytes date_created = 3;
+}
+
+message FileValue {
+    bytes peerID = 1;
+    bytes identifier = 2;
+}
+
+message File {
+    int32 length = 1;
+    bytes data = 2;
+}
+
+message IOContainer {
+    bytes peerID = 1; // host bytes
+    bytes ioKey = 2; // IO key, used for address on the peer.
+}
+
+message Directory {
+    int32 number_of_files = 1;
+    repeated bytes file_list = 2;
+}
+
+message FileServiceRequest {
+    bytes local_file_identifier = 1;
+    bytes key = 2;
+    FILE_REQUEST file_request = 3;
+    bytes data = 4;
+    bytes process_id = 5;
+}
+
+message FileServiceResponse {
+    DHTStatus status = 1;
+    bytes data = 2;
+}
+
+// /////////////////////////////////////////
+
 service DHTService {
 
     // Fetch item from DHT
@@ -262,4 +320,32 @@ service KeepAliveService {
     
     // KeepAlive
     rpc SendHeartbeat(Heartbeat_Request) returns (Heartbeat_Response) {}
+}
+
+// ////////////////////////
+
+
+
+service FileService {
+
+    // create file
+    rpc CreateFile(FileServiceRequest) returns (FileServiceResponse) {}
+
+    // open file
+    rpc OpenFile(FileServiceRequest) returns (FileServiceResponse) {}
+    
+    // read from file
+    rpc ReadFile(FileServiceRequest) returns (FileServiceResponse) {}
+
+    // write to file
+    rpc WriteFile(FileServiceRequest) returns (FileServiceResponse) {}
+
+    // seek file
+    rpc SeekFile(FileServiceRequest) returns (FileServiceResponse) {}
+    
+    // seek file
+    rpc TellFile(FileServiceRequest) returns (FileServiceResponse) {}
+
+    // close file
+    rpc CloseFile(FileServiceRequest) returns (FileServiceResponse) {}
 }

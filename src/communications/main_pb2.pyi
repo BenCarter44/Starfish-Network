@@ -35,6 +35,23 @@ class MODE(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
     FORWARD: _ClassVar[MODE]
     BACKWARD: _ClassVar[MODE]
 
+class FILE_TYPE(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
+    __slots__ = ()
+    FILE: _ClassVar[FILE_TYPE]
+    IO: _ClassVar[FILE_TYPE]
+    DIR: _ClassVar[FILE_TYPE]
+    CHUNK: _ClassVar[FILE_TYPE]
+
+class FILE_REQUEST(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
+    __slots__ = ()
+    READ: _ClassVar[FILE_REQUEST]
+    WRITE: _ClassVar[FILE_REQUEST]
+    SEEK: _ClassVar[FILE_REQUEST]
+    CREATE: _ClassVar[FILE_REQUEST]
+    CLOSE: _ClassVar[FILE_REQUEST]
+    OPEN: _ClassVar[FILE_REQUEST]
+    TELL: _ClassVar[FILE_REQUEST]
+
 UNKNOWN: DHTStatus
 FOUND: DHTStatus
 NOT_FOUND: DHTStatus
@@ -48,6 +65,17 @@ FILE_ID: DHTSelect
 NA: MODE
 FORWARD: MODE
 BACKWARD: MODE
+FILE: FILE_TYPE
+IO: FILE_TYPE
+DIR: FILE_TYPE
+CHUNK: FILE_TYPE
+READ: FILE_REQUEST
+WRITE: FILE_REQUEST
+SEEK: FILE_REQUEST
+CREATE: FILE_REQUEST
+CLOSE: FILE_REQUEST
+OPEN: FILE_REQUEST
+TELL: FILE_REQUEST
 
 class DHT_Fetch_Request(_message.Message):
     __slots__ = ("key", "query_chain", "status", "select")
@@ -400,3 +428,93 @@ class SendCheckpoint_Response(_message.Message):
     STATUS_FIELD_NUMBER: _ClassVar[int]
     status: DHTStatus
     def __init__(self, status: _Optional[_Union[DHTStatus, str]] = ...) -> None: ...
+
+class FileGeneric(_message.Message):
+    __slots__ = ("type", "contents", "date_created")
+    TYPE_FIELD_NUMBER: _ClassVar[int]
+    CONTENTS_FIELD_NUMBER: _ClassVar[int]
+    DATE_CREATED_FIELD_NUMBER: _ClassVar[int]
+    type: FILE_TYPE
+    contents: bytes
+    date_created: bytes
+    def __init__(
+        self,
+        type: _Optional[_Union[FILE_TYPE, str]] = ...,
+        contents: _Optional[bytes] = ...,
+        date_created: _Optional[bytes] = ...,
+    ) -> None: ...
+
+class FileValue(_message.Message):
+    __slots__ = ("peerID", "identifier")
+    PEERID_FIELD_NUMBER: _ClassVar[int]
+    IDENTIFIER_FIELD_NUMBER: _ClassVar[int]
+    peerID: bytes
+    identifier: bytes
+    def __init__(
+        self, peerID: _Optional[bytes] = ..., identifier: _Optional[bytes] = ...
+    ) -> None: ...
+
+class File(_message.Message):
+    __slots__ = ("length", "data")
+    LENGTH_FIELD_NUMBER: _ClassVar[int]
+    DATA_FIELD_NUMBER: _ClassVar[int]
+    length: int
+    data: bytes
+    def __init__(
+        self, length: _Optional[int] = ..., data: _Optional[bytes] = ...
+    ) -> None: ...
+
+class IOContainer(_message.Message):
+    __slots__ = ("peerID", "ioKey")
+    PEERID_FIELD_NUMBER: _ClassVar[int]
+    IOKEY_FIELD_NUMBER: _ClassVar[int]
+    peerID: bytes
+    ioKey: bytes
+    def __init__(
+        self, peerID: _Optional[bytes] = ..., ioKey: _Optional[bytes] = ...
+    ) -> None: ...
+
+class Directory(_message.Message):
+    __slots__ = ("number_of_files", "file_list")
+    NUMBER_OF_FILES_FIELD_NUMBER: _ClassVar[int]
+    FILE_LIST_FIELD_NUMBER: _ClassVar[int]
+    number_of_files: int
+    file_list: _containers.RepeatedScalarFieldContainer[bytes]
+    def __init__(
+        self,
+        number_of_files: _Optional[int] = ...,
+        file_list: _Optional[_Iterable[bytes]] = ...,
+    ) -> None: ...
+
+class FileServiceRequest(_message.Message):
+    __slots__ = ("local_file_identifier", "key", "file_request", "data", "process_id")
+    LOCAL_FILE_IDENTIFIER_FIELD_NUMBER: _ClassVar[int]
+    KEY_FIELD_NUMBER: _ClassVar[int]
+    FILE_REQUEST_FIELD_NUMBER: _ClassVar[int]
+    DATA_FIELD_NUMBER: _ClassVar[int]
+    PROCESS_ID_FIELD_NUMBER: _ClassVar[int]
+    local_file_identifier: bytes
+    key: bytes
+    file_request: FILE_REQUEST
+    data: bytes
+    process_id: bytes
+    def __init__(
+        self,
+        local_file_identifier: _Optional[bytes] = ...,
+        key: _Optional[bytes] = ...,
+        file_request: _Optional[_Union[FILE_REQUEST, str]] = ...,
+        data: _Optional[bytes] = ...,
+        process_id: _Optional[bytes] = ...,
+    ) -> None: ...
+
+class FileServiceResponse(_message.Message):
+    __slots__ = ("status", "data")
+    STATUS_FIELD_NUMBER: _ClassVar[int]
+    DATA_FIELD_NUMBER: _ClassVar[int]
+    status: DHTStatus
+    data: bytes
+    def __init__(
+        self,
+        status: _Optional[_Union[DHTStatus, str]] = ...,
+        data: _Optional[bytes] = ...,
+    ) -> None: ...

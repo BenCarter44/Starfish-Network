@@ -22,7 +22,7 @@ if __name__ == "__main__":
         """Get a count of how many tasks scheduled on the asyncio loop."""
         while True:
             await asyncio.sleep(1)
-            logger.debug(f"Tasks currently running: {len(asyncio.all_tasks())}")
+            logger.debug(f"META - Tasks currently running: {len(asyncio.all_tasks())}")
 
     async def main():
         """Main node task"""
@@ -55,22 +55,30 @@ if __name__ == "__main__":
             ),
         ]
         if server_number == 1:
-            node = Node(addr_table[0][0], addr_table[0][1])
+            node = Node(
+                addr_table[0][0], addr_table[0][1], f"filestorage/{server_number}"
+            )
             asyncio.create_task(node.run())
 
         if server_number == 2:
-            node = Node(addr_table[1][0], addr_table[1][1])
+            node = Node(
+                addr_table[1][0], addr_table[1][1], f"filestorage/{server_number}"
+            )
             asyncio.create_task(node.run())
 
         if server_number == 3:
-            node = Node(addr_table[2][0], addr_table[2][1])
+            node = Node(
+                addr_table[2][0], addr_table[2][1], f"filestorage/{server_number}"
+            )
             asyncio.create_task(node.run())
 
         if server_number == 4:
-            node = Node(addr_table[3][0], addr_table[3][1])
+            node = Node(
+                addr_table[3][0], addr_table[3][1], f"filestorage/{server_number}"
+            )
             asyncio.create_task(node.run())
 
-        logger.debug(f"Server up: {server_number}")
+        logger.debug(f"META - Server up: {server_number}")
         await asyncio.sleep(5)
 
         if server_number == 1:
@@ -144,7 +152,7 @@ if __name__ == "__main__":
         if server_number == 1:
             pass
             await asyncio.sleep(5)
-            pgrm = star.Program(read_pgrm="examples/my_program.star")
+            pgrm = star.Program(read_pgrm="examples/file_program.star")
             logger.info(
                 f"I: Opening program '{pgrm.saved_data['pgrm_name']}' from {pgrm.saved_data['date_compiled']}\n"
             )
@@ -185,7 +193,29 @@ if __name__ == "__main__":
     ch = logging.StreamHandler(sys.stdout)
     ch.setLevel(logging.DEBUG)
     ch.setFormatter(CustomFormatter())
-    logging.basicConfig(handlers=[ch], level=logging.WARNING)
 
+    def filter_messages_by_label(record):
+        if record.levelno >= logging.ERROR:
+            return True
+        if record.msg.startswith("PEER"):
+            return False
+        if record.msg.startswith("ENGINE"):
+            return False
+        if record.msg.startswith("TASK"):
+            return False
+        if record.msg.startswith("FILE"):
+            return True
+        if record.msg.startswith("DISCOVERY"):
+            return False
+        if record.msg.startswith("DHT"):
+            return False
+        if record.msg.startswith("KEEPALIVE"):
+            return False
+        if record.msg.startswith("META"):
+            return True
+        return True
+
+    ch.addFilter(filter_messages_by_label)
+    logging.basicConfig(handlers=[ch], level=logging.DEBUG)
     asyncio.get_event_loop().set_debug(True)
     asyncio.run(main())

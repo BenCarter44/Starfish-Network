@@ -775,3 +775,362 @@ class KeepAliveService(object):
             metadata,
             _registered_method=True,
         )
+
+
+class FileServiceStub(object):
+    """////////////////////////"""
+
+    def __init__(self, channel):
+        """Constructor.
+
+        Args:
+            channel: A grpc.Channel.
+        """
+        self.CreateFile = channel.unary_unary(
+            "/protocol.FileService/CreateFile",
+            request_serializer=main__pb2.FileServiceRequest.SerializeToString,
+            response_deserializer=main__pb2.FileServiceResponse.FromString,
+            _registered_method=True,
+        )
+        self.OpenFile = channel.unary_unary(
+            "/protocol.FileService/OpenFile",
+            request_serializer=main__pb2.FileServiceRequest.SerializeToString,
+            response_deserializer=main__pb2.FileServiceResponse.FromString,
+            _registered_method=True,
+        )
+        self.ReadFile = channel.unary_unary(
+            "/protocol.FileService/ReadFile",
+            request_serializer=main__pb2.FileServiceRequest.SerializeToString,
+            response_deserializer=main__pb2.FileServiceResponse.FromString,
+            _registered_method=True,
+        )
+        self.WriteFile = channel.unary_unary(
+            "/protocol.FileService/WriteFile",
+            request_serializer=main__pb2.FileServiceRequest.SerializeToString,
+            response_deserializer=main__pb2.FileServiceResponse.FromString,
+            _registered_method=True,
+        )
+        self.SeekFile = channel.unary_unary(
+            "/protocol.FileService/SeekFile",
+            request_serializer=main__pb2.FileServiceRequest.SerializeToString,
+            response_deserializer=main__pb2.FileServiceResponse.FromString,
+            _registered_method=True,
+        )
+        self.TellFile = channel.unary_unary(
+            "/protocol.FileService/TellFile",
+            request_serializer=main__pb2.FileServiceRequest.SerializeToString,
+            response_deserializer=main__pb2.FileServiceResponse.FromString,
+            _registered_method=True,
+        )
+        self.CloseFile = channel.unary_unary(
+            "/protocol.FileService/CloseFile",
+            request_serializer=main__pb2.FileServiceRequest.SerializeToString,
+            response_deserializer=main__pb2.FileServiceResponse.FromString,
+            _registered_method=True,
+        )
+
+
+class FileServiceServicer(object):
+    """////////////////////////"""
+
+    def CreateFile(self, request, context):
+        """create file"""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details("Method not implemented!")
+        raise NotImplementedError("Method not implemented!")
+
+    def OpenFile(self, request, context):
+        """open file"""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details("Method not implemented!")
+        raise NotImplementedError("Method not implemented!")
+
+    def ReadFile(self, request, context):
+        """read from file"""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details("Method not implemented!")
+        raise NotImplementedError("Method not implemented!")
+
+    def WriteFile(self, request, context):
+        """write to file"""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details("Method not implemented!")
+        raise NotImplementedError("Method not implemented!")
+
+    def SeekFile(self, request, context):
+        """seek file"""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details("Method not implemented!")
+        raise NotImplementedError("Method not implemented!")
+
+    def TellFile(self, request, context):
+        """seek file"""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details("Method not implemented!")
+        raise NotImplementedError("Method not implemented!")
+
+    def CloseFile(self, request, context):
+        """close file"""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details("Method not implemented!")
+        raise NotImplementedError("Method not implemented!")
+
+
+def add_FileServiceServicer_to_server(servicer, server):
+    rpc_method_handlers = {
+        "CreateFile": grpc.unary_unary_rpc_method_handler(
+            servicer.CreateFile,
+            request_deserializer=main__pb2.FileServiceRequest.FromString,
+            response_serializer=main__pb2.FileServiceResponse.SerializeToString,
+        ),
+        "OpenFile": grpc.unary_unary_rpc_method_handler(
+            servicer.OpenFile,
+            request_deserializer=main__pb2.FileServiceRequest.FromString,
+            response_serializer=main__pb2.FileServiceResponse.SerializeToString,
+        ),
+        "ReadFile": grpc.unary_unary_rpc_method_handler(
+            servicer.ReadFile,
+            request_deserializer=main__pb2.FileServiceRequest.FromString,
+            response_serializer=main__pb2.FileServiceResponse.SerializeToString,
+        ),
+        "WriteFile": grpc.unary_unary_rpc_method_handler(
+            servicer.WriteFile,
+            request_deserializer=main__pb2.FileServiceRequest.FromString,
+            response_serializer=main__pb2.FileServiceResponse.SerializeToString,
+        ),
+        "SeekFile": grpc.unary_unary_rpc_method_handler(
+            servicer.SeekFile,
+            request_deserializer=main__pb2.FileServiceRequest.FromString,
+            response_serializer=main__pb2.FileServiceResponse.SerializeToString,
+        ),
+        "TellFile": grpc.unary_unary_rpc_method_handler(
+            servicer.TellFile,
+            request_deserializer=main__pb2.FileServiceRequest.FromString,
+            response_serializer=main__pb2.FileServiceResponse.SerializeToString,
+        ),
+        "CloseFile": grpc.unary_unary_rpc_method_handler(
+            servicer.CloseFile,
+            request_deserializer=main__pb2.FileServiceRequest.FromString,
+            response_serializer=main__pb2.FileServiceResponse.SerializeToString,
+        ),
+    }
+    generic_handler = grpc.method_handlers_generic_handler(
+        "protocol.FileService", rpc_method_handlers
+    )
+    server.add_generic_rpc_handlers((generic_handler,))
+    server.add_registered_method_handlers("protocol.FileService", rpc_method_handlers)
+
+
+# This class is part of an EXPERIMENTAL API.
+class FileService(object):
+    """////////////////////////"""
+
+    @staticmethod
+    def CreateFile(
+        request,
+        target,
+        options=(),
+        channel_credentials=None,
+        call_credentials=None,
+        insecure=False,
+        compression=None,
+        wait_for_ready=None,
+        timeout=None,
+        metadata=None,
+    ):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            "/protocol.FileService/CreateFile",
+            main__pb2.FileServiceRequest.SerializeToString,
+            main__pb2.FileServiceResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True,
+        )
+
+    @staticmethod
+    def OpenFile(
+        request,
+        target,
+        options=(),
+        channel_credentials=None,
+        call_credentials=None,
+        insecure=False,
+        compression=None,
+        wait_for_ready=None,
+        timeout=None,
+        metadata=None,
+    ):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            "/protocol.FileService/OpenFile",
+            main__pb2.FileServiceRequest.SerializeToString,
+            main__pb2.FileServiceResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True,
+        )
+
+    @staticmethod
+    def ReadFile(
+        request,
+        target,
+        options=(),
+        channel_credentials=None,
+        call_credentials=None,
+        insecure=False,
+        compression=None,
+        wait_for_ready=None,
+        timeout=None,
+        metadata=None,
+    ):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            "/protocol.FileService/ReadFile",
+            main__pb2.FileServiceRequest.SerializeToString,
+            main__pb2.FileServiceResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True,
+        )
+
+    @staticmethod
+    def WriteFile(
+        request,
+        target,
+        options=(),
+        channel_credentials=None,
+        call_credentials=None,
+        insecure=False,
+        compression=None,
+        wait_for_ready=None,
+        timeout=None,
+        metadata=None,
+    ):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            "/protocol.FileService/WriteFile",
+            main__pb2.FileServiceRequest.SerializeToString,
+            main__pb2.FileServiceResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True,
+        )
+
+    @staticmethod
+    def SeekFile(
+        request,
+        target,
+        options=(),
+        channel_credentials=None,
+        call_credentials=None,
+        insecure=False,
+        compression=None,
+        wait_for_ready=None,
+        timeout=None,
+        metadata=None,
+    ):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            "/protocol.FileService/SeekFile",
+            main__pb2.FileServiceRequest.SerializeToString,
+            main__pb2.FileServiceResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True,
+        )
+
+    @staticmethod
+    def TellFile(
+        request,
+        target,
+        options=(),
+        channel_credentials=None,
+        call_credentials=None,
+        insecure=False,
+        compression=None,
+        wait_for_ready=None,
+        timeout=None,
+        metadata=None,
+    ):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            "/protocol.FileService/TellFile",
+            main__pb2.FileServiceRequest.SerializeToString,
+            main__pb2.FileServiceResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True,
+        )
+
+    @staticmethod
+    def CloseFile(
+        request,
+        target,
+        options=(),
+        channel_credentials=None,
+        call_credentials=None,
+        insecure=False,
+        compression=None,
+        wait_for_ready=None,
+        timeout=None,
+        metadata=None,
+    ):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            "/protocol.FileService/CloseFile",
+            main__pb2.FileServiceRequest.SerializeToString,
+            main__pb2.FileServiceResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True,
+        )
