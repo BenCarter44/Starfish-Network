@@ -52,10 +52,15 @@ def read_file(evt: star.Event, task: star.StarTask):
     # file.write(b"\n")
     # file.close()
 
-    time.sleep(5)
+    time.sleep(1)
+    evt_new.set_target("noop_to_read_file")
+    return evt_new
 
+
+@star.task("noop_to_read_file")
+def noop_checkpoint(evt):
+    evt_new = star.Event()
     evt_new.set_target("read_file")
-
     return evt_new
 
 

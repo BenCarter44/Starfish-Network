@@ -59,11 +59,13 @@ class PlugBoard:
         self.cache_subscriptions_serve: dict[DHTSelect, dict[bytes, set[bytes]]] = {
             DHTSelect.PEER_ID: {self.my_addr: set()},
             DHTSelect.TASK_ID: {self.my_addr: set()},
+            DHTSelect.FILE_ID: {self.my_addr: set()},
         }  # stores KEY and peers caching.
 
         self.cache_subscriptions: dict[DHTSelect, set[bytes]] = {
             DHTSelect.PEER_ID: set(),
             DHTSelect.TASK_ID: set(),
+            DHTSelect.FILE_ID: set(),
         }
 
         self.task_table = DHT(self.my_addr)
@@ -88,6 +90,9 @@ class PlugBoard:
 
         # Task ID --> Peer ID (Monitor)
         self.monitor_servers: dict[bytes, bytes] = {}
+        # # File ID --> Peer ID (Monitor)
+        # self.file_monitor_servers: dict[bytes, bytes] = {}
+
         self.file_manager = FileManager(file_save)
 
     def print_keep_alives(self):
@@ -396,20 +401,20 @@ class PlugBoard:
 
         obj = TaskValue.FromString(task_b)
         task = StarTask.from_bytes(obj.task_data)
-        logger.warning(f"TASK - Stored Task! {task.get_id().hex()}")
+        logger.info(f"TASK - Stored Task! {task.get_id().hex()}")
         self.task_table.fancy_print()
         proc = StarProcess.from_bytes(obj.process_data)
         assert task.get_callable() != b""
 
         # Require a Monitor!
         monitor_peer = await self.create_monitor_request(proc, task)
-        task.monitor = monitor_peer
+        task.monitor = monitor_peer  # check: What if this monitor changes???
         self.engine.import_task(task, proc)
 
     async def create_monitor_request(
         self, proc: StarProcess, task: StarTask, monitor_peer_old: bytes = b""
     ):
-        logger.warning(f"TASK - Trying to get a monitor for task {task.get_id().hex()}")
+        logger.info(f"TASK - Trying to get a monitor for task {task.get_id().hex()}")
         assert task.get_callable() != b""
         # On monitor fail, pick a new monitor
 
@@ -417,7 +422,9 @@ class PlugBoard:
         # Don't pick where it came from or myself
         ignore = set([self.my_addr, monitor_peer_old])
         while True:
-            monitor_peer = self.peer_table.get_random_key(ignore)
+            monitor_peer = self.peer_table.get_next_closest_neighbor(
+                self.my_addr, ignore=ignore
+            )
 
             if monitor_peer is None:
                 logger.error(
@@ -457,6 +464,75 @@ class PlugBoard:
         )
         kp_channel.update()
         self.engine.update_monitor(task, monitor_peer)
+        return monitor_peer
+
+    async def create_file_monitor_request(
+        self, file: HostedFile, monitor_peer_old: bytes = b""
+    ):
+        logger.info(f"FILE - Trying to get a monitor for file {file.get_key().hex()}")
+
+        # On monitor fail, pick a new monitor
+
+        # Pick the NEXT CLOSEST node (later adjust to be one that is close.)
+        # Don't pick where it came from or myself
+        ignore = set([self.my_addr, monitor_peer_old])
+        while True:
+            monitor_peer = self.peer_table.get_next_closest_neighbor(
+                file.get_key(), ignore
+            )
+
+            if monitor_peer is None:
+                logger.error(
+                    f"FILE - There are no other peers send to monitor! You need more peers! Operating solo!"
+                )
+                return
+
+            tp: StarAddress | None = await self.get_peer_transport(monitor_peer)
+
+            # double check that peer is online!
+            assert tp is not None
+            b = await self.keep_alive_manager.test(tp, monitor_peer)
+            logger.debug(f"FILE - {b}")
+            if b:
+                break
+            ignore.add(monitor_peer)
+
+        assert tp is not None
+        file_peer = FileClient(
+            tp, monitor_peer, b"", is_monitor=True
+        )  # unknown process ID.
+        contents = self.file_manager.fetch_contents(
+            file, is_monitor=False
+        )  # I own, so not is_monitor
+
+        if contents is None:
+            contents = b""
+
+        logger.info(
+            f"FILE - Send monitor request {file.get_key().hex()} to {monitor_peer.hex()} {contents}"
+        )
+        await file_peer.SendMonitorRequest(
+            file, contents, self.my_addr
+        )  # have monitor!
+
+        # self.file_monitor_servers[file.get_key()] = monitor_peer
+
+        async def tmp():
+            logger.warning("FILE - Monitor offline for file! Respawning monitor.")
+            self.remove_peer_from_address_tables(monitor_peer)
+            await self.create_file_monitor_request(file, monitor_peer)
+
+        kp_channel = self.keep_alive_manager.register_channel_service(
+            tp.get_channel(),
+            tp.get_string_channel(),
+            monitor_peer,
+            tmp,
+            TRIGGER_OFFLINE,
+        )
+        kp_channel.update()
+        # update monitor in file manager
+        self.file_manager.update_monitor(file, monitor_peer)
+        logger.info("FILE - Done. Have Monitor for file!")
         return monitor_peer
 
     async def allocate_program(self, proc: StarProcess):
@@ -520,7 +596,7 @@ class PlugBoard:
         self, process: StarProcess, task: StarTask, who: bytes
     ):
         # Owner for task went offline. Respawn
-        logger.warning(f"TASK - Storer went offline for task: {task.get_id().hex()}")
+        logger.info(f"TASK - Storer went offline for task: {task.get_id().hex()}")
 
         # Don't send anything anywhere. Have monitor do that.
         # who2 = await self.send_out_single_task(process, task, ignore=[who])
@@ -548,10 +624,54 @@ class PlugBoard:
             TRIGGER_OFFLINE,
         )
 
+    async def receive_file_monitor_request(
+        self, file: HostedFile, who: bytes, contents: bytes
+    ):
+        # host the file.
+        # monitor_peer = await self.create_file_monitor_request(hf)
+        self.file_manager.host_file(file, b"", is_monitor=True, contents=contents)
+
+        tp = await self.get_peer_transport(who)
+        assert tp is not None
+        self.keep_alive_manager.register_channel_service(
+            tp.get_channel(),
+            tp.get_string_channel(),
+            who,
+            lambda: self.process_file_offline(
+                file,
+                who,
+            ),
+            TRIGGER_OFFLINE,
+        )
+
+    async def process_file_offline(self, file: HostedFile, who: bytes):
+        # who is offline. Respawn file.
+        # store file somewhere else.
+        logger.warning(f"FILE - File owner offline! {file.get_key().hex()}")
+        self.remove_peer_from_address_tables(who)
+        contents = self.file_manager.fetch_contents(file, is_monitor=True)
+        await self.dht_set(
+            file.get_key(), self.my_addr, DHTSelect.FILE_ID, nodes_visited=[who]
+        )
+        peer = await self.dht_get(file.get_key(), DHTSelect.FILE_ID, ignore=[who])
+        assert peer is not None
+        tp = await self.get_peer_transport(peer)
+        assert tp is not None
+
+        # send file to tp.
+        fc = FileClient(tp, peer, b"")
+        await fc.SendFileContents(file, contents)
+        # fc.close() # ?????
+
+        # stop my monitoring....
+        self.file_manager.remove_monitor(file)
+
+        # stop my monitor of the file.
+
     async def process_owner_offline(
         self, proc: StarProcess, task: StarTask, who: bytes
     ):
-        logger.warning(f"TASK - CB OWNER OFFLINE of task: {task.get_id().hex()}")
+        logger.info(f"TASK - CB OWNER OFFLINE of task: {task.get_id().hex()}")
         self.task_table.fancy_print()
         # Owner is offline!
         self.remove_peer_from_address_tables(who)
@@ -625,7 +745,7 @@ class PlugBoard:
             logger.error(f"TASK - No monitor found for process: {task_id.hex()}")
             return
         monitor_peer = self.monitor_servers[task_id]
-        logger.warning(f"TASK - Send checkpoint {monitor_peer.hex()}")
+        logger.info(f"TASK - Send checkpoint {monitor_peer.hex()}")
         tp = await self.get_peer_transport(monitor_peer)
         assert tp is not None
         taskClient = TaskPeer(tp, monitor_peer)
@@ -643,9 +763,9 @@ class PlugBoard:
         # Tell event origin's monitor that it is done!
         if event_origin_previous is None or event_origin is None:
             return
-        monitor_peer = event_origin_previous.target.monitor
+        monitor_peer = event_origin_previous.target.monitor  # what if monitor dies??
 
-        logger.warning(f"TASK - Send checkpoint BACKWARD {monitor_peer.hex()}")
+        logger.info(f"TASK - Send checkpoint BACKWARD {monitor_peer.hex()}")
         if monitor_peer is None or monitor_peer == b"":
             return
         tp = await self.get_peer_transport(monitor_peer)
@@ -655,6 +775,12 @@ class PlugBoard:
             )
             return
         assert tp is not None
+
+        is_alive = await self.keep_alive_manager.test(tp, monitor_peer)
+
+        if not (is_alive):
+            return  # plugboard will later assign new monitor
+
         taskClient = TaskPeer(tp, monitor_peer)
         await taskClient.SendCheckpoint(
             task_id, event_origin_previous, event_origin, self.my_addr, backwards=True
@@ -718,29 +844,41 @@ class PlugBoard:
         return data
 
     async def fetch_file(
-        self, key: bytes, local_file_identifier: bytes, process_id: bytes = b""
+        self,
+        key: bytes,
+        local_file_identifier: bytes,
+        process_id: bytes = b"",
+        direct_access=False,
+        is_monitor=False,
     ):
-        if not (self.file_manager.is_file_hosted(key)):
+        if not (self.file_manager.is_file_hosted(key, is_monitor)):
             raise ValueError("Not Found!")
 
-        file = self.file_manager.fetch_file(key, local_file_identifier, process_id)
-        return file
+        file, monitor = self.file_manager.fetch_file(
+            key,
+            local_file_identifier,
+            process_id,
+            direct_access,
+            is_monitor=is_monitor,
+        )
 
-    def close_file(self, key: bytes, local_identifier: bytes):
-        if not (self.file_manager.is_file_hosted(key)):
+        return file, monitor
+
+    def close_file(self, key: bytes, local_identifier: bytes, is_monitor=False):
+        if not (self.file_manager.is_file_hosted(key, is_monitor=is_monitor)):
             raise ValueError("Not Found!")
 
-        self.file_manager.close_file(key, local_identifier)
+        self.file_manager.close_file(key, local_identifier, is_monitor)
         return
 
-    async def open_file(self, key: bytes, process_id: bytes):
-        if not (self.file_manager.is_file_hosted(key)):
-            raise ValueError("Not Found!")
+    # async def open_file(self, key: bytes, process_id: bytes, is_monitor=False):
+    #     if not (self.file_manager.is_file_hosted(key, is_monitor)):
+    #         raise ValueError("Not Found!")
 
-        file = self.file_manager.fetch_file(
-            key, local_file_identifier=b"", process_id=process_id
-        )
-        return file
+    #     file = self.file_manager.fetch_file(
+    #         key, local_file_identifier=b"", process_id=process_id, is_monitor=is_monitor
+    #     )
+    #     return file
 
     async def create_file(self, hf: HostedFile):
         # It sets the value later.... (under raw store)
@@ -845,6 +983,14 @@ class PlugBoard:
 
         elif select == DHTSelect.TASK_ID:
             r = self.task_table.set_cache(key, value)
+            if not (r):
+                return  # I already owned it.
+            await self.dht_set_cache_notices(key, value, select, monitor)
+
+        elif select == DHTSelect.FILE_ID:
+            r = self.file_table.set_cache(key, value)
+            if not (r):
+                return  # I already owned it.
             await self.dht_set_cache_notices(key, value, select, monitor)
 
         else:
@@ -898,6 +1044,30 @@ class PlugBoard:
                 addr.get_string_channel(),
                 last_chain,
                 lambda: self.task_cache_maintain_offline(last_chain, key, value),
+                TRIGGER_OFFLINE,
+            )
+
+            # Send to chain.
+            logger.debug(
+                f"DHT - Set plain cache. Register notices dest: {last_chain.hex()}"
+            )
+            client = DHTClient(addr, last_chain, self.my_addr, self.keep_alive_manager)
+            await client.register_notices(key, select)
+            self.cache_subscriptions[select].add(key)  # I am subscribed to updates
+            self.cache_subscriptions_serve[select][
+                key
+            ] = set()  # People who connect to me.
+
+        if select == DHTSelect.FILE_ID:
+            # cache.
+            addr = await self.get_peer_transport(last_chain)
+            assert addr is not None
+            channel = addr.get_channel()
+            self.keep_alive_manager.register_channel_service(
+                channel,
+                addr.get_string_channel(),
+                last_chain,
+                lambda: self.remove_peer_from_address_tables(last_chain),
                 TRIGGER_OFFLINE,
             )
 
@@ -1008,7 +1178,15 @@ class PlugBoard:
             )
             if r.response_code == DHTStatus.OWNED:
                 logger.info(f"FILE - File stored! {key.hex()}")
-                self.file_manager.host_file(HostedFile.from_key(key))
+
+                # I can serve cache subs to others though.
+                if key not in self.cache_subscriptions_serve[select]:
+                    self.cache_subscriptions_serve[select][key] = set()
+
+                hf = HostedFile.from_key(key)
+                hf.local_filepath = self.file_manager.file_save_dir
+                monitor_peer = await self.create_file_monitor_request(hf, self.my_addr)
+                self.file_manager.host_file(hf, monitor_peer, is_monitor=False)
         else:
             logger.error(f"DHT - Unknown table selected!")
             return  # type: ignore

@@ -33,15 +33,42 @@ TYPE_DIR = 3
 class FileManager:
     def __init__(self, file_save_dir):
         self.files_hosted: dict[bytes, bytes] = {}
+        self.monitor_files_hosted: dict[bytes, bytes] = {}
         self.files_hosted_objects: dict[bytes, "HostedFile"] = {}
+        self.monitor_files_hosted_objects: dict[bytes, "HostedFile"] = {}
         self.file_save_dir = file_save_dir
+        self.file_monitors: dict[bytes, bytes] = {}  # gives monitor peerID
 
-    def is_file_hosted(self, key: bytes):
-        return key in self.files_hosted
+    def is_file_hosted(self, key: bytes, is_monitor=False):
+        if is_monitor:
+            return key in self.monitor_files_hosted
+        else:
+            return key in self.files_hosted
+
+    def get_monitor(self, file: "HostedFile"):
+        return self.file_monitors.get(file.get_key())
 
     def fetch_file(
-        self, key: bytes, local_file_identifier: bytes = b"", process_id: bytes = b""
+        self,
+        key: bytes,
+        local_file_identifier: bytes = b"",
+        process_id: bytes = b"",
+        direct_access=False,
+        is_monitor=False,
     ):
+        # pass through on monitor. Monitor isn't "opening" a new connection.
+        if is_monitor or direct_access:
+            if is_monitor:
+                file = self.monitor_files_hosted_objects[key]
+                file.local_identifier = local_file_identifier
+                self.monitor_files_hosted[key] = local_file_identifier
+            else:
+                file = self.files_hosted_objects[key]
+                file.local_identifier = local_file_identifier
+                self.files_hosted[key] = local_file_identifier
+            return file, self.file_monitors.get(key)
+
+        # no longer monitor...
         current = self.files_hosted[key]
         if current == b"" and local_file_identifier == b"":
             # not currently in use.
@@ -49,40 +76,98 @@ class FileManager:
                 logger.warning(f"FILE - Missing process_id")
                 raise ValueError("Missing process_id on file object handler")
             new_id = os.urandom(16) + process_id
+            logger.info(f"FILE - File opened {key.hex()} handler:{new_id.hex()}")
             self.files_hosted[key] = new_id
             file = self.files_hosted_objects[key]
             file.local_identifier = new_id
-            return file
+            return file, self.file_monitors.get(key)
 
         if current == local_file_identifier:
             file = self.files_hosted_objects[key]
             file.local_identifier = current
-            return file
+            return file, self.file_monitors.get(key)
 
         logger.debug(f"FILE - Already in use file:{key.hex()} handler:{current.hex()}")
+        # raise KeyboardInterrupt
         raise ValueError("Already in use!")
 
-    def close_file(self, key: bytes, local_file_identifier: bytes):
-        current = self.files_hosted[key]
+    def close_file(self, key: bytes, local_file_identifier: bytes, is_monitor=False):
+        if is_monitor:
+            current = self.monitor_files_hosted[key]
+        else:
+            current = self.files_hosted[key]
+
         if current == b"":
             raise ValueError("Already closed!")
 
         if current != local_file_identifier:
             raise ValueError("Incorrect handler code")
 
-        self.files_hosted[key] = b""
-        file = self.files_hosted_objects[key]
+        if is_monitor:
+            self.monitor_files_hosted[key] = b""
+            file = self.monitor_files_hosted_objects[key]
+        else:
+            self.files_hosted[key] = b""
+            file = self.files_hosted_objects[key]
         file.local_identifier = b""
         return file
 
-    def host_file(self, file: "HostedFile"):
-        if file.get_key() in self.files_hosted:
+    def host_file(
+        self, file: "HostedFile", monitor_peer: bytes, is_monitor=False, contents=b""
+    ):
+        if (file.get_key() in self.files_hosted) and not (is_monitor):
+            return
+        if (file.get_key() in self.monitor_files_hosted) and is_monitor:
             return
 
-        self.files_hosted[file.get_key()] = b""
+        file.is_monitor = is_monitor
+
+        if is_monitor:
+            self.monitor_files_hosted[file.get_key()] = b""
+            file.local_filepath = self.file_save_dir
+            self.monitor_files_hosted_objects[file.get_key()] = file
+            file.create(contents=contents)
+        else:
+            self.files_hosted[file.get_key()] = b""
+            file.local_filepath = self.file_save_dir
+            self.files_hosted_objects[file.get_key()] = file
+            file.create(contents=contents)
+            self.file_monitors[file.get_key()] = monitor_peer
+
+    def update_monitor(self, file: "HostedFile", monitor_peer: bytes):
+        self.file_monitors[file.get_key()] = monitor_peer
+
+    def remove_monitor(self, file: "HostedFile"):
+        del self.monitor_files_hosted[file.get_key()]
+        del self.monitor_files_hosted_objects[file.get_key()]
         file.local_filepath = self.file_save_dir
-        self.files_hosted_objects[file.get_key()] = file
-        file.create()
+        file.is_monitor = True
+        file.delete()
+
+    def remove_hosted_file(self, file: "HostedFile"):
+        del self.file_monitors[file.get_key()]
+        del self.files_hosted[file.get_key()]
+        del self.files_hosted_objects[file.get_key()]
+        file.local_filepath = self.file_save_dir
+        file.is_monitor = False
+        file.delete()
+
+    def fetch_contents(self, file: "HostedFile", is_monitor=False):
+        file.is_monitor = is_monitor
+        if is_monitor:
+            if file.get_key() not in self.monitor_files_hosted:
+                return None
+            file.open()
+            out = file.read()
+            file.close()
+            return out
+        else:
+            if file.get_key() not in self.files_hosted:
+                return None
+            file.open()
+            out = file.read()
+            file.close()
+            return out
 
 
 class FileFactory:
@@ -144,7 +229,7 @@ class File:
 
 
 class HostedFile:
-    def __init__(self, userID: bytes, filepath: str):
+    def __init__(self, userID: bytes, filepath: str, is_monitor=False):
         self.userID = userID
         if filepath[0] == "/":
             filepath = filepath[1:]
@@ -157,6 +242,7 @@ class HostedFile:
         self.length = 0
         self.end_of_file_pos = 0
         self.local_identifier = b""
+        self.is_monitor = is_monitor
 
     def get_local_identifier(self):
         return self.local_identifier
@@ -207,7 +293,8 @@ class HostedFile:
         c.mode = mode_set
         return c
 
-    def create(self, overwrite: bool = False):
+    def create(self, overwrite: bool = False, contents=b""):
+        assert isinstance(contents, bytes)
         # issue a request to the file holder.
         key = self.get_key()
         # hash_obj = hashlib.sha256() # use sha256 or base32
@@ -216,22 +303,45 @@ class HostedFile:
 
         bin_blob = encode_to_base32(key)
         assert self.local_filepath is not None
-        filepath = join_paths(self.local_filepath, bin_blob + ".stg")
+
+        if self.is_monitor:
+            ending = ".stm"
+        else:
+            ending = ".stg"
+        filepath = join_paths(self.local_filepath, bin_blob + ending)
+
         if os.path.isfile(filepath) and not (overwrite):
             raise ValueError("HostedFile already found.")
 
         logger.debug(f"FILE - Create {filepath} - key: {key.hex()}")
 
         self.local_file_object = open(filepath, "w+b")  # type: ignore
+        if contents != b"":
+            self.local_file_object.write(contents)
         self.local_file_object.close()  # type: ignore
         self.local_file_object = None  # touch file.
         # self.length = 0
         # self.end_of_file_pos = 0
 
+    def delete(self):
+        key = self.get_key()
+        bin_blob = encode_to_base32(key)
+        assert self.local_filepath is not None
+        if self.is_monitor:
+            ending = ".stm"
+        else:
+            ending = ".stg"
+        filepath = join_paths(self.local_filepath, bin_blob + ending)
+        if os.path.isfile(filepath):
+            os.unlink(filepath)
+        else:
+            logger.warning("FILE - Delete called on nonexistent file!")
+
     def open(self):
         # issue a request to the file holder.
         if self.local_file_object is not None:
             return
+        assert self.local_filepath is not None
         key = self.get_key()
         # hash_obj = hashlib.sha256() # use sha256 or base32
         # hash_obj.update(key)
@@ -239,7 +349,11 @@ class HostedFile:
 
         bin_blob = encode_to_base32(key)
 
-        filepath = join_paths(self.local_filepath, bin_blob + ".stg")
+        if self.is_monitor:
+            ending = ".stm"
+        else:
+            ending = ".stg"
+        filepath = join_paths(self.local_filepath, bin_blob + ending)
         if not (os.path.isfile(filepath)):
             raise ValueError("HostedFile not found. Try create() first")
 
@@ -280,6 +394,12 @@ class HostedFile:
         self.local_file_object.close()
         self.local_file_object = None
         logger.debug(f"FILE - Close {self.get_key()}")
+
+    def set_contents(self, contents: bytes):
+        self.create(overwrite=True)
+        self.open()
+        self.write(contents)
+        self.close()
 
     def get_pb(self):
         prev = self.local_file_object.tell()

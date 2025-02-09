@@ -21,6 +21,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+DISCOVERY_RATE = 2
 
 import grpc
 
@@ -64,6 +65,9 @@ class Node:
 
         # delete all files in save dir.
         for file in glob.glob(f"{file_save_dir}/*.stg"):
+            logger.debug(f"FILE - Deleting previous {file}")
+            os.unlink(file)
+        for file in glob.glob(f"{file_save_dir}/*.stm"):
             logger.debug(f"FILE - Deleting previous {file}")
             os.unlink(file)
 
@@ -133,7 +137,7 @@ class Node:
     async def peer_discovery_task(self):
         """The peer discovery task. Do round every 5 sec"""
         while True:
-            await asyncio.sleep(10)
+            await asyncio.sleep(DISCOVERY_RATE)
             # return
             if self.is_connected or self.plugboard.received_rpcs.is_set():
                 await self.plugboard.perform_discovery_round()

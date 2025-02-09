@@ -27,6 +27,8 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+DHT_REQ_TIMEOUT = 1
+
 
 def nice_print(bs):
     return " ".join(format(b, "08b") for b in bs)
@@ -48,7 +50,7 @@ class DHTClient:
         key: bytes,
         select: pb_base.DHTSelect,
         nodes_visited: list[bytes] = [],
-        timeout=0.2,
+        timeout=DHT_REQ_TIMEOUT,
     ) -> tuple[bytes, pb_base.DHTStatus, pb_base.DHTSelect]:
 
         logger.debug(f"DHT - Create FetchItem request")
@@ -61,7 +63,7 @@ class DHTClient:
         try:
             response = await self.stub.FetchItem(request, timeout=timeout)
         except Exception as e:
-            logger.warning(f"FetchItem error {e}")
+            logger.debug(f"DHT - FetchItem error {e}")
             await self.kp_channel.kill_update()
             return b"", pb_base.DHTStatus.ERR, pb_base.DHTSelect.BLANK
 
@@ -74,7 +76,7 @@ class DHTClient:
         value: bytes,
         select: pb_base.DHTSelect,
         nodes_visited: list[bytes] = [],
-        timeout=0.2,
+        timeout=DHT_REQ_TIMEOUT,
     ) -> tuple[pb_base.DHTStatus, bytes]:
         peer_id = self.peer_id
 
@@ -112,7 +114,9 @@ class DHTClient:
         logger.debug(f"DHT - Received StoreItem request response")
         return response.status, response.who
 
-    async def delete(self, key: bytes, select: pb_base.DHTSelect, timeout=0.2):
+    async def delete(
+        self, key: bytes, select: pb_base.DHTSelect, timeout=DHT_REQ_TIMEOUT
+    ):
         logger.warning(f"DHT - Create Delete request")
 
         try:
@@ -129,7 +133,7 @@ class DHTClient:
         return resp.status
 
     async def send_deletion_notice(
-        self, key: bytes, select: pb_base.DHTSelect, timeout=0.2
+        self, key: bytes, select: pb_base.DHTSelect, timeout=DHT_REQ_TIMEOUT
     ):
         logger.debug(f"DHT - Create Delete notice request")
 
@@ -157,7 +161,11 @@ class DHTClient:
         return resp.status
 
     async def update(
-        self, key: bytes, value: bytes, select: pb_base.DHTSelect, timeout=0.2
+        self,
+        key: bytes,
+        value: bytes,
+        select: pb_base.DHTSelect,
+        timeout=DHT_REQ_TIMEOUT,
     ):
         logger.debug(f"DHT - Create update request")
 
@@ -177,7 +185,11 @@ class DHTClient:
         return resp.status
 
     async def send_update_notice(
-        self, key: bytes, value: bytes, select: pb_base.DHTSelect, timeout=0.2
+        self,
+        key: bytes,
+        value: bytes,
+        select: pb_base.DHTSelect,
+        timeout=DHT_REQ_TIMEOUT,
     ):
         logger.debug(f"DHT - Create update notice request")
 
@@ -197,7 +209,7 @@ class DHTClient:
         return resp.status
 
     async def register_notices(
-        self, key: bytes, select: pb_base.DHTSelect, timeout=0.2
+        self, key: bytes, select: pb_base.DHTSelect, timeout=DHT_REQ_TIMEOUT
     ):
 
         if self.peer_id == self.peer_me:
@@ -308,9 +320,9 @@ class DHTService(pb.DHTServiceServicer):
                 select=request.select,
             )
 
-        logger.info(
-            f"DHT - No Neighbors! Not FOUND for fetch! Key: {request.key.hex()}"
-        )
+        # logger.info(
+        #     f"DHT - No Neighbors! Not FOUND for fetch! Key: {request.key.hex()}"
+        # )
         return pb_base.DHT_Fetch_Response(
             key=request.key,
             value=data,

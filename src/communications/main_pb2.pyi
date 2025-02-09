@@ -51,6 +51,8 @@ class FILE_REQUEST(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
     CLOSE: _ClassVar[FILE_REQUEST]
     OPEN: _ClassVar[FILE_REQUEST]
     TELL: _ClassVar[FILE_REQUEST]
+    CONTENTS: _ClassVar[FILE_REQUEST]
+    MONITOR_REQ: _ClassVar[FILE_REQUEST]
 
 UNKNOWN: DHTStatus
 FOUND: DHTStatus
@@ -76,6 +78,8 @@ CREATE: FILE_REQUEST
 CLOSE: FILE_REQUEST
 OPEN: FILE_REQUEST
 TELL: FILE_REQUEST
+CONTENTS: FILE_REQUEST
+MONITOR_REQ: FILE_REQUEST
 
 class DHT_Fetch_Request(_message.Message):
     __slots__ = ("key", "query_chain", "status", "select")
@@ -487,17 +491,26 @@ class Directory(_message.Message):
     ) -> None: ...
 
 class FileServiceRequest(_message.Message):
-    __slots__ = ("local_file_identifier", "key", "file_request", "data", "process_id")
+    __slots__ = (
+        "local_file_identifier",
+        "key",
+        "file_request",
+        "data",
+        "process_id",
+        "is_monitor",
+    )
     LOCAL_FILE_IDENTIFIER_FIELD_NUMBER: _ClassVar[int]
     KEY_FIELD_NUMBER: _ClassVar[int]
     FILE_REQUEST_FIELD_NUMBER: _ClassVar[int]
     DATA_FIELD_NUMBER: _ClassVar[int]
     PROCESS_ID_FIELD_NUMBER: _ClassVar[int]
+    IS_MONITOR_FIELD_NUMBER: _ClassVar[int]
     local_file_identifier: bytes
     key: bytes
     file_request: FILE_REQUEST
     data: bytes
     process_id: bytes
+    is_monitor: bytes
     def __init__(
         self,
         local_file_identifier: _Optional[bytes] = ...,
@@ -505,6 +518,7 @@ class FileServiceRequest(_message.Message):
         file_request: _Optional[_Union[FILE_REQUEST, str]] = ...,
         data: _Optional[bytes] = ...,
         process_id: _Optional[bytes] = ...,
+        is_monitor: _Optional[bytes] = ...,
     ) -> None: ...
 
 class FileServiceResponse(_message.Message):

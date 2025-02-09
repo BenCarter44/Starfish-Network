@@ -41,6 +41,8 @@ enum FILE_REQUEST {
     CLOSE = 4;
     OPEN = 5;
     TELL = 6;
+    CONTENTS = 7;
+    MONITOR_REQ = 8;
 }
 
 message DHT_Fetch_Request {
@@ -253,6 +255,7 @@ message FileServiceRequest {
     FILE_REQUEST file_request = 3;
     bytes data = 4;
     bytes process_id = 5;
+    bytes is_monitor = 6;
 }
 
 message FileServiceResponse {
@@ -348,4 +351,13 @@ service FileService {
 
     // close file
     rpc CloseFile(FileServiceRequest) returns (FileServiceResponse) {}
+
+    // System events ==============================
+
+    // request monitor
+    rpc SendMonitorRequest(FileServiceRequest) returns (FileServiceResponse) {}
+
+    // raw file transfer
+    rpc SendFileContents(FileServiceRequest) returns (FileServiceResponse) {}
+
 }

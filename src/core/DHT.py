@@ -86,6 +86,19 @@ class DHT:
             return None
         return random.choice(list(use))
 
+    def get_next_closest_neighbor(self, key: bytes, ignore: set[bytes] = set()):
+        # convert
+        def diff_hash(obj):
+            # directly xor the address. They are already bytes that are unique.
+            return xor(obj, key)
+
+        query_addresses = self.addr.difference(ignore)
+        closest = sorted(query_addresses, key=diff_hash)  # sort by hash.
+        if len(closest) == 0:
+            return None
+        close_neighbors = closest[0]
+        return close_neighbors
+
     def fetch_dict(self, skip_cache=False):
         """Fetch a python dict representation.
 

@@ -16,6 +16,8 @@ except:
 
 logger = logging.getLogger(__name__)
 
+TASK_SERVICE_TIMEOUT = 1
+
 
 class TaskPeer:
     # Sends requests to network.
@@ -27,7 +29,9 @@ class TaskPeer:
         self.stub = pb.TaskServiceStub(channel)
         self.peer_id = my_addr
 
-    async def SendEvent(self, evt: Event, timeout=0.4) -> pb_base.SendEvent_Response:
+    async def SendEvent(
+        self, evt: Event, timeout=TASK_SERVICE_TIMEOUT
+    ) -> pb_base.SendEvent_Response:
         event = evt.to_pb()
         request = pb_base.SendEvent_Request(evt=event, who=self.peer_id)
         response = await self.stub.SendEvent(request, timeout=timeout)
@@ -35,7 +39,11 @@ class TaskPeer:
         return response
 
     async def SendMonitor_Request(
-        self, proc: StarProcess, my_addr: bytes, task: StarTask, timeout=0.4
+        self,
+        proc: StarProcess,
+        my_addr: bytes,
+        task: StarTask,
+        timeout=TASK_SERVICE_TIMEOUT,
     ):
         proc_data = proc.to_bytes()
         request = pb_base.SendMonitor_Request(
@@ -51,7 +59,7 @@ class TaskPeer:
         event_origin: Event | None,
         event_to: Event,
         addr_of_engine: bytes,
-        timeout=0.4,
+        timeout=TASK_SERVICE_TIMEOUT,
         backwards=False,
     ):
         proc_data = proc
@@ -153,7 +161,7 @@ class TaskService(pb.TaskServiceServicer):
 
         taskClient = TaskPeer(tp, peerID)
         try:
-            response = await taskClient.SendEvent(evt, timeout=0.4)
+            response = await taskClient.SendEvent(evt, timeout=TASK_SERVICE_TIMEOUT)
         except Exception as e:
             logger.warning(f"TASK - Transport for {peerID.hex()} timeout {e}")
             return pb_base.SendEvent_Response(

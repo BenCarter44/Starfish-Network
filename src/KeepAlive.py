@@ -207,6 +207,8 @@ class KeepAlive_Management:
         timeout_sec: float = 0,
     ) -> KeepAlive_Channel:
 
+        assert async_callback is not None
+
         logger.debug(f"KEEPALIVE - Register Channel Service: {channel_string}")
 
         if channel_string not in self.roundrobin_channels:  # tracking

@@ -828,6 +828,18 @@ class FileServiceStub(object):
             response_deserializer=main__pb2.FileServiceResponse.FromString,
             _registered_method=True,
         )
+        self.SendMonitorRequest = channel.unary_unary(
+            "/protocol.FileService/SendMonitorRequest",
+            request_serializer=main__pb2.FileServiceRequest.SerializeToString,
+            response_deserializer=main__pb2.FileServiceResponse.FromString,
+            _registered_method=True,
+        )
+        self.SendFileContents = channel.unary_unary(
+            "/protocol.FileService/SendFileContents",
+            request_serializer=main__pb2.FileServiceRequest.SerializeToString,
+            response_deserializer=main__pb2.FileServiceResponse.FromString,
+            _registered_method=True,
+        )
 
 
 class FileServiceServicer(object):
@@ -875,6 +887,21 @@ class FileServiceServicer(object):
         context.set_details("Method not implemented!")
         raise NotImplementedError("Method not implemented!")
 
+    def SendMonitorRequest(self, request, context):
+        """System events ==============================
+
+        request monitor
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details("Method not implemented!")
+        raise NotImplementedError("Method not implemented!")
+
+    def SendFileContents(self, request, context):
+        """raw file transfer"""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details("Method not implemented!")
+        raise NotImplementedError("Method not implemented!")
+
 
 def add_FileServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -910,6 +937,16 @@ def add_FileServiceServicer_to_server(servicer, server):
         ),
         "CloseFile": grpc.unary_unary_rpc_method_handler(
             servicer.CloseFile,
+            request_deserializer=main__pb2.FileServiceRequest.FromString,
+            response_serializer=main__pb2.FileServiceResponse.SerializeToString,
+        ),
+        "SendMonitorRequest": grpc.unary_unary_rpc_method_handler(
+            servicer.SendMonitorRequest,
+            request_deserializer=main__pb2.FileServiceRequest.FromString,
+            response_serializer=main__pb2.FileServiceResponse.SerializeToString,
+        ),
+        "SendFileContents": grpc.unary_unary_rpc_method_handler(
+            servicer.SendFileContents,
             request_deserializer=main__pb2.FileServiceRequest.FromString,
             response_serializer=main__pb2.FileServiceResponse.SerializeToString,
         ),
@@ -1122,6 +1159,66 @@ class FileService(object):
             request,
             target,
             "/protocol.FileService/CloseFile",
+            main__pb2.FileServiceRequest.SerializeToString,
+            main__pb2.FileServiceResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True,
+        )
+
+    @staticmethod
+    def SendMonitorRequest(
+        request,
+        target,
+        options=(),
+        channel_credentials=None,
+        call_credentials=None,
+        insecure=False,
+        compression=None,
+        wait_for_ready=None,
+        timeout=None,
+        metadata=None,
+    ):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            "/protocol.FileService/SendMonitorRequest",
+            main__pb2.FileServiceRequest.SerializeToString,
+            main__pb2.FileServiceResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True,
+        )
+
+    @staticmethod
+    def SendFileContents(
+        request,
+        target,
+        options=(),
+        channel_credentials=None,
+        call_credentials=None,
+        insecure=False,
+        compression=None,
+        wait_for_ready=None,
+        timeout=None,
+        metadata=None,
+    ):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            "/protocol.FileService/SendFileContents",
             main__pb2.FileServiceRequest.SerializeToString,
             main__pb2.FileServiceResponse.FromString,
             options,

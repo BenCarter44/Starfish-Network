@@ -18,6 +18,8 @@ from . import main_pb2 as pb_base
 from . import main_pb2_grpc as pb
 from ..core.star_components import StarAddress
 
+PEER_DISCOVERY_TIMEOUT = 1
+
 
 class PeerDiscoveryClient:
     # Sends requests to network.
@@ -27,7 +29,10 @@ class PeerDiscoveryClient:
         self.kp: KeepAlive_Management = self.transport.keep_alive
 
     async def Bootstrap(
-        self, peerID_to: bytes, transport_to: StarAddress, timeout=0.2
+        self,
+        peerID_to: bytes,
+        transport_to: StarAddress,
+        timeout=PEER_DISCOVERY_TIMEOUT,
     ) -> list[pb_base.Bootstrap_Item]:
         logger.debug(f"DISCOVERY - Create Bootstrap Request for {peerID_to.hex()}")
         req = pb_base.Bootstrap_Request(
@@ -39,7 +44,7 @@ class PeerDiscoveryClient:
         self.stub = pb.PeerServiceStub(channel)  # connect to the other peer. Not local!
 
         try:
-            recv = await self.stub.Bootstrap(req)
+            recv = await self.stub.Bootstrap(req, timeout=timeout)
         except Exception as e:
             logger.debug(f"DISCOVERY - Deletion notice error")
             await channel_kp.kill_update()

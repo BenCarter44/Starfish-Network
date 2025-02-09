@@ -54,11 +54,14 @@ class MonitorService:
 
         self.process_table[key][origin_target] = recent_event
         self.process_table_reverse[key][recent_event] = origin_target
-        # delete old records if found.
-        if origin_event in self.process_table_reverse[key]:
-            old_origin_event = self.process_table_reverse[key][origin_event]
-            del self.process_table[key][old_origin_event]
-            del self.process_table_reverse[key][origin_event]
+
+        # delete old records if found. Don't do this.... have it done in remove_checkpoint()
+        # if origin_event in self.process_table_reverse[key]:
+        #     old_origin_event = self.process_table_reverse[key][origin_event]
+        #     del self.process_table[key][old_origin_event]
+        #     del self.process_table_reverse[key][origin_event]
+
+        logger.debug(f"TASK - {self.process_table[key]}")
 
     def remove_checkpoint(
         self, peer_id: bytes, origin_event: Event | None, recent_event: Event
@@ -70,7 +73,7 @@ class MonitorService:
         logger.debug(f"TASK - {key}")
         logger.debug(f"TASK - {self.process_table}")
         if key not in self.process_table:
-            # logger.info(f"False 1 {key} - {list(self.process_table.keys())}")
+            # logger.debug(f"TASK - False 1 {key} - {list(self.process_table.keys())}")
             return False
 
         # automatically factors in NONCE
@@ -89,16 +92,18 @@ class MonitorService:
 
         if (
             origin_target not in self.process_table[key]
-            or recent_event not in self.process_table_reverse[key]
+            and recent_event not in self.process_table_reverse[key]
         ):
-            # logger.info(f"False 2 {origin_target.hex()} - {self.process_table[key]}")
-            # logger.info(
-            #     f"False 2 {recent_event.target.get_id()} - {self.process_table_reverse[key]}"
-            # )
+            logger.info(f"False 2 {origin_target.hex()} - {self.process_table[key]}")
+            logger.info(
+                f"False 2 {recent_event.target.get_id()} - {self.process_table_reverse[key]}"
+            )
             return False
 
-        del self.process_table[key][origin_target]
-        del self.process_table_reverse[key][recent_event]
+        if origin_target in self.process_table[key]:
+            del self.process_table[key][origin_target]
+        if recent_event in self.process_table_reverse[key]:
+            del self.process_table_reverse[key][recent_event]
         return True
 
     def recall_most_recent_event(
