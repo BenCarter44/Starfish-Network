@@ -6,6 +6,7 @@ It is these nodes that interact with other nodes in the network, creating the OS
 """
 
 import asyncio
+import os
 import sys
 from src.node import Node
 import src.core.star_components as star
@@ -173,12 +174,12 @@ if __name__ == "__main__":
 
         if server_number == 1:
             pass
-            await asyncio.sleep(5)
-            # pgrm = star.Program(read_pgrm="examples/file_reader.star")
-            # logger.info(
-            #     f"I: Opening program '{pgrm.saved_data['pgrm_name']}' from {pgrm.saved_data['date_compiled']}\n"
-            # )
-            # process = await node.start_program(pgrm, b"User")
+            await asyncio.sleep(10)
+            pgrm = star.Program(read_pgrm="examples/file_program.star")
+            logger.info(
+                f"I: Opening program '{pgrm.saved_data['pgrm_name']}' from {pgrm.saved_data['date_compiled']}\n"
+            )
+            process = await node.start_program(pgrm, os.urandom(4))
 
             logger.warning("Final Node1 PEER LIST - task")
             node.plugboard.peer_table.fancy_print()
@@ -200,11 +201,42 @@ if __name__ == "__main__":
             await asyncio.sleep(20)
             logger.warning("Final Node1 TASK LIST - task")
             node.plugboard.task_table.fancy_print()
+
+            pgrm = star.Program(read_pgrm="examples/file_program.star")
+            logger.info(
+                f"I: Opening program '{pgrm.saved_data['pgrm_name']}' from {pgrm.saved_data['date_compiled']}\n"
+            )
+            process = await node.start_program(pgrm, os.urandom(4))
+
             # pgrm = star.Program(read_pgrm="examples/file_program.star")
             # logger.info(
             #     f"I: Opening program '{pgrm.saved_data['pgrm_name']}' from {pgrm.saved_data['date_compiled']}\n"
             # )
             # process = await node.start_program(pgrm, b"Bob")
+
+        elif server_number == 3:
+            pass
+            await asyncio.sleep(25)
+            logger.warning("Final Node1 TASK LIST - task")
+            node.plugboard.task_table.fancy_print()
+
+            pgrm = star.Program(read_pgrm="examples/file_program.star")
+            logger.info(
+                f"I: Opening program '{pgrm.saved_data['pgrm_name']}' from {pgrm.saved_data['date_compiled']}\n"
+            )
+            process = await node.start_program(pgrm, os.urandom(4))
+
+        elif server_number == 4:
+            pass
+            await asyncio.sleep(25)
+            logger.warning("Final Node1 TASK LIST - task")
+            node.plugboard.task_table.fancy_print()
+
+            pgrm = star.Program(read_pgrm="examples/my_program.star")
+            logger.info(
+                f"I: Opening program '{pgrm.saved_data['pgrm_name']}' from {pgrm.saved_data['date_compiled']}\n"
+            )
+            process = await node.start_program(pgrm, os.urandom(4))
 
         await asyncio.sleep(1000)
         logger.critical("Main done!")
@@ -219,25 +251,26 @@ if __name__ == "__main__":
     def filter_messages_by_label(record):
         if record.levelno >= logging.ERROR:
             return True
+        record.msg = str(record.msg)
         if record.msg.startswith("PEER"):
-            return True
+            return False
         elif record.msg.startswith("ENGINE"):
-            return True
+            return False
         elif record.msg.startswith("TASK"):
-            return True
+            return False
         elif record.msg.startswith("FILE"):
-            return True
+            return False
         elif record.msg.startswith("DISCOVERY"):
-            return True
+            return False
         elif record.msg.startswith("DHT"):
-            return True
+            return False
         elif record.msg.startswith("KEEPALIVE"):
             return True
         elif record.msg.startswith("META"):
-            return True
+            return False
         return True
 
     ch.addFilter(filter_messages_by_label)
-    logging.basicConfig(handlers=[ch], level=logging.INFO)
+    logging.basicConfig(handlers=[ch], level=logging.DEBUG)
     asyncio.get_event_loop().set_debug(True)
     asyncio.run(main())

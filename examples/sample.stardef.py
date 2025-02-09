@@ -22,12 +22,19 @@ def start_event(evt: star.Event):
     return evt_new
 
 
-@star.task("input")
-def input_event(evt: star.Event):
+@star.task("input", pass_task_id=True)
+def input_event(evt: star.Event, task: star.StarTask):
+    import random
+    import time
 
-    print(f"Query: {evt.data['counter']}")
-    a = input("Type in a number: ")
-    b = input("Type in a second number: ")
+    print(f"Query: {evt.data['counter']}. My user ID: {task.get_user()}")
+    a = print("Type in a number: ", end=" ")
+    a = random.randint(0, 10)
+    print(a)
+    b = print("Type in a second number: ", end=" ")
+    b = random.randint(0, 12)
+    print(b)
+    time.sleep(random.randint(1, 5))
 
     evt_new = star.Event()
     data = {"a": int(a), "b": int(b), "counter": evt.data["counter"] + 1}

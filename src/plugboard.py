@@ -744,10 +744,25 @@ class PlugBoard:
         if task_id not in self.monitor_servers:
             logger.error(f"TASK - No monitor found for process: {task_id.hex()}")
             return
+
         monitor_peer = self.monitor_servers[task_id]
-        logger.info(f"TASK - Send checkpoint {monitor_peer.hex()}")
         tp = await self.get_peer_transport(monitor_peer)
         assert tp is not None
+        while True:
+            test = await self.keep_alive_manager.test(tp, monitor_peer)
+            if test:
+                break
+            while True:
+                new_peer = self.monitor_servers[task_id]
+                if monitor_peer != new_peer:
+                    break
+                await asyncio.sleep(0.02)  # wait for monitor to spawn
+                logger.debug("TASK - Waiting for monitor...")
+            monitor_peer = new_peer
+            tp = await self.get_peer_transport(monitor_peer)
+            assert tp is not None
+
+        logger.info(f"TASK - Send checkpoint {monitor_peer.hex()}")
         taskClient = TaskPeer(tp, monitor_peer)
         await taskClient.SendCheckpoint(
             task_id, event_origin, event_target, self.my_addr

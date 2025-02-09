@@ -22,10 +22,12 @@ TRIGGER_TIMEOUT = 2
 OFFLINE_TIMEOUT = 10
 HEARTBEAT_INTERVAL = 1
 FAIL_MAX = 3
+MIN_TEST_WINDOW = 0.2
 
 
 class KeepAlive_Channel:
-    def __init__(self, channel: grpc.aio.Channel, peer: bytes):
+    def __init__(self, channel_string: str):
+        channel = grpc.aio.insecure_channel(channel_string)
         self.comm = KeepAliveComm(channel)
         self.connected = True
         self.callbacks: dict[int, list[Callable]] = {
@@ -33,7 +35,7 @@ class KeepAlive_Channel:
             TRIGGER_TIMEOUT: [],
         }
         self.last_seen = 0.0
-        self.peer_id_assoc: bytes = peer
+        self.peer_id_assoc: bytes = b""
         self.channel = channel
         self.kill_count = 0
         self.is_closed = False
@@ -122,36 +124,24 @@ class KeepAlive_Management:
         asyncio.create_task(self.keep_alive_task())
         self.channels: dict[str, KeepAlive_Channel] = {}
         self.roundrobin_channels: list[str] = []
-        self.channel_map: dict[str, grpc.aio.Channel] = {}
-        self.rev_channel_map: dict[grpc.aio.Channel, str] = {}
         self.default_offline = default_offline
 
     def fancy_print(self):
-        for s in self.channel_map:
+        for s in self.channels:
             logger.info(
                 f"KEEPALIVE - {s} : {self.channels[s].is_connected()} - {self.channels[s].last_seen}"
             )
 
     def get_channel(self, string: str) -> grpc.aio.Channel:
-        if string not in self.channel_map:
-            self.channel_map[string] = grpc.aio.insecure_channel(string)
-            self.rev_channel_map[self.channel_map[string]] = string
-        return self.channel_map[string]
+        if string not in self.channels:
+            self.channels[string] = KeepAlive_Channel(string)
+        return self.channels[string].channel
 
     def get_kp_channel(self, addr: StarAddress, peer: bytes) -> KeepAlive_Channel:
-        s = addr.get_string_channel()
-        channel = self.get_channel(s)
-        if s not in self.channels:
-            logger.debug(f"KEEPALIVE - Create keep alive channel: {s}")
-            self.channels[s] = KeepAlive_Channel(channel, peer)
-
-            async def tmp():
-                await self.default_offline(peer)
-
-            self.channels[s].add_callbacks(TRIGGER_OFFLINE, tmp)
-            self.channel_map[s] = channel
-            self.rev_channel_map[channel] = s
-        return self.channels[s]
+        string = addr.get_string_channel()
+        self.get_channel(string)
+        self.channels[string].peer_id_assoc = peer
+        return self.channels[string]
 
     async def test(self, tp: StarAddress, peer: bytes):
         if tp is None:
@@ -160,7 +150,12 @@ class KeepAlive_Management:
         kp = self.get_kp_channel(tp, peer)
         start = kp.kill_count
         if not (kp.is_connected()):
+            logger.debug(f"KEEPALIVE - Test query to {peer.hex()} - NOT CON")
             return False
+        if kp.last_seen + MIN_TEST_WINDOW > time.time():
+            logger.debug(f"KEEPALIVE - Test query to {peer.hex()} - SKIP")
+            return True
+        logger.debug(f"KEEPALIVE - Test query to {peer.hex()}")
         await kp.heartbeat(False)
         return kp.kill_count == start and kp.is_connected()
         # return kp.is_connected()
@@ -168,11 +163,9 @@ class KeepAlive_Management:
     async def receive_ping(self, servicer_client):
         # get channel. If I have the channel, update its keep alive
         channel_recv_peer = servicer_client.replace("ipv4:", "")
-        if channel_recv_peer not in self.channel_map:
-            return  # I didn't open a channel to it, skip
 
         if channel_recv_peer not in self.channels:
-            return  # I don't have any callbacks registered to it.
+            return  # Unknown!
 
         logger.debug(f"KEEPALIVE - Receive ping from: {channel_recv_peer}")
         self.channels[channel_recv_peer].update()
@@ -209,24 +202,15 @@ class KeepAlive_Management:
 
         assert async_callback is not None
 
+        self.get_channel(channel_string)
+        self.channels[channel_string].peer_id_assoc = peer_id
+
         logger.debug(f"KEEPALIVE - Register Channel Service: {channel_string}")
-
         if channel_string not in self.roundrobin_channels:  # tracking
-            logger.debug(f"KEEPALIVE - Create keep alive channel: {channel_string}")
-
-            if channel_string not in self.channels:  # overall
-                self.channels[channel_string] = KeepAlive_Channel(channel, peer_id)
-                self.channel_map[channel_string] = channel
-                self.rev_channel_map[channel] = channel_string
-
             self.roundrobin_channels.append(channel_string)
-            s = channel_string  # type: ignore
-
         if trigger == TRIGGER_TIMEOUT:
             trigger = timeout_sec * 0.1 + 2  # type: ignore
-
         self.channels[channel_string].add_callbacks(trigger, async_callback)
-
         return self.channels[channel_string]
 
     async def keep_alive_task(self):
@@ -246,9 +230,6 @@ class KeepAlive_Management:
             if self.channels[s].is_closed:
                 # GONE!
                 del self.channels[s]
-                channel = self.channel_map[s]
-                del self.channel_map[s]
-                del self.rev_channel_map[channel]
                 del self.roundrobin_channels[counter]
                 continue
 
@@ -261,7 +242,7 @@ class KeepAlive_Management:
                 continue
 
             # logger.debug(s)
-            # logger.debug(self.roundrobin_channels)
+            logger.debug(str(self.roundrobin_channels))
             asyncio.create_task(self.channels[s].heartbeat(True))  # heartbeat request.
             await asyncio.sleep(HEARTBEAT_INTERVAL / len(self.channels))
 

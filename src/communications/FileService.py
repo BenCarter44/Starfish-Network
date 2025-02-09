@@ -216,8 +216,8 @@ class FileClient:
     async def SendMonitorRequest(
         self, file: HostedFile, contents: bytes, who: bytes, timeout=FILE_REQ_TIMEOUT
     ):
-        assert isinstance(timeout, float)
-        assert isinstance(contents, bytes)
+        # assert isinstance(timeout, int)
+        # assert isinstance(contents, bytes)
         logger.info(
             f"FILE - SendMonitor request: {file.get_key().hex()} - {file.local_identifier.hex()}"
         )
@@ -334,7 +334,9 @@ class FileService(pb.FileServiceServicer):
             tp = await self.internal_callback.get_peer_transport(monitor_peer)
             assert tp is not None
             while True:
-                test = self.internal_callback.keep_alive_manager.test(tp, monitor_peer)
+                test = await self.internal_callback.keep_alive_manager.test(
+                    tp, monitor_peer
+                )
                 if test:
                     break
                 while True:
@@ -384,7 +386,9 @@ class FileService(pb.FileServiceServicer):
             tp = await self.internal_callback.get_peer_transport(monitor_peer)
             assert tp is not None
             while True:
-                test = self.internal_callback.keep_alive_manager.test(tp, monitor_peer)
+                test = await self.internal_callback.keep_alive_manager.test(
+                    tp, monitor_peer
+                )
                 if test:
                     break
                 while True:
@@ -432,7 +436,9 @@ class FileService(pb.FileServiceServicer):
             tp = await self.internal_callback.get_peer_transport(monitor_peer)
             assert tp is not None
             while True:
-                test = self.internal_callback.keep_alive_manager.test(tp, monitor_peer)
+                test = await self.internal_callback.keep_alive_manager.test(
+                    tp, monitor_peer
+                )
                 if test:
                     break
                 while True:
@@ -480,7 +486,9 @@ class FileService(pb.FileServiceServicer):
             tp = await self.internal_callback.get_peer_transport(monitor_peer)
             assert tp is not None
             while True:
-                test = self.internal_callback.keep_alive_manager.test(tp, monitor_peer)
+                test = await self.internal_callback.keep_alive_manager.test(
+                    tp, monitor_peer
+                )
                 if test:
                     break
                 while True:
@@ -560,7 +568,9 @@ class FileService(pb.FileServiceServicer):
             tp = await self.internal_callback.get_peer_transport(monitor_peer)
             assert tp is not None
             while True:
-                test = self.internal_callback.keep_alive_manager.test(tp, monitor_peer)
+                test = await self.internal_callback.keep_alive_manager.test(
+                    tp, monitor_peer
+                )
                 if test:
                     break
                 while True:
