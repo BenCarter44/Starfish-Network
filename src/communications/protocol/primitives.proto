@@ -8,17 +8,19 @@ message TaskIdentifier {
     bytes task_id = 3;
     bytes callable_data = 4;
     int32 pass_id = 5;
-
+    bytes monitor_peer = 6;
 }
 
 message TaskValue {
     bytes address = 1;
     bytes task_data = 2;
+    bytes process_data = 3;
 }
 
 message Process {
     bytes user = 1;
     bytes process_id = 2;
+    bytes task_data = 3;
 }
 
 message TransportAddress {
@@ -30,7 +32,11 @@ message TransportAddress {
 message Event {
     // PeerIdentifier addr_from = 1; 
     TaskIdentifier task_to = 1;
+    bytes task_from = 5; // itself!
+    bytes task_pre = 7;
     bytes data = 2;
     bytes system_data = 3;
-
+    int32 nonce = 4;
+    int32 is_checkpoint = 6;
+    string target_string = 8;
 }

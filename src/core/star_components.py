@@ -16,28 +16,21 @@ import logging
 import grpc
 import sys, os
 
+
+try:
+    from src.util.util import and_bytes, pad_bytes
+    from src.core.File import FileFactory
+except:
+    from util.util import and_bytes, pad_bytes
+    from core.File import FileFactory
+
+
 sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
 
 try:
     import communications.primitives_pb2 as pb_p
 except:
     from ..communications import primitives_pb2 as pb_p
-
-
-def pad_bytes(b: bytes, l: int) -> bytes:
-    """Pad bytes on left (most significant bit first, big endian)
-
-    Args:
-        b (bytes): bytes to pad
-        l (int): length
-
-    Returns:
-        bytes: The padded bytes
-    """
-    data = bytearray(b)
-    padding_byte = b"\x00"
-    data = data.rjust(l, padding_byte)  # pad on MSB
-    return bytes(data)
 
 
 class StarProcess:
@@ -63,7 +56,7 @@ class StarProcess:
         Returns:
             pb_p.Process: Protobuf Process object
         """
-        return pb_p.Process(user=self.user_id, process_id=self.process_id)
+        return pb_p.Process.FromString(self.get_all_task_bytes())
 
     @classmethod
     def from_pb(cls, pb):
@@ -87,9 +80,17 @@ class StarProcess:
         Returns:
             StarProcess: Return a StarProcess object
         """
-        ti = pb_p.Process()
-        ti = ti.FromString(b)
-        return cls.from_pb(ti)
+        pb = pb_p.Process.FromString(b)
+        task_list = dill.loads(pb.task_data)
+
+        task_list_new = set()
+        for i, task_b in task_list.items():
+            task = StarTask.from_bytes(task_b)
+            task_list_new.add(task)
+
+        proc = cls(pb.user, pb.process_id)
+        proc.task_list = task_list_new
+        return proc
 
     def add_task(self, i: "StarTask"):
         """Associate a task to a process
@@ -110,6 +111,28 @@ class StarProcess:
         """
         return self.task_list
 
+    def get_all_task_bytes(self) -> bytes:
+        out = {}
+        for task in self.task_list:
+            out[task.get_id()] = task.to_bytes_with_callable()
+
+        task_data = dill.dumps(out)
+
+        pb = pb_p.Process(
+            user=self.user_id, process_id=self.process_id, task_data=task_data
+        )
+        return pb.SerializeToString()
+
+    def get_id(self) -> bytes:
+        # first 32 bytes are routing
+        # second 32 bytes are user bytes
+        # third 32 bytes are process ID bytes
+        # fourth 32 bytes are task bytes
+        custom = self.user_id + self.process_id + pad_bytes(b"", 2)  # 0 for task_id.
+        # custom_bytes = pad_bytes(custom, 32)
+        # return custom_bytes + self.user_id + self.process_id + self.name
+        return custom
+
 
 class StarTask:
     def __init__(
@@ -122,6 +145,17 @@ class StarTask:
         self.nice_name = ""
         self.runtime_data: Optional[dict[str, bytes]] = None
         self.pass_id = pass_id
+
+        self.hold_past_event = None
+        self.hold_past_event_pre = None
+        self.hold_process: Optional[StarProcess] = None
+        self.monitor = b""
+
+        self.plugboard_callback = None
+        self.loop_callback = None  # struct for file factory
+
+    def get_user(self) -> bytes:
+        return self.user_id
 
     def to_bytes(self) -> bytes:
         """Serialize StarTask to bytes
@@ -151,6 +185,7 @@ class StarTask:
             task_id=self.task_id,
             callable_data=c if include_callable else b"",
             pass_id=self.pass_id,
+            monitor_peer=self.monitor,
         )
 
     def to_bytes_with_callable(self) -> bytes:
@@ -180,6 +215,7 @@ class StarTask:
             r = {}
         out.callable = c
         out.runtime_data = r
+        out.monitor = pb.monitor_peer
         # logger.debug(f"From PB: {out.callable}")
         return out
 
@@ -220,6 +256,9 @@ class StarTask:
     def clear_callable(self):
         self.callable = None
 
+    def get_file_factory(self):
+        return FileFactory(self.plugboard_callback, self.loop_callback, self.process_id)
+
     def get_id(self):
         # first 32 bytes are routing
         # second 32 bytes are user bytes
@@ -229,6 +268,12 @@ class StarTask:
         # custom_bytes = pad_bytes(custom, 32)
         # return custom_bytes + self.user_id + self.process_id + self.name
         return custom
+
+    def get_process_id(self):
+        # Keep first 6 bytes
+        mask = b"\xFF\xFF\xFF\xFF\xFF\xFF\x00\x00"
+        process_id = and_bytes(self.get_id(), mask)
+        return process_id
 
     def __hash__(self):
         return hash(self.get_id())
@@ -331,10 +376,15 @@ class Event:
         self.data = data
         self.system = None
         self.target = None
+        self.origin = None
+        self.origin_previous = None
         self.is_target_conditional = False  # used for compiler only
+        self.is_checkpoint = True
 
         self.owned_user_id: Optional[bytes] = None
         self.owned_process_id: Optional[bytes] = None
+        self.nonce = 0
+        self.target_string = ""
 
     def to_bytes(self) -> bytes:
         return self.to_pb().SerializeToString()
@@ -344,27 +394,79 @@ class Event:
         if self.target is None:
             task_to = StarTask(b"", b"", b"")
 
-        return pb_p.Event(
+        event_origin = self.origin
+        if self.origin is None:
+            event_origin = b""
+        else:
+            logger.debug(f"TASK - {self.origin.target}")
+            logger.debug(f"TASK - {self.target}")
+            self.origin.origin = None  # No recursion.
+            logger.debug(f"TASK - {self.origin.target}")
+            event_origin = self.origin.to_bytes()
+
+        event_origin_previous = self.origin_previous
+        if self.origin_previous is None:
+            event_origin_previous = b""
+        else:
+            self.origin_previous.origin = None  # No recursion.
+            event_origin_previous = self.origin_previous.to_bytes()
+
+        evt_out = pb_p.Event(
             task_to=task_to.to_pb(),
+            task_from=event_origin,
+            task_pre=event_origin_previous,
             data=dill.dumps(self.data, fmode=dill.FILE_FMODE),
             system_data=dill.dumps(self.system, fmode=dill.FILE_FMODE),
+            nonce=self.nonce,
+            is_checkpoint=self.is_checkpoint,
+            target_string=self.target_string,
         )
+
+        return evt_out
+
+    def __hash__(self):
+        # A Event is the same as another event if the NONCE and TARGET are the same!
+        dt = (self.target.get_id(), self.nonce)
+        return hash(dt)
+
+    def __eq__(self, other):
+        if isinstance(other, Event):
+            return (
+                self.target.get_id() == other.target.get_id()
+                and other.nonce == self.nonce
+            )
+        return False
 
     @classmethod
     def from_pb(cls, pb):
         data = dill.loads(pb.data)
         system = dill.loads(pb.system_data)
         task_to = pb.task_to
+        evt_from = pb.task_from
+        evt_pre = pb.task_pre
+        if evt_from == b"":
+            evt_from = None
+        else:
+            evt_from = cls.from_bytes(evt_from)
+
+        if evt_pre == b"":
+            evt_pre = None
+        else:
+            evt_pre = cls.from_bytes(evt_pre)
 
         out = cls(data)
         out.system = system
         out.target = StarTask.from_pb(task_to)
+        out.origin = evt_from
+        out.origin_previous = evt_pre
+        out.nonce = pb.nonce
+        out.is_checkpoint = pb.is_checkpoint
+        out.target_string = pb.target_string
         return out
 
     @classmethod
     def from_bytes(cls, b):
-        ti = pb_p.Event()
-        ti = ti.FromString(b)
+        ti = pb_p.Event.FromString(b)
         return cls.from_pb(ti)
 
     def clear_system(self) -> None:
@@ -384,6 +486,7 @@ class Event:
         try:
             i = target.get_id()  # type: ignore
             self.target = target
+            # self.target_string = target
             return
         except:
             pass  # Not a StarTask .... isinstance doesn't work for some reason on programs
@@ -399,8 +502,8 @@ class Event:
             b"",
         )
         task_identifier.set_nice_name(target)
-        self.target = task_identifier
         self.target_string = target
+        self.target = task_identifier
 
     def set_conditional_target(self, target: StarTask | str) -> None:
         """Set target task of event.
@@ -423,145 +526,146 @@ class Event:
             b"",
         )
         task_identifier.set_nice_name(target)
-        self.target = task_identifier
         self.target_string = target
+        self.target = task_identifier
 
 
-class AwaitGroup:
-    """Group of AwaitEvent()"""
+# class AwaitGroup:
+#     """Group of AwaitEvent()"""
 
-    def __init__(
-        self,
-        *,
-        originating_task: StarTask,
-        return_event: Optional[Event] = None,
-        flood_time_delay=0.01,  # 1 msec
-    ):
-        """Create group of await events.
+#     def __init__(
+#         self,
+#         *,
+#         originating_task: StarTask,
+#         return_event: Optional[Event] = None,
+#         flood_time_delay=0.01,  # 1 msec
+#     ):
+#         """Create group of await events.
 
-        Args:
-            originating_task (TaskIdentifier): TaskID of origin task
-            return_event (Optional[Event], optional): Not Implemented! Fire this event when all tasks in group finish. Defaults to None.
-            flood_time_delay (float, optional): Short delay between add_event calls. Defaults to 0.001.
-        """
-        self.return_event = return_event
-        self.awaits: list[AwaitEvent] = []
-        self.origin_task = originating_task
-        self.flood_time_delay = flood_time_delay
-        if return_event is not None:
-            raise NotImplementedError(
-                "Return event on await group not implemented yet!"
-            )
+#         Args:
+#             originating_task (TaskIdentifier): TaskID of origin task
+#             return_event (Optional[Event], optional): Not Implemented! Fire this event when all tasks in group finish. Defaults to None.
+#             flood_time_delay (float, optional): Short delay between add_event calls. Defaults to 0.001.
+#         """
+#         self.return_event = return_event
+#         self.awaits: list[AwaitEvent] = []
+#         self.origin_task = originating_task
+#         self.flood_time_delay = flood_time_delay
+#         if return_event is not None:
+#             raise NotImplementedError(
+#                 "Return event on await group not implemented yet!"
+#             )
 
-    def add_event(self, evt: Event) -> None:
-        """Add event to group. Automatically sends out the event
+#     def add_event(self, evt: Event) -> None:
+#         """Add event to group. Automatically sends out the event
 
-        Args:
-            evt (Event): Event to add.
-        """
-        await_evt = AwaitEvent(evt, self.origin_task)
-        time.sleep(self.flood_time_delay)  # something is wrong with the delays. TODO.
-        self.awaits.append(await_evt)
+#         Args:
+#             evt (Event): Event to add.
+#         """
+#         await_evt = AwaitEvent(evt, self.origin_task)
+#         time.sleep(self.flood_time_delay)  # something is wrong with the delays. TODO.
+#         self.awaits.append(await_evt)
 
-    def wait_result_for_all(self, timeout=2.0) -> list[Event]:
-        """Wait for events in the group to finish.
+#     def wait_result_for_all(self, timeout=2.0) -> list[Event]:
+#         """Wait for events in the group to finish.
 
-        Args:
-            timeout (float, optional): Timeout per each event in seconds. Defaults to 2.0.
+#         Args:
+#             timeout (float, optional): Timeout per each event in seconds. Defaults to 2.0.
 
-        Returns:
-            list[Event]: Returned events.
-        """
+#         Returns:
+#             list[Event]: Returned events.
+#         """
 
-        if not (IS_ENGINE):
-            return []
+#         if not (IS_ENGINE):
+#             return []
 
-        out: list[Event] = []
-        for x in self.awaits:
-            out.append(x.wait_for_result(timeout=timeout))
+#         out: list[Event] = []
+#         for x in self.awaits:
+#             out.append(x.wait_for_result(timeout=timeout))
 
-        return out
+#         return out
 
-    def close(self):
-        """Free the await event group from engine."""
-        for x in self.awaits:
-            x.cleanup()
+#     def close(self):
+#         """Free the await event group from engine."""
+#         for x in self.awaits:
+#             x.cleanup()
 
-    # will need override. wait()
+#     # will need override. wait()
 
 
-class AwaitEvent:
-    """Used to create events in a task while being able to track their completion."""
+# class AwaitEvent:
+#     """Used to create events in a task while being able to track their completion."""
 
-    def __init__(
-        self,
-        evt: Event,
-        originating_task: StarTask,
-    ):
-        """Create Awaitable Event. Immediately sends out on creation.
+#     def __init__(
+#         self,
+#         evt: Event,
+#         originating_task: StarTask,
+#     ):
+#         """Create Awaitable Event. Immediately sends out on creation.
 
-        Args:
-            evt (Event): Event
-            originating_task (TaskIdentifier): origin TaskID
-        """
-        evt.target.attach_to_process_task(originating_task)
-        self.evt = evt
+#         Args:
+#             evt (Event): Event
+#             originating_task (TaskIdentifier): origin TaskID
+#         """
+#         evt.target.attach_to_process_task(originating_task)
+#         self.evt = evt
 
-        # create trigger and place in list.
+#         # create trigger and place in list.
 
-        f = BINDINGS["create_trigger"]
-        trigger = f(originating_task)
+#         f = BINDINGS["create_trigger"]
+#         trigger = f(originating_task)
 
-        # tsk = star.create_dynamic_task(f, condition=None)
-        evt.define_system()
-        evt.system["await"] = True
-        evt.system["initial"] = True
-        evt.system["previous"] = evt
-        evt.system["node"] = BINDINGS["get_node_id"]()
-        evt.system["trigger"] = trigger  # expect response.
+#         # tsk = star.create_dynamic_task(f, condition=None)
+#         evt.define_system()
+#         evt.system["await"] = True
+#         evt.system["initial"] = True
+#         evt.system["previous"] = evt
+#         evt.system["node"] = BINDINGS["get_node_id"]()
+#         evt.system["trigger"] = trigger  # expect response.
+#         evt.is_checkpoint = False
 
-        self.trigger = trigger
-        dispatch_event(
-            evt, originating_task
-        )  # original event. This will then send back event to dynamic task
+#         self.trigger = trigger
+#         dispatch_event(
+#             evt, originating_task
+#         )  # original event. This will then send back event to dynamic task
 
-        # dynamic task will read the event, and then set AwaitEvent to ready()
-        #
+#         # dynamic task will read the event, and then set AwaitEvent to ready()
+#         #
 
-        # set await asyncio.event()
-        # async trigger for when event is triggered
+#         # set await asyncio.event()
+#         # async trigger for when event is triggered
 
-    def wait_for_result(self, timeout: float = 2.0) -> Event:
-        """Wait for result of event. Return returned event when done.
+#     def wait_for_result(self, timeout: float = 2.0) -> Event:
+#         """Wait for result of event. Return returned event when done.
 
-        Args:
-            timeout (float, optional): Timeout to wait. Defaults to 2.0.
+#         Args:
+#             timeout (float, optional): Timeout to wait. Defaults to 2.0.
 
-        Returns:
-            Event: Returned event.
-        """
-        if not (IS_ENGINE):
-            return  # type: ignore
-        f = BINDINGS["await_trigger"]
-        return f(self.trigger, timeout=timeout)
+#         Returns:
+#             Event: Returned event.
+#         """
+#         if not (IS_ENGINE):
+#             return  # type: ignore
+#         f = BINDINGS["await_trigger"]
+#         return f(self.trigger, timeout=timeout)
 
-    def is_ready(self) -> bool:
-        """Check if event is ready.
+#     def is_ready(self) -> bool:
+#         """Check if event is ready.
 
-        Returns:
-            bool: True if ready.
-        """
-        if not (IS_ENGINE):
-            return  # type: ignore
-        f = BINDINGS["is_trigger_ready"]
-        return f(self.trigger)
+#         Returns:
+#             bool: True if ready.
+#         """
+#         if not (IS_ENGINE):
+#             return  # type: ignore
+#         f = BINDINGS["is_trigger_ready"]
+#         return f(self.trigger)
 
-    def cleanup(self):
-        """Cleanup awaited event"""
-        if not (IS_ENGINE):
-            return  # type: ignore
-        f = BINDINGS["cleanup_trigger"]
-        return f(self.trigger)
+#     def cleanup(self):
+#         """Cleanup awaited event"""
+#         if not (IS_ENGINE):
+#             return  # type: ignore
+#         f = BINDINGS["cleanup_trigger"]
+#         return f(self.trigger)
 
 
 def dispatch_event(evt: Event, originating_task: StarTask) -> None:
@@ -584,10 +688,13 @@ def dispatch_event(evt: Event, originating_task: StarTask) -> None:
     evt.target.task_id = originating_task.runtime_data[evt.target_string]
 
     evt.target.attach_to_process_task(originating_task)
-    logger.info(evt.target)
-    logger.info(f"SEND: {evt.data}")
+    evt.origin = originating_task.hold_past_event
+    evt.origin_previous = originating_task.hold_past_event_pre
+    evt.is_checkpoint = False
+    logger.info(f"TASK - {evt.target}")
+    logger.info(f"TASK - SEND: {evt.data}")
     f = BINDINGS["dispatch_event"]
-    return f(evt)
+    return f(evt, increment=True)
 
 
 # Currently global for program. --> a program is simply a list of Tasks with Callable.
@@ -677,7 +784,7 @@ class Program:
 #     return task_to_id
 
 
-def task(name: str, pass_task_id=False):
+def task(name: str, pass_task_id=False, checkpoint=True):
     """Decorator for building a task
 
     Args:
@@ -704,7 +811,7 @@ def task(name: str, pass_task_id=False):
         # task_identifier.set_nice_name(name)
         # task_identifier.set_callable(f_wrap)
         # f_wrap(Event(), StarTask(b"", b"", b"", False))
-        preview_task_list.append((name, f_wrap, pass_task_id))
+        preview_task_list.append((name, f_wrap, pass_task_id, checkpoint))
 
         return f_wrap
 
@@ -756,16 +863,31 @@ def compile(start_event: Event) -> Program:
     # do unconditional tasks first
     counter = 0
     task_to_id = {}
-    for name, f_wrap, pass_task_id in preview_task_list:
+    task_to_checkpoint = {}
+    for name, f_wrap, pass_task_id, checkpoint in preview_task_list:
         task_to_id[name] = int.to_bytes(counter, 2, "big", signed=False)
+        task_to_checkpoint[name] = checkpoint
         counter += 1
 
-    for name, f_wrap, pass_task_id in preview_task_list:
+    logger.debug(f"TASK - {task_to_checkpoint}")
+
+    for name, f_wrap, pass_task_id, checkpoint in preview_task_list:
         # print(name, f_wrap)
         def edit_ti(func):
             def edit_task_id(*args, **kwargs):
                 e = func(*args, **kwargs)
+                # print(e.target_string, "ENGINE")
+                if e.target_string is None:
+                    logger.error(
+                        "Program error: Did you forget a event.set_target()? Target unknwon. Dropping."
+                    )
+                    return None
                 e.target.task_id = task_to_id[e.target_string]
+
+                if e.target_string not in task_to_checkpoint:
+                    e.is_checkpoint = False  # Conditional task. Mark False
+                else:
+                    e.is_checkpoint = task_to_checkpoint[e.target_string]
                 return e
 
             return edit_task_id
@@ -791,6 +913,7 @@ def compile(start_event: Event) -> Program:
                 task_id_out, lambda_condition = token
                 if lambda_condition(evt):
                     e.set_target(task_id_out)
+                    e.is_checkpoint = False  # no checkpoint on conditional.
                     break
             return e
 
@@ -815,6 +938,10 @@ def compile(start_event: Event) -> Program:
                 def edit_task_id(*args, **kwargs):
                     e = func(*args, **kwargs)
                     e.target.task_id = task_to_id[e.target_string]
+                    if e.target_string not in task_to_checkpoint:
+                        e.is_checkpoint = False  # Conditional task. Mark False
+                    else:
+                        e.is_checkpoint = task_to_checkpoint[e.target_string]
                     return e
 
                 return edit_task_id
@@ -835,11 +962,12 @@ def compile(start_event: Event) -> Program:
         task_list.add(task_identifier)
 
     for task in task_list:
-        logger.info(f"Registered: {task}")
+        logger.info(f"TASK - Registered: {task}")
         task.runtime_data = task_to_id
 
     start_event.target.task_id = task_to_id[start_event.target_string]
-    logger.info(f"Start: {start_event.target}")
+    start_event.is_checkpoint = True
+    logger.info(f"TASK - Start: {start_event.target}")
     program = Program(task_list=task_list, start_event=start_event)
     # program.show_dependencies()
     return program

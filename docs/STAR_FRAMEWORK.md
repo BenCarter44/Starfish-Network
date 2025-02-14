@@ -9,6 +9,7 @@ Each program is then broken down into tasks which are marked by the `star.task()
 2. The task must try to run as fast as possible (try less than 100msec) to free up the OS for other tasks.
 3. The task must include required imports inside the task
 
+**Run `simple_executor.py <PATH TO STAR PROGRAM>` to run a STAR program.**
 
 An example task
 
@@ -66,97 +67,22 @@ def print_odd(evt):
 
 In addition to normal program code in each task, one can also use some special calls (think syscalls). 
 
-1. Dispatching other events without awaiting
-2. Dispatching other events but waiting for feedback
-3. Dispatching a group of events and waiting for them all to complete
-4. File Operations - StarfishOS Files (Future. Not implemented yet)
-5. I/O Operations - StarfishOS I/O (Future. Not implemented yet) 
 
-For 1-3, when used, it makes the task become a "complex task" and requires the originating task object to be passed. This object should not be tampered with. It carries the necessary data of the current task for the syscalls. 
-<br>
-<br>
-Below is an example of a task with the originating task passed in as the second parameter. Notice the `pass_task_id` flag on the `star.task` as `star.AwaitEvent()` requires it.
+1. File Operations - StarfishOS Files (Future. Not implemented yet)
+2. I/O Operations - StarfishOS I/O (Future. Not implemented yet) 
 
-``` python
-
-@star.task("input", pass_task_id=True)
-def input_event(evt: star.Event, task_id: star.StarTask):
-    a = input("Type in a number: ")
-    b = input("Type in a second number: ")
-
-    evt_new = star.Event()
-    evt_new.data = {"a": a, "b": b}
-    evt_new.set_target("cast_numbers")
-
-    # print("Await!")
-    awaitable = star.AwaitEvent(evt_new, task_id)
-    evt_out = awaitable.wait_for_result(timeout=30)
-    # print("Done Await!")
-
-    evt_new = star.Event()
-    evt_new.data = {"a": evt_out.data["a"], "b": evt_out.data["b"]}
-    evt_new.set_target("run_total")
-
-    return evt_new
-```
-
-#### 1 - Dispatching other events without awaiting
-For fire and forget, use the function call `star.dispatch_event(event, task)` inside the task.
-
-#### 2 - Dispatching other events with await
-This is not to be confused with asyncio's `await`. This means simply to fire an event and wait for the event's target task to complete and give a response. 
-
-Create an AwaitEvent object with `a = star.AwaitEvent(event, task)` <br>
-Wait for the result: `a.wait_for_result(timeout=5)` which returns an event. See the above example that uses `star.AwaitEvent()`
+> Unfortunately, the system originally supported tasks spawning additional tasks with the below commands.
+> However, in developing the dropout algorithm (where nodes can die and have the process respawned),
+> when making the part that transfers process context, it breaks the current design of awaited events.
+> Due to time constraints, I am dropping the below features. It still is possible to do but requires engine rework
+> 
+> 1. Dispatching other events without awaiting
+> 2. Dispatching other events but waiting for feedback
+> 3. Dispatching a group of events and waiting for them all to complete
+> 
 
 
-Now, to do this correctly, the receiving task **must not change the target or any other event parameter except data**. It must return the same event it was passed in. This allows the OS to route it back to the correct place. An example below. This "cast_numbers" task can now be used in an `AwaitEvent`
-
-``` python
-@star.task("cast_numbers")
-def cast_numbers(evt):
-    evt.data["a"] = int(evt.data["a"])
-    evt.data["b"] = int(evt.data["b"])
-    return evt
-```
-
-#### 3 - Dispatching a group of events and waiting for them to all complete
-This works great for distributing work in a list for instance. It's exactly the same as above with `AwaitEvent` but `AwaitGroup` is used instead. 
-
-
-An example that distributes each letter of a string to a "to_capital" task and then waits for all to come back.
-
-``` python
-@star.task("list_intro", pass_task_id=True)
-def list_intro(evt, task_id: star.StarTask):
-    i = input("Please type a string: ")
-
-    await_group = star.AwaitGroup(originating_task=task_id)
-    for index, token in enumerate(i):
-        # create a await event for each.
-        evt = star.Event()
-        evt.data["index"] = index
-        evt.data["token"] = token
-        evt.set_target("to_capital")
-        await_group.add_event(evt)
-
-    results = await_group.wait_result_for_all(timeout=30)
-    string = list(" " * len(i))
-    for result in results:
-        string[result.data["index"]] = result.data["token"]
-
-    await_group.close()
-
-    string = "".join(string)  # type: ignore
-    print(string)
-    evt_new = star.Event()
-    evt_new.set_target("input")
-    return evt_new
-```
-
-The target task must be formatted the same as seen previously without touching the target. The received event is the same event that is sent out (with the data parameter changed).
-
-#### 4 & 5 - File and I/O 
+#### 1 & 2 - File and I/O 
 To be built! 
 
 # Compiling 
@@ -212,6 +138,7 @@ If you want logging feedback, stick this crazy long logging thing before the abo
 
 Look at the example programs. 
 1. `sample.stardef.py` is a simple example. Has unconditional (normal) tasks and conditional tasks. No OS features used
-2. `list_dist.stardef.py` is an example that demonstrates OS features for events.
+2. `list_dist.stardef.py` is another example.
 3. `file_reader.py` is an example for file usage (although not using the OS features just yet)
 
+**Run `simple_executor.py <PATH TO STAR PROGRAM>` to run a STAR program.**

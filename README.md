@@ -37,7 +37,7 @@ are equal.
 **This system currently is a proof-of-concept as of now and is a prototype**
 
 
-**For demo and more info, see the `docs/` folder**
+**For demo and more info, see the `/docs` folder**
 
 ## Features and Development Outline
 
@@ -66,4 +66,4 @@ are equal.
 10. ???
 
 
-## For demo and more info, see the `docs/` folder
+## For demo and more info, see the `/docs` folder

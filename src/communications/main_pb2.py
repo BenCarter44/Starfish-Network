@@ -22,7 +22,7 @@ from . import primitives_pb2 as primitives__pb2
 
 
 DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(
-    b'\n\nmain.proto\x12\x08protocol\x1a\x10primitives.proto"\x7f\n\x11\x44HT_Fetch_Request\x12\x0b\n\x03key\x18\x01 \x01(\x0c\x12\x13\n\x0bquery_chain\x18\x02 \x03(\x0c\x12#\n\x06status\x18\x03 \x01(\x0e\x32\x13.protocol.DHTStatus\x12#\n\x06select\x18\x04 \x01(\x0e\x32\x13.protocol.DHTSelect"\x8f\x01\n\x12\x44HT_Fetch_Response\x12\x0b\n\x03key\x18\x01 \x01(\x0c\x12\r\n\x05value\x18\x02 \x01(\x0c\x12\x13\n\x0bquery_chain\x18\x03 \x03(\x0c\x12#\n\x06status\x18\x04 \x01(\x0e\x32\x13.protocol.DHTStatus\x12#\n\x06select\x18\x05 \x01(\x0e\x32\x13.protocol.DHTSelect"\x9b\x01\n\x11\x44HT_Store_Request\x12\x0b\n\x03key\x18\x01 \x01(\x0c\x12\r\n\x05value\x18\x02 \x01(\x0c\x12\x13\n\x0bquery_chain\x18\x03 \x03(\x0c\x12#\n\x06status\x18\x04 \x01(\x0e\x32\x13.protocol.DHTStatus\x12#\n\x06select\x18\x05 \x01(\x0e\x32\x13.protocol.DHTSelect\x12\x0b\n\x03who\x18\x06 \x01(\x0c"\x8d\x01\n\x12\x44HT_Store_Response\x12\x0b\n\x03key\x18\x01 \x01(\x0c\x12\x13\n\x0bquery_chain\x18\x02 \x03(\x0c\x12#\n\x06status\x18\x03 \x01(\x0e\x32\x13.protocol.DHTStatus\x12#\n\x06select\x18\x04 \x01(\x0e\x32\x13.protocol.DHTSelect\x12\x0b\n\x03who\x18\x05 \x01(\x0c"\x8d\x01\n\x12\x44HT_Delete_Request\x12\x0b\n\x03key\x18\x01 \x01(\x0c\x12\x13\n\x0bquery_chain\x18\x02 \x03(\x0c\x12#\n\x06status\x18\x03 \x01(\x0e\x32\x13.protocol.DHTStatus\x12#\n\x06select\x18\x04 \x01(\x0e\x32\x13.protocol.DHTSelect\x12\x0b\n\x03who\x18\x05 \x01(\x0c":\n\x13\x44HT_Delete_Response\x12#\n\x06status\x18\x03 \x01(\x0e\x32\x13.protocol.DHTStatus"Z\n\x19\x44HT_Delete_Notice_Request\x12\x0b\n\x03key\x18\x01 \x01(\x0c\x12#\n\x06select\x18\x04 \x01(\x0e\x32\x13.protocol.DHTSelect\x12\x0b\n\x03who\x18\x05 \x01(\x0c"A\n\x1a\x44HT_Delete_Notice_Response\x12#\n\x06status\x18\x03 \x01(\x0e\x32\x13.protocol.DHTStatus"b\n\x12\x44HT_Update_Request\x12\x0b\n\x03key\x18\x01 \x01(\x0c\x12\r\n\x05value\x18\x02 \x01(\x0c\x12#\n\x06select\x18\x04 \x01(\x0e\x32\x13.protocol.DHTSelect\x12\x0b\n\x03who\x18\x05 \x01(\x0c"i\n\x19\x44HT_Update_Notice_Request\x12\x0b\n\x03key\x18\x01 \x01(\x0c\x12\r\n\x05value\x18\x02 \x01(\x0c\x12#\n\x06select\x18\x04 \x01(\x0e\x32\x13.protocol.DHTSelect\x12\x0b\n\x03who\x18\x05 \x01(\x0c":\n\x13\x44HT_Update_Response\x12#\n\x06status\x18\x03 \x01(\x0e\x32\x13.protocol.DHTStatus"A\n\x1a\x44HT_Update_Notice_Response\x12#\n\x06status\x18\x03 \x01(\x0e\x32\x13.protocol.DHTStatus"]\n\x1c\x44HT_Register_Notices_Request\x12\x0b\n\x03key\x18\x01 \x01(\x0c\x12\x0b\n\x03who\x18\x02 \x01(\x0c\x12#\n\x06select\x18\x03 \x01(\x0e\x32\x13.protocol.DHTSelect"i\n\x1d\x44HT_Register_Notices_Response\x12#\n\x06status\x18\x03 \x01(\x0e\x32\x13.protocol.DHTStatus\x12#\n\x06select\x18\x04 \x01(\x0e\x32\x13.protocol.DHTSelect"\x15\n\x04PING\x12\r\n\x05value\x18\x01 \x01(\x05"\x15\n\x04PONG\x12\r\n\x05value\x18\x01 \x01(\x05">\n\x14TaskAllocate_Request\x12&\n\x04task\x18\x01 \x01(\x0b\x32\x18.protocol.TaskIdentifier"<\n\x15TaskAllocate_Response\x12#\n\x06status\x18\x01 \x01(\x0e\x32\x13.protocol.DHTStatus"1\n\x11SendEvent_Request\x12\x1c\n\x03\x65vt\x18\x01 \x01(\x0b\x32\x0f.protocol.Event"9\n\x12SendEvent_Response\x12#\n\x06status\x18\x01 \x01(\x0e\x32\x13.protocol.DHTStatus"R\n\x11\x42ootstrap_Request\x12\x0e\n\x06peerID\x18\x01 \x01(\x0c\x12-\n\tdial_from\x18\x02 \x01(\x0b\x32\x1a.protocol.TransportAddress"=\n\x12\x42ootstrap_Response\x12\'\n\x05value\x18\x01 \x03(\x0b\x32\x18.protocol.Bootstrap_Item"K\n\x0e\x42ootstrap_Item\x12\x0f\n\x07peer_id\x18\x01 \x01(\x0c\x12(\n\x04\x61\x64\x64r\x18\x02 \x01(\x0b\x32\x1a.protocol.TransportAddress"(\n\x11Heartbeat_Request\x12\x13\n\x0b\x63ustom_data\x18\x01 \x01(\x0c")\n\x12Heartbeat_Response\x12\x13\n\x0b\x63ustom_data\x18\x01 \x01(\x0c*N\n\tDHTStatus\x12\x0b\n\x07UNKNOWN\x10\x00\x12\t\n\x05\x46OUND\x10\x01\x12\r\n\tNOT_FOUND\x10\x02\x12\t\n\x05OWNED\x10\x03\x12\x06\n\x02OK\x10\x04\x12\x07\n\x03\x45RR\x10\x05*=\n\tDHTSelect\x12\t\n\x05\x42LANK\x10\x00\x12\x0b\n\x07PEER_ID\x10\x01\x12\x0b\n\x07TASK_ID\x10\x02\x12\x0b\n\x07\x46ILE_ID\x10\x03\x32\xd4\x04\n\nDHTService\x12H\n\tFetchItem\x12\x1b.protocol.DHT_Fetch_Request\x1a\x1c.protocol.DHT_Fetch_Response"\x00\x12H\n\tStoreItem\x12\x1b.protocol.DHT_Store_Request\x1a\x1c.protocol.DHT_Store_Response"\x00\x12K\n\nDeleteItem\x12\x1c.protocol.DHT_Delete_Request\x1a\x1d.protocol.DHT_Delete_Response"\x00\x12U\n\rDeletedNotice\x12#.protocol.DHT_Delete_Notice_Request\x1a\x1d.protocol.DHT_Delete_Response"\x00\x12K\n\nUpdateItem\x12\x1c.protocol.DHT_Update_Request\x1a\x1d.protocol.DHT_Update_Response"\x00\x12\\\n\rUpdatedNotice\x12#.protocol.DHT_Update_Notice_Request\x1a$.protocol.DHT_Update_Notice_Response"\x00\x12\x63\n\x0eRegisterNotice\x12&.protocol.DHT_Register_Notices_Request\x1a\'.protocol.DHT_Register_Notices_Response"\x00\x32W\n\x0bTaskService\x12H\n\tSendEvent\x12\x1b.protocol.SendEvent_Request\x1a\x1c.protocol.SendEvent_Response"\x00\x32W\n\x0bPeerService\x12H\n\tBootstrap\x12\x1b.protocol.Bootstrap_Request\x1a\x1c.protocol.Bootstrap_Response"\x00\x32\x8e\x01\n\x10KeepAliveService\x12,\n\x08SendPing\x12\x0e.protocol.PING\x1a\x0e.protocol.PONG"\x00\x12L\n\rSendHeartbeat\x12\x1b.protocol.Heartbeat_Request\x1a\x1c.protocol.Heartbeat_Response"\x00\x62\x06proto3'
+    b'\n\nmain.proto\x12\x08protocol\x1a\x10primitives.proto"\x7f\n\x11\x44HT_Fetch_Request\x12\x0b\n\x03key\x18\x01 \x01(\x0c\x12\x13\n\x0bquery_chain\x18\x02 \x03(\x0c\x12#\n\x06status\x18\x03 \x01(\x0e\x32\x13.protocol.DHTStatus\x12#\n\x06select\x18\x04 \x01(\x0e\x32\x13.protocol.DHTSelect"\x8f\x01\n\x12\x44HT_Fetch_Response\x12\x0b\n\x03key\x18\x01 \x01(\x0c\x12\r\n\x05value\x18\x02 \x01(\x0c\x12\x13\n\x0bquery_chain\x18\x03 \x03(\x0c\x12#\n\x06status\x18\x04 \x01(\x0e\x32\x13.protocol.DHTStatus\x12#\n\x06select\x18\x05 \x01(\x0e\x32\x13.protocol.DHTSelect"\x9b\x01\n\x11\x44HT_Store_Request\x12\x0b\n\x03key\x18\x01 \x01(\x0c\x12\r\n\x05value\x18\x02 \x01(\x0c\x12\x13\n\x0bquery_chain\x18\x03 \x03(\x0c\x12#\n\x06status\x18\x04 \x01(\x0e\x32\x13.protocol.DHTStatus\x12#\n\x06select\x18\x05 \x01(\x0e\x32\x13.protocol.DHTSelect\x12\x0b\n\x03who\x18\x06 \x01(\x0c"\x8d\x01\n\x12\x44HT_Store_Response\x12\x0b\n\x03key\x18\x01 \x01(\x0c\x12\x13\n\x0bquery_chain\x18\x02 \x03(\x0c\x12#\n\x06status\x18\x03 \x01(\x0e\x32\x13.protocol.DHTStatus\x12#\n\x06select\x18\x04 \x01(\x0e\x32\x13.protocol.DHTSelect\x12\x0b\n\x03who\x18\x05 \x01(\x0c"\x8d\x01\n\x12\x44HT_Delete_Request\x12\x0b\n\x03key\x18\x01 \x01(\x0c\x12\x13\n\x0bquery_chain\x18\x02 \x03(\x0c\x12#\n\x06status\x18\x03 \x01(\x0e\x32\x13.protocol.DHTStatus\x12#\n\x06select\x18\x04 \x01(\x0e\x32\x13.protocol.DHTSelect\x12\x0b\n\x03who\x18\x05 \x01(\x0c":\n\x13\x44HT_Delete_Response\x12#\n\x06status\x18\x03 \x01(\x0e\x32\x13.protocol.DHTStatus"Z\n\x19\x44HT_Delete_Notice_Request\x12\x0b\n\x03key\x18\x01 \x01(\x0c\x12#\n\x06select\x18\x04 \x01(\x0e\x32\x13.protocol.DHTSelect\x12\x0b\n\x03who\x18\x05 \x01(\x0c"A\n\x1a\x44HT_Delete_Notice_Response\x12#\n\x06status\x18\x03 \x01(\x0e\x32\x13.protocol.DHTStatus"b\n\x12\x44HT_Update_Request\x12\x0b\n\x03key\x18\x01 \x01(\x0c\x12\r\n\x05value\x18\x02 \x01(\x0c\x12#\n\x06select\x18\x04 \x01(\x0e\x32\x13.protocol.DHTSelect\x12\x0b\n\x03who\x18\x05 \x01(\x0c"i\n\x19\x44HT_Update_Notice_Request\x12\x0b\n\x03key\x18\x01 \x01(\x0c\x12\r\n\x05value\x18\x02 \x01(\x0c\x12#\n\x06select\x18\x04 \x01(\x0e\x32\x13.protocol.DHTSelect\x12\x0b\n\x03who\x18\x05 \x01(\x0c":\n\x13\x44HT_Update_Response\x12#\n\x06status\x18\x03 \x01(\x0e\x32\x13.protocol.DHTStatus"A\n\x1a\x44HT_Update_Notice_Response\x12#\n\x06status\x18\x03 \x01(\x0e\x32\x13.protocol.DHTStatus"]\n\x1c\x44HT_Register_Notices_Request\x12\x0b\n\x03key\x18\x01 \x01(\x0c\x12\x0b\n\x03who\x18\x02 \x01(\x0c\x12#\n\x06select\x18\x03 \x01(\x0e\x32\x13.protocol.DHTSelect"i\n\x1d\x44HT_Register_Notices_Response\x12#\n\x06status\x18\x03 \x01(\x0e\x32\x13.protocol.DHTStatus\x12#\n\x06select\x18\x04 \x01(\x0e\x32\x13.protocol.DHTSelect"\x15\n\x04PING\x12\r\n\x05value\x18\x01 \x01(\x05"\x15\n\x04PONG\x12\r\n\x05value\x18\x01 \x01(\x05">\n\x14TaskAllocate_Request\x12&\n\x04task\x18\x01 \x01(\x0b\x32\x18.protocol.TaskIdentifier"<\n\x15TaskAllocate_Response\x12#\n\x06status\x18\x01 \x01(\x0e\x32\x13.protocol.DHTStatus">\n\x11SendEvent_Request\x12\x1c\n\x03\x65vt\x18\x01 \x01(\x0b\x32\x0f.protocol.Event\x12\x0b\n\x03who\x18\x02 \x01(\x0c"Y\n\x12SendEvent_Response\x12#\n\x06status\x18\x01 \x01(\x0e\x32\x13.protocol.DHTStatus\x12\x11\n\tremaining\x18\x02 \x01(\x05\x12\x0b\n\x03who\x18\x03 \x01(\x0c"R\n\x11\x42ootstrap_Request\x12\x0e\n\x06peerID\x18\x01 \x01(\x0c\x12-\n\tdial_from\x18\x02 \x01(\x0b\x32\x1a.protocol.TransportAddress"=\n\x12\x42ootstrap_Response\x12\'\n\x05value\x18\x01 \x03(\x0b\x32\x18.protocol.Bootstrap_Item"K\n\x0e\x42ootstrap_Item\x12\x0f\n\x07peer_id\x18\x01 \x01(\x0c\x12(\n\x04\x61\x64\x64r\x18\x02 \x01(\x0b\x32\x1a.protocol.TransportAddress"(\n\x11Heartbeat_Request\x12\x13\n\x0b\x63ustom_data\x18\x01 \x01(\x0c")\n\x12Heartbeat_Response\x12\x13\n\x0b\x63ustom_data\x18\x01 \x01(\x0c"`\n\x13SendMonitor_Request\x12\x14\n\x0cprocess_data\x18\x01 \x01(\x0c\x12\x0b\n\x03who\x18\x02 \x01(\x0c\x12&\n\x04task\x18\x03 \x01(\x0b\x32\x18.protocol.TaskIdentifier";\n\x14SendMonitor_Response\x12#\n\x06status\x18\x01 \x01(\x0e\x32\x13.protocol.DHTStatus"\x81\x01\n\x16SendCheckpoint_Request\x12\x14\n\x0cprocess_data\x18\x01 \x01(\x0c\x12\x0b\n\x03who\x18\x02 \x01(\x0c\x12\x14\n\x0c\x65vent_origin\x18\x03 \x01(\x0c\x12\x10\n\x08\x65vent_to\x18\x04 \x01(\x0c\x12\x1c\n\x04mode\x18\x05 \x01(\x0e\x32\x0e.protocol.MODE">\n\x17SendCheckpoint_Response\x12#\n\x06status\x18\x01 \x01(\x0e\x32\x13.protocol.DHTStatus"X\n\x0b\x46ileGeneric\x12!\n\x04type\x18\x01 \x01(\x0e\x32\x13.protocol.FILE_TYPE\x12\x10\n\x08\x63ontents\x18\x02 \x01(\x0c\x12\x14\n\x0c\x64\x61te_created\x18\x03 \x01(\x0c"/\n\tFileValue\x12\x0e\n\x06peerID\x18\x01 \x01(\x0c\x12\x12\n\nidentifier\x18\x02 \x01(\x0c"$\n\x04\x46ile\x12\x0e\n\x06length\x18\x01 \x01(\x05\x12\x0c\n\x04\x64\x61ta\x18\x02 \x01(\x0c",\n\x0bIOContainer\x12\x0e\n\x06peerID\x18\x01 \x01(\x0c\x12\r\n\x05ioKey\x18\x02 \x01(\x0c"7\n\tDirectory\x12\x17\n\x0fnumber_of_files\x18\x01 \x01(\x05\x12\x11\n\tfile_list\x18\x02 \x03(\x0c"\xa4\x01\n\x12\x46ileServiceRequest\x12\x1d\n\x15local_file_identifier\x18\x01 \x01(\x0c\x12\x0b\n\x03key\x18\x02 \x01(\x0c\x12,\n\x0c\x66ile_request\x18\x03 \x01(\x0e\x32\x16.protocol.FILE_REQUEST\x12\x0c\n\x04\x64\x61ta\x18\x04 \x01(\x0c\x12\x12\n\nprocess_id\x18\x05 \x01(\x0c\x12\x12\n\nis_monitor\x18\x06 \x01(\x0c"H\n\x13\x46ileServiceResponse\x12#\n\x06status\x18\x01 \x01(\x0e\x32\x13.protocol.DHTStatus\x12\x0c\n\x04\x64\x61ta\x18\x02 \x01(\x0c*N\n\tDHTStatus\x12\x0b\n\x07UNKNOWN\x10\x00\x12\t\n\x05\x46OUND\x10\x01\x12\r\n\tNOT_FOUND\x10\x02\x12\t\n\x05OWNED\x10\x03\x12\x06\n\x02OK\x10\x04\x12\x07\n\x03\x45RR\x10\x05*=\n\tDHTSelect\x12\t\n\x05\x42LANK\x10\x00\x12\x0b\n\x07PEER_ID\x10\x01\x12\x0b\n\x07TASK_ID\x10\x02\x12\x0b\n\x07\x46ILE_ID\x10\x03*)\n\x04MODE\x12\x06\n\x02NA\x10\x00\x12\x0b\n\x07\x46ORWARD\x10\x01\x12\x0c\n\x08\x42\x41\x43KWARD\x10\x02*1\n\tFILE_TYPE\x12\x08\n\x04\x46ILE\x10\x00\x12\x06\n\x02IO\x10\x01\x12\x07\n\x03\x44IR\x10\x02\x12\t\n\x05\x43HUNK\x10\x03*w\n\x0c\x46ILE_REQUEST\x12\x08\n\x04READ\x10\x00\x12\t\n\x05WRITE\x10\x01\x12\x08\n\x04SEEK\x10\x02\x12\n\n\x06\x43REATE\x10\x03\x12\t\n\x05\x43LOSE\x10\x04\x12\x08\n\x04OPEN\x10\x05\x12\x08\n\x04TELL\x10\x06\x12\x0c\n\x08\x43ONTENTS\x10\x07\x12\x0f\n\x0bMONITOR_REQ\x10\x08\x32\xd4\x04\n\nDHTService\x12H\n\tFetchItem\x12\x1b.protocol.DHT_Fetch_Request\x1a\x1c.protocol.DHT_Fetch_Response"\x00\x12H\n\tStoreItem\x12\x1b.protocol.DHT_Store_Request\x1a\x1c.protocol.DHT_Store_Response"\x00\x12K\n\nDeleteItem\x12\x1c.protocol.DHT_Delete_Request\x1a\x1d.protocol.DHT_Delete_Response"\x00\x12U\n\rDeletedNotice\x12#.protocol.DHT_Delete_Notice_Request\x1a\x1d.protocol.DHT_Delete_Response"\x00\x12K\n\nUpdateItem\x12\x1c.protocol.DHT_Update_Request\x1a\x1d.protocol.DHT_Update_Response"\x00\x12\\\n\rUpdatedNotice\x12#.protocol.DHT_Update_Notice_Request\x1a$.protocol.DHT_Update_Notice_Response"\x00\x12\x63\n\x0eRegisterNotice\x12&.protocol.DHT_Register_Notices_Request\x1a\'.protocol.DHT_Register_Notices_Response"\x00\x32\x87\x02\n\x0bTaskService\x12H\n\tSendEvent\x12\x1b.protocol.SendEvent_Request\x1a\x1c.protocol.SendEvent_Response"\x00\x12U\n\x12SendMonitorRequest\x12\x1d.protocol.SendMonitor_Request\x1a\x1e.protocol.SendMonitor_Response"\x00\x12W\n\x0eSendCheckpoint\x12 .protocol.SendCheckpoint_Request\x1a!.protocol.SendCheckpoint_Response"\x00\x32W\n\x0bPeerService\x12H\n\tBootstrap\x12\x1b.protocol.Bootstrap_Request\x1a\x1c.protocol.Bootstrap_Response"\x00\x32\x8e\x01\n\x10KeepAliveService\x12,\n\x08SendPing\x12\x0e.protocol.PING\x1a\x0e.protocol.PONG"\x00\x12L\n\rSendHeartbeat\x12\x1b.protocol.Heartbeat_Request\x1a\x1c.protocol.Heartbeat_Response"\x00\x32\xc6\x05\n\x0b\x46ileService\x12K\n\nCreateFile\x12\x1c.protocol.FileServiceRequest\x1a\x1d.protocol.FileServiceResponse"\x00\x12I\n\x08OpenFile\x12\x1c.protocol.FileServiceRequest\x1a\x1d.protocol.FileServiceResponse"\x00\x12I\n\x08ReadFile\x12\x1c.protocol.FileServiceRequest\x1a\x1d.protocol.FileServiceResponse"\x00\x12J\n\tWriteFile\x12\x1c.protocol.FileServiceRequest\x1a\x1d.protocol.FileServiceResponse"\x00\x12I\n\x08SeekFile\x12\x1c.protocol.FileServiceRequest\x1a\x1d.protocol.FileServiceResponse"\x00\x12I\n\x08TellFile\x12\x1c.protocol.FileServiceRequest\x1a\x1d.protocol.FileServiceResponse"\x00\x12J\n\tCloseFile\x12\x1c.protocol.FileServiceRequest\x1a\x1d.protocol.FileServiceResponse"\x00\x12S\n\x12SendMonitorRequest\x12\x1c.protocol.FileServiceRequest\x1a\x1d.protocol.FileServiceResponse"\x00\x12Q\n\x10SendFileContents\x12\x1c.protocol.FileServiceRequest\x1a\x1d.protocol.FileServiceResponse"\x00\x62\x06proto3'
 )
 
 _globals = globals()
@@ -30,10 +30,16 @@ _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
 _builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, "main_pb2", _globals)
 if not _descriptor._USE_C_DESCRIPTORS:
     DESCRIPTOR._loaded_options = None
-    _globals["_DHTSTATUS"]._serialized_start = 2109
-    _globals["_DHTSTATUS"]._serialized_end = 2187
-    _globals["_DHTSELECT"]._serialized_start = 2189
-    _globals["_DHTSELECT"]._serialized_end = 2250
+    _globals["_DHTSTATUS"]._serialized_start = 3030
+    _globals["_DHTSTATUS"]._serialized_end = 3108
+    _globals["_DHTSELECT"]._serialized_start = 3110
+    _globals["_DHTSELECT"]._serialized_end = 3171
+    _globals["_MODE"]._serialized_start = 3173
+    _globals["_MODE"]._serialized_end = 3214
+    _globals["_FILE_TYPE"]._serialized_start = 3216
+    _globals["_FILE_TYPE"]._serialized_end = 3265
+    _globals["_FILE_REQUEST"]._serialized_start = 3267
+    _globals["_FILE_REQUEST"]._serialized_end = 3386
     _globals["_DHT_FETCH_REQUEST"]._serialized_start = 42
     _globals["_DHT_FETCH_REQUEST"]._serialized_end = 169
     _globals["_DHT_FETCH_RESPONSE"]._serialized_start = 172
@@ -71,25 +77,49 @@ if not _descriptor._USE_C_DESCRIPTORS:
     _globals["_TASKALLOCATE_RESPONSE"]._serialized_start = 1628
     _globals["_TASKALLOCATE_RESPONSE"]._serialized_end = 1688
     _globals["_SENDEVENT_REQUEST"]._serialized_start = 1690
-    _globals["_SENDEVENT_REQUEST"]._serialized_end = 1739
-    _globals["_SENDEVENT_RESPONSE"]._serialized_start = 1741
-    _globals["_SENDEVENT_RESPONSE"]._serialized_end = 1798
-    _globals["_BOOTSTRAP_REQUEST"]._serialized_start = 1800
-    _globals["_BOOTSTRAP_REQUEST"]._serialized_end = 1882
-    _globals["_BOOTSTRAP_RESPONSE"]._serialized_start = 1884
-    _globals["_BOOTSTRAP_RESPONSE"]._serialized_end = 1945
-    _globals["_BOOTSTRAP_ITEM"]._serialized_start = 1947
-    _globals["_BOOTSTRAP_ITEM"]._serialized_end = 2022
-    _globals["_HEARTBEAT_REQUEST"]._serialized_start = 2024
-    _globals["_HEARTBEAT_REQUEST"]._serialized_end = 2064
-    _globals["_HEARTBEAT_RESPONSE"]._serialized_start = 2066
-    _globals["_HEARTBEAT_RESPONSE"]._serialized_end = 2107
-    _globals["_DHTSERVICE"]._serialized_start = 2253
-    _globals["_DHTSERVICE"]._serialized_end = 2849
-    _globals["_TASKSERVICE"]._serialized_start = 2851
-    _globals["_TASKSERVICE"]._serialized_end = 2938
-    _globals["_PEERSERVICE"]._serialized_start = 2940
-    _globals["_PEERSERVICE"]._serialized_end = 3027
-    _globals["_KEEPALIVESERVICE"]._serialized_start = 3030
-    _globals["_KEEPALIVESERVICE"]._serialized_end = 3172
+    _globals["_SENDEVENT_REQUEST"]._serialized_end = 1752
+    _globals["_SENDEVENT_RESPONSE"]._serialized_start = 1754
+    _globals["_SENDEVENT_RESPONSE"]._serialized_end = 1843
+    _globals["_BOOTSTRAP_REQUEST"]._serialized_start = 1845
+    _globals["_BOOTSTRAP_REQUEST"]._serialized_end = 1927
+    _globals["_BOOTSTRAP_RESPONSE"]._serialized_start = 1929
+    _globals["_BOOTSTRAP_RESPONSE"]._serialized_end = 1990
+    _globals["_BOOTSTRAP_ITEM"]._serialized_start = 1992
+    _globals["_BOOTSTRAP_ITEM"]._serialized_end = 2067
+    _globals["_HEARTBEAT_REQUEST"]._serialized_start = 2069
+    _globals["_HEARTBEAT_REQUEST"]._serialized_end = 2109
+    _globals["_HEARTBEAT_RESPONSE"]._serialized_start = 2111
+    _globals["_HEARTBEAT_RESPONSE"]._serialized_end = 2152
+    _globals["_SENDMONITOR_REQUEST"]._serialized_start = 2154
+    _globals["_SENDMONITOR_REQUEST"]._serialized_end = 2250
+    _globals["_SENDMONITOR_RESPONSE"]._serialized_start = 2252
+    _globals["_SENDMONITOR_RESPONSE"]._serialized_end = 2311
+    _globals["_SENDCHECKPOINT_REQUEST"]._serialized_start = 2314
+    _globals["_SENDCHECKPOINT_REQUEST"]._serialized_end = 2443
+    _globals["_SENDCHECKPOINT_RESPONSE"]._serialized_start = 2445
+    _globals["_SENDCHECKPOINT_RESPONSE"]._serialized_end = 2507
+    _globals["_FILEGENERIC"]._serialized_start = 2509
+    _globals["_FILEGENERIC"]._serialized_end = 2597
+    _globals["_FILEVALUE"]._serialized_start = 2599
+    _globals["_FILEVALUE"]._serialized_end = 2646
+    _globals["_FILE"]._serialized_start = 2648
+    _globals["_FILE"]._serialized_end = 2684
+    _globals["_IOCONTAINER"]._serialized_start = 2686
+    _globals["_IOCONTAINER"]._serialized_end = 2730
+    _globals["_DIRECTORY"]._serialized_start = 2732
+    _globals["_DIRECTORY"]._serialized_end = 2787
+    _globals["_FILESERVICEREQUEST"]._serialized_start = 2790
+    _globals["_FILESERVICEREQUEST"]._serialized_end = 2954
+    _globals["_FILESERVICERESPONSE"]._serialized_start = 2956
+    _globals["_FILESERVICERESPONSE"]._serialized_end = 3028
+    _globals["_DHTSERVICE"]._serialized_start = 3389
+    _globals["_DHTSERVICE"]._serialized_end = 3985
+    _globals["_TASKSERVICE"]._serialized_start = 3988
+    _globals["_TASKSERVICE"]._serialized_end = 4251
+    _globals["_PEERSERVICE"]._serialized_start = 4253
+    _globals["_PEERSERVICE"]._serialized_end = 4340
+    _globals["_KEEPALIVESERVICE"]._serialized_start = 4343
+    _globals["_KEEPALIVESERVICE"]._serialized_end = 4485
+    _globals["_FILESERVICE"]._serialized_start = 4488
+    _globals["_FILESERVICE"]._serialized_end = 5198
 # @@protoc_insertion_point(module_scope)

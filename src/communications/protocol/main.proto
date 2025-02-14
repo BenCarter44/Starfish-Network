@@ -20,6 +20,31 @@ enum DHTSelect {
     FILE_ID = 3;
 }
 
+enum MODE {
+    NA = 0;
+    FORWARD = 1;
+    BACKWARD = 2;
+}
+
+enum FILE_TYPE {
+    FILE = 0;
+    IO = 1;
+    DIR = 2;
+    CHUNK = 3; // not used.
+}
+
+enum FILE_REQUEST {
+    READ = 0;
+    WRITE = 1;
+    SEEK = 2;
+    CREATE = 3;
+    CLOSE = 4;
+    OPEN = 5;
+    TELL = 6;
+    CONTENTS = 7;
+    MONITOR_REQ = 8;
+}
+
 message DHT_Fetch_Request {
     bytes key = 1;
     repeated bytes query_chain = 2;
@@ -143,10 +168,13 @@ message TaskAllocate_Response {
 
 message SendEvent_Request {
     Event evt = 1;
+    bytes who = 2;
 }
 
 message SendEvent_Response {
     DHTStatus status = 1;
+    int32 remaining = 2;
+    bytes who = 3;
 }
 
 message Bootstrap_Request {
@@ -169,6 +197,70 @@ message Heartbeat_Request {
 
 message Heartbeat_Response {
     bytes custom_data = 1;
+}
+
+message SendMonitor_Request {
+    bytes process_data = 1; // Process.
+    bytes who = 2;
+    TaskIdentifier task = 3;
+}
+
+message SendMonitor_Response {
+    DHTStatus status = 1;
+}
+
+message SendCheckpoint_Request {
+    bytes process_data = 1; // Process.
+    bytes who = 2;
+    bytes event_origin = 3;
+    bytes event_to = 4;
+    MODE mode = 5;
+}
+
+message SendCheckpoint_Response {
+    DHTStatus status = 1;
+}
+
+// /////////////////////////////////////////
+
+message FileGeneric {
+    FILE_TYPE type = 1;
+    bytes contents = 2;
+    bytes date_created = 3;
+}
+
+message FileValue {
+    bytes peerID = 1;
+    bytes identifier = 2;
+}
+
+message File {
+    int32 length = 1;
+    bytes data = 2;
+}
+
+message IOContainer {
+    bytes peerID = 1; // host bytes
+    bytes ioKey = 2; // IO key, used for address on the peer.
+}
+
+message Directory {
+    int32 number_of_files = 1;
+    repeated bytes file_list = 2;
+}
+
+message FileServiceRequest {
+    bytes local_file_identifier = 1;
+    bytes key = 2;
+    FILE_REQUEST file_request = 3;
+    bytes data = 4;
+    bytes process_id = 5;
+    bytes is_monitor = 6;
+}
+
+message FileServiceResponse {
+    DHTStatus status = 1;
+    bytes data = 2;
 }
 
 // /////////////////////////////////////////
@@ -205,6 +297,13 @@ service TaskService {
 
     // Send Event
     rpc SendEvent(SendEvent_Request) returns (SendEvent_Response) {}
+
+    // Request Process Monitor
+    rpc SendMonitorRequest(SendMonitor_Request) returns (SendMonitor_Response) {}
+
+    // Send checkpoint
+    rpc SendCheckpoint(SendCheckpoint_Request) returns (SendCheckpoint_Response) {}
+
 }
 
 
@@ -224,4 +323,41 @@ service KeepAliveService {
     
     // KeepAlive
     rpc SendHeartbeat(Heartbeat_Request) returns (Heartbeat_Response) {}
+}
+
+// ////////////////////////
+
+
+
+service FileService {
+
+    // create file
+    rpc CreateFile(FileServiceRequest) returns (FileServiceResponse) {}
+
+    // open file
+    rpc OpenFile(FileServiceRequest) returns (FileServiceResponse) {}
+    
+    // read from file
+    rpc ReadFile(FileServiceRequest) returns (FileServiceResponse) {}
+
+    // write to file
+    rpc WriteFile(FileServiceRequest) returns (FileServiceResponse) {}
+
+    // seek file
+    rpc SeekFile(FileServiceRequest) returns (FileServiceResponse) {}
+    
+    // seek file
+    rpc TellFile(FileServiceRequest) returns (FileServiceResponse) {}
+
+    // close file
+    rpc CloseFile(FileServiceRequest) returns (FileServiceResponse) {}
+
+    // System events ==============================
+
+    // request monitor
+    rpc SendMonitorRequest(FileServiceRequest) returns (FileServiceResponse) {}
+
+    // raw file transfer
+    rpc SendFileContents(FileServiceRequest) returns (FileServiceResponse) {}
+
 }

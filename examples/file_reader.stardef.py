@@ -5,44 +5,63 @@ import os
 sys.path.append(os.path.join(os.path.dirname(__file__), "..", "src"))
 try:
     from ..src.core import star_components as star
+    from ..src.core import File
 except:
     from core import star_components as star
+    from core import File
 
 import logging
 
 logger = logging.getLogger(__name__)
 
 
+@star.task("start_program", pass_task_id=True)
+def start_program(evt: star.Event, task: star.StarTask):
+    file_factory = task.get_file_factory()
+    file = file_factory.File(task.get_user(), "/test")
+    file.create()
+    file.open()
+    file.write(b"0")
+    file.close()
+
+    evt_new = star.Event()
+    evt_new.set_target("read_file")
+    return evt_new
+
+
 @star.task("read_file", pass_task_id=True)
 def read_file(evt: star.Event, task: star.StarTask):
     import time
+    import os
 
-    f = open("example.txt", "w+")
+    file_factory = task.get_file_factory()
+    file = file_factory.File(task.get_user(), "/test")
+    file.open()
+    number = int(file.read().decode("utf-8"))
+    file.seek(0, os.SEEK_SET)
+    file.write(str(number + 1).encode("utf-8"))
+    file.close()
+
+    # f = open("example.txt", "w+")
 
     evt_new = star.Event()
-    evt_new.data["count"] = evt.data["count"]
-    evt_new.set_target("counter_add")
-    aw = star.AwaitEvent(evt_new, task)
-    evt_ret = aw.wait_for_result()
-    counter = evt_ret.data["count"]
+    # evt_new.data["count"] = evt.data["count"] + 1
+    # counter = evt.data["count"]
 
-    f.write(str(counter))
-    f.write("\n")
-    f.close()
+    # file.write(str(counter).encode("utf-8"))
+    # file.write(b"\n")
+    # file.close()
 
     time.sleep(1)
-
-    evt_out = star.Event()
-    evt_out.set_target("read_file")
-    evt_out.data["count"] = counter
-
-    return evt_out
+    evt_new.set_target("noop_to_read_file")
+    return evt_new
 
 
-@star.task("counter_add")
-def counter(evt):
-    evt.data["count"] = evt.data["count"] + 1
-    return evt
+@star.task("noop_to_read_file")
+def noop_checkpoint(evt):
+    evt_new = star.Event()
+    evt_new.set_target("read_file")
+    return evt_new
 
 
 ##################################################################################
@@ -80,6 +99,6 @@ if __name__ == "__main__":
 
     start_event = star.Event()
     start_event.data["count"] = 0
-    start_event.set_target("read_file")
+    start_event.set_target("start_program")
     pgrm = star.compile(start_event=start_event)
     pgrm.save("file_program.star")

@@ -110,7 +110,7 @@ class Node:
             await self.allocate_task(tp, task)  # includes callable inside.
 
         logger.info(f"Task DHT of {self.bin_addr!r}")
-        print(self.task_dht.fetch_copy())
+        print(self.task_dht.fetch_dict())
 
         program.start.target.attach_to_process(proc)
         await self.send_event(program.start)
@@ -258,11 +258,11 @@ class Node:
         if dht_select == "TASK":
             resp = self.retrieve_task(key)
             logger.debug("SEARCH DHT dump")
-            # print(self.task_dht.fetch_copy())
+            # print(self.task_dht.fetch_dict())
         elif dht_select == "PEER":
             resp = self.retrieve_peer(key)
             logger.debug("SEARCH DHT dump")
-            # print(self.peer_dht.fetch_copy())
+            # print(self.peer_dht.fetch_dict())
         else:
             raise ValueError()
 
@@ -529,7 +529,7 @@ class Node:
         dial: Star_Address = headers["DIAL"]
         bin_addr: bytes = headers["FROM"]
 
-        peers = self.peer_dht.fetch_copy()
+        peers = self.peer_dht.fetch_dict()
         # logger.debug("Process bootstrap, peers to send: ")
         # print(peers)
         self.store_peer(bin_addr, dial)
@@ -1014,14 +1014,14 @@ if __name__ == "__main__":
                 b"Address Three", addr_table[b"Address Three"], tp
             )
             logger.info("Resulting 1 --> 3")
-            print(node.peer_dht.fetch_copy())
+            print(node.peer_dht.fetch_dict())
 
             await node.establish_connection(
                 b"Address Two", addr_table[b"Address Two"], tp
             )
             await asyncio.sleep(2)
             logger.info("Final Node1")
-            print(node.peer_dht.fetch_copy())
+            print(node.peer_dht.fetch_dict())
 
         if server_number == 2:
 
@@ -1030,11 +1030,11 @@ if __name__ == "__main__":
                 b"Address Four", addr_table[b"Address Four"], tp
             )
             logger.info("Resulting 2 --> 4")
-            print(node.peer_dht.fetch_copy())
+            print(node.peer_dht.fetch_dict())
 
             await asyncio.sleep(2)
             logger.info("Final Node1")
-            print(node.peer_dht.fetch_copy())
+            print(node.peer_dht.fetch_dict())
 
         if server_number == 1:
             pgrm = star.Program(read_pgrm="my_list_program.star")

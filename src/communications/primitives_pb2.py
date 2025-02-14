@@ -24,21 +24,21 @@ _sym_db = _symbol_database.Default()
 
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x10primitives.proto\x12\x08protocol\"n\n\x0eTaskIdentifier\x12\x0f\n\x07user_id\x18\x01 \x01(\x0c\x12\x12\n\nprocess_id\x18\x02 \x01(\x0c\x12\x0f\n\x07task_id\x18\x03 \x01(\x0c\x12\x15\n\rcallable_data\x18\x04 \x01(\x0c\x12\x0f\n\x07pass_id\x18\x05 \x01(\x05\"/\n\tTaskValue\x12\x0f\n\x07\x61\x64\x64ress\x18\x01 \x01(\x0c\x12\x11\n\ttask_data\x18\x02 \x01(\x0c\"+\n\x07Process\x12\x0c\n\x04user\x18\x01 \x01(\x0c\x12\x12\n\nprocess_id\x18\x02 \x01(\x0c\"@\n\x10TransportAddress\x12\x10\n\x08protocol\x18\x01 \x01(\x0c\x12\x0c\n\x04host\x18\x02 \x01(\x0c\x12\x0c\n\x04port\x18\x03 \x01(\x0c\"U\n\x05\x45vent\x12)\n\x07task_to\x18\x01 \x01(\x0b\x32\x18.protocol.TaskIdentifier\x12\x0c\n\x04\x64\x61ta\x18\x02 \x01(\x0c\x12\x13\n\x0bsystem_data\x18\x03 \x01(\x0c\x62\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x10primitives.proto\x12\x08protocol\"\x84\x01\n\x0eTaskIdentifier\x12\x0f\n\x07user_id\x18\x01 \x01(\x0c\x12\x12\n\nprocess_id\x18\x02 \x01(\x0c\x12\x0f\n\x07task_id\x18\x03 \x01(\x0c\x12\x15\n\rcallable_data\x18\x04 \x01(\x0c\x12\x0f\n\x07pass_id\x18\x05 \x01(\x05\x12\x14\n\x0cmonitor_peer\x18\x06 \x01(\x0c\"E\n\tTaskValue\x12\x0f\n\x07\x61\x64\x64ress\x18\x01 \x01(\x0c\x12\x11\n\ttask_data\x18\x02 \x01(\x0c\x12\x14\n\x0cprocess_data\x18\x03 \x01(\x0c\">\n\x07Process\x12\x0c\n\x04user\x18\x01 \x01(\x0c\x12\x12\n\nprocess_id\x18\x02 \x01(\x0c\x12\x11\n\ttask_data\x18\x03 \x01(\x0c\"@\n\x10TransportAddress\x12\x10\n\x08protocol\x18\x01 \x01(\x0c\x12\x0c\n\x04host\x18\x02 \x01(\x0c\x12\x0c\n\x04port\x18\x03 \x01(\x0c\"\xb7\x01\n\x05\x45vent\x12)\n\x07task_to\x18\x01 \x01(\x0b\x32\x18.protocol.TaskIdentifier\x12\x11\n\ttask_from\x18\x05 \x01(\x0c\x12\x10\n\x08task_pre\x18\x07 \x01(\x0c\x12\x0c\n\x04\x64\x61ta\x18\x02 \x01(\x0c\x12\x13\n\x0bsystem_data\x18\x03 \x01(\x0c\x12\r\n\x05nonce\x18\x04 \x01(\x05\x12\x15\n\ris_checkpoint\x18\x06 \x01(\x05\x12\x15\n\rtarget_string\x18\x08 \x01(\tb\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
 _builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'primitives_pb2', _globals)
 if not _descriptor._USE_C_DESCRIPTORS:
   DESCRIPTOR._loaded_options = None
-  _globals['_TASKIDENTIFIER']._serialized_start=30
-  _globals['_TASKIDENTIFIER']._serialized_end=140
-  _globals['_TASKVALUE']._serialized_start=142
-  _globals['_TASKVALUE']._serialized_end=189
-  _globals['_PROCESS']._serialized_start=191
-  _globals['_PROCESS']._serialized_end=234
-  _globals['_TRANSPORTADDRESS']._serialized_start=236
-  _globals['_TRANSPORTADDRESS']._serialized_end=300
-  _globals['_EVENT']._serialized_start=302
-  _globals['_EVENT']._serialized_end=387
+  _globals['_TASKIDENTIFIER']._serialized_start=31
+  _globals['_TASKIDENTIFIER']._serialized_end=163
+  _globals['_TASKVALUE']._serialized_start=165
+  _globals['_TASKVALUE']._serialized_end=234
+  _globals['_PROCESS']._serialized_start=236
+  _globals['_PROCESS']._serialized_end=298
+  _globals['_TRANSPORTADDRESS']._serialized_start=300
+  _globals['_TRANSPORTADDRESS']._serialized_end=364
+  _globals['_EVENT']._serialized_start=367
+  _globals['_EVENT']._serialized_end=550
 # @@protoc_insertion_point(module_scope)

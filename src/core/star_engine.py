@@ -1,6 +1,7 @@
 import concurrent
 import concurrent.futures
 import functools
+import random
 from threading import Thread
 import threading
 from typing import Any, Callable, Optional, cast
@@ -53,21 +54,24 @@ class NodeEngine:
         self.async_tasks = set()
         self.send_event_handler = lambda evt: evt  # replaced by Node.
         self.loop = asyncio.get_event_loop()
+        self.plugboard_internal = None
         star.BINDINGS = self.return_component_bindings()
+        # self.task_to_process: dict[bytes, star.StarProcess] = {}
 
-    def import_task(self, task: star.StarTask):
+    def import_task(self, task: star.StarTask, process: star.StarProcess):
         """Import task into engine.
 
         Args:
             task: (star.StarTask) Task to allocate
 
         """
+        logger.debug(f"ENGINE - ENGINE - Engine import! {task.get_id()}")
         if task in self.hosted_tasks:
             return
 
         self.count_host += 1
-
         self.hosted_tasks[task] = (task, asyncio.Semaphore(1000))
+        # self.task_to_process[task.get_id()] = process
 
     def start_program(self, pgrm_exc: ProgramExecutor, local=False):
         """Start program in engine by firing the start event from program.
@@ -79,17 +83,20 @@ class NodeEngine:
         # if local is True, keep tasks on this machine only (like console)
         # if local is False, distribute tasks across network.
 
-        logger.debug("Start pgrm")
+        logger.debug(f"ENGINE - Start pgrm")
         start_event = pgrm_exc.start_target
         self.recv_event(start_event)
 
     ########################## Engine.
 
-    async def recv_event_coro(self, evt: star.Event):
+    async def recv_event_coro(self, evt: star.Event) -> int:
         """ASYNC COROUTINE. Consume a receiving event. Send event to the task.
 
         Args:
             evt (star.Event): Receiving event.
+
+        Returns:
+            (int): number of compute units for that task remaining.
         """
 
         # go here. Now, the event will have an empty user and process bytes. (if from engine)
@@ -100,57 +107,115 @@ class NodeEngine:
             and evt.system["await"]
             and not (evt.system["initial"])
         ):
-            logger.info("Received sys callback")
-            await self.await_recv(evt)
-            return
+            logger.error(
+                "ENGINE - Received sys callback. Dropping. Await events not supported!"
+            )
+            # await self.await_recv(evt)
+            return -1
 
         incoming_target = evt.target
 
         if incoming_target not in self.hosted_tasks:
-            logger.warning("Passed in task ID but not hosting. Forwarding")
+            logger.warning("ENGINE - Passed in task ID but not hosting. Forwarding")
             await self.out_unified_queue.put(evt)
-            return
+            return -2
 
         if self.hosted_tasks[incoming_target][1].locked():
             # no resources left!
             logger.info(
-                f"Received event: {evt.target}. {self.node_id} No compute units left! Send to network"
+                f"ENGINE - Received event: {evt.target}. {self.node_id} No compute units left! Send to network"
             )
             await self.out_unified_queue.put(evt)
-            return
+            return 0
 
-        logger.info(f"Received event: {evt.target}. {self.node_id} Waiting....")
+        a = None
+        if evt.origin is not None:
+            a = evt.origin.target.get_id().hex()
+        logger.info(
+            f"ENGINE - Received event: {evt.target}. Org: {a} {self.node_id.hex()} Waiting...."
+        )
         await self.hosted_tasks[incoming_target][1].acquire()  # acquire sem
-        logger.info(f"Done Waiting.... Put in Execution Queue")
+        logger.info(f"ENGINE - Done Waiting.... Put in Execution Queue")
+
+        evt.target.monitor = self.hosted_tasks[incoming_target][0].monitor
+
         exc_task = self.hosted_tasks[incoming_target][0]
         await self.executor_queue.put((exc_task, evt))
-        return
+        return self.hosted_tasks[incoming_target][1]._value
 
-    def recv_event(self, evt: star.Event):
+    def update_monitor(self, task: star.StarTask, monitor: bytes):
+        if task not in self.hosted_tasks:
+            logger.info(f"ENGINE - Not found {task.get_id()} monitor")
+            return
+        self.hosted_tasks[task][0].monitor = monitor
+
+    def recv_event(self, evt: star.Event, increment=False):
         """OUTSIDE API. Consume a receiving event.
 
         Args:
             evt (star.Event): Receiving event.
         """
         assert isinstance(evt, star.Event)
+
+        if increment:
+            evt.nonce += 1
+
+        if evt.target not in self.hosted_tasks:
+            logger.warning("ENGINE - Passed in task ID but not hosting. Forwarding")
+
+            async def tmp():
+                await self.out_unified_queue.put(evt)
+
+            asyncio.run_coroutine_threadsafe(tmp(), self.loop)
+            return -3
+
         f = asyncio.run_coroutine_threadsafe(self.recv_event_coro(evt), self.loop)
+        v = self.hosted_tasks[evt.target][1]._value - 1
+        if v < 0:
+            return 0
+        else:
+            return v
 
     async def executor_loop(self):
         """ASYNC TASK. Handle the executor queue and pool"""
-        logger.debug("Executor Loop Running")
+        logger.debug(f"ENGINE - Executor Loop Running")
         with concurrent.futures.ThreadPoolExecutor() as pool:
             while True:
                 task, evt = await self.executor_queue.get()  # get the task
+                if evt.origin is None or evt.is_checkpoint:
+                    evt_copy = evt.to_bytes()  # old event (set to current)
+                else:
+                    evt_copy = evt.origin.to_bytes()  # keep the same old event.
+
+                if evt.origin_previous is None or evt.is_checkpoint:
+                    if evt.origin is None:
+                        evt_copy_pre = evt_copy  # old event (set to current)
+                    else:
+                        evt_copy_pre = evt.origin.to_bytes()
+                else:
+                    evt_copy_pre = (
+                        evt.origin_previous.to_bytes()
+                    )  # keep the same old event.
+
+                # for file factory
+                task.plugboard_callback = self.plugboard_internal
+                task.loop_callback = self.loop
+                task.hold_past_event = evt
+                task.hold_past_event_pre = star.StarTask.from_bytes(evt_copy_pre)
                 func = task.get_callable()
                 if func is None:
-                    logger.error("Function is NONE! skipping.")
+                    logger.error("ENGINE - Function is NONE! skipping.")
                     continue
 
                 logger.info(
-                    f"EX Queue: {evt}. Total Workers Alloc: {len(pool._threads)} Total Workers: {pool._max_workers}."
+                    f"ENGINE - EX Queue: {task}. Total Workers Alloc: {len(pool._threads)} Total Workers: {pool._max_workers}."
                 )
-                logger.info(f"Run: {task}")
-                logger.debug(func)
+                a = None
+                if evt.origin is not None:
+                    a = evt.origin.target.get_id()
+
+                logger.info(f"ENGINE - Run: {task} Org: {a}")
+                logger.debug(f"ENGINE - {func}")
 
                 if not (task.pass_id):
                     out_future = asyncio.get_event_loop().run_in_executor(
@@ -161,11 +226,22 @@ class NodeEngine:
                         pool, functools.partial(func, evt, task)
                     )
 
-                out_future.add_done_callback(functools.partial(self.finish_task, task))
+                out_future.add_done_callback(
+                    functools.partial(
+                        self.finish_task,
+                        task,
+                        star.Event.from_bytes(evt_copy),
+                        star.Event.from_bytes(evt_copy_pre),
+                    )
+                )
                 # await send_to_out_queue(out)
 
     def finish_task(
-        self, task: star.StarTask, evt_future: concurrent.futures.Future[star.Event]
+        self,
+        task: star.StarTask,
+        old_event: star.Event,
+        old_event_pre: star.Event,
+        evt_future: concurrent.futures.Future[star.Event],
     ):
         """Callback. Send out event generated from task.
 
@@ -173,13 +249,23 @@ class NodeEngine:
             evt (star.Event): Receiving event.
         """
         evt = evt_future.result()
+        if evt is None:
+            logger.error("ENGINE - Malformed event! Dropping!")
+            return
+
+        # if evt.is_checkpoint:  # only track if IS CHECKPOINT.
+        evt.origin = old_event
+        evt.origin_previous = old_event_pre
+        evt.nonce = old_event.nonce
         if evt.system is not None and evt.system["await"] and evt.system["initial"]:
             evt.system["initial"] = False
 
         # clear out the user/proc id and replace it with the task.
         evt.target.attach_to_process_task(task)
 
-        logger.info(f"EX Done. Send Target: {evt.target}.")
+        logger.info(
+            f"ENGINE - EX Done. Send Target: {evt.target}. Origin: {old_event.target} Origin-Pre: {old_event_pre.target}. Monitor: {old_event.target.monitor}. Monitor-pre: {old_event_pre.target.monitor}"
+        )
 
         # assume the condition is none. It will already have condition or not
         async def send_quick(evt):
@@ -191,8 +277,20 @@ class NodeEngine:
         """ASYNC TASK. Send output events."""
         while True:
             item: star.Event = await self.out_unified_queue.get()
-            logger.debug(f"SENDING: {item}")
-            await self.send_event_handler(item)
+            logger.debug(f"ENGINE - SENDING: {item}")
+
+            # if item.target.get_id() not in self.task_to_process:
+            #     logger.error(
+            #         "Attempted to send task from engine that is not a currently running process!"
+            #     )
+            #     return
+            # await self.send_event_handler(item)
+            try:
+                await self.send_event_handler(item)
+                pass
+            except Exception as e:
+                logger.critical(e)
+                sys.exit(2)
 
     async def debug_loop(self):
         """ASYNC TASK. Is Alive Debug Loop"""
@@ -200,113 +298,113 @@ class NodeEngine:
             print(".")
             await self.async_loop.sleep(1)
 
-    async def await_recv(self, evt: star.Event) -> None:
-        """ASYNC COROUTINE. Handle system await events generated by AwaitEvent()
+    # async def await_recv(self, evt: star.Event) -> None:
+    #     """ASYNC COROUTINE. Handle system await events generated by AwaitEvent()
 
-        Args:
-            evt (star.Event): event returned by subject of await event call.
-        """
-        if evt.system["node"] != self.node_id or not (evt.system["await"]):
-            # print(evt.system)
-            # print(self.node_id)
-            logger.warning("System node mismatch")
-            return  # Drop. Does not refer to me!
+    #     Args:
+    #         evt (star.Event): event returned by subject of await event call.
+    #     """
+    #     if evt.system["node"] != self.node_id or not (evt.system["await"]):
+    #         # print(evt.system)
+    #         # print(self.node_id)
+    #         logger.warning("System node mismatch")
+    #         return  # Drop. Does not refer to me!
 
-        # look up trigger in table. If not False, ignore
-        if evt.system["trigger"] not in self.await_triggers:
-            logger.warning("Trigger unknown")
-            return  # Drop. Trigger not found.
+    #     # look up trigger in table. If not False, ignore
+    #     if evt.system["trigger"] not in self.await_triggers:
+    #         logger.warning("Trigger unknown")
+    #         return  # Drop. Trigger not found.
 
-        # see if event is for matching function!
-        if evt.target != evt.system["previous"].target:
-            logger.warning("Drop Await return. Event is for different target")
-            return  # Drop. Event is for different target.
+    #     # see if event is for matching function!
+    #     if evt.target != evt.system["previous"].target:
+    #         logger.warning("Drop Await return. Event is for different target")
+    #         return  # Drop. Event is for different target.
 
-        trigger = evt.system["trigger"]
-        if cast(threading.Event, self.await_triggers[trigger]["alert"]).is_set():
-            logger.warning("Already triggered! Drop!")
-            return  # Already triggered! Drop!
+    #     trigger = evt.system["trigger"]
+    #     if cast(threading.Event, self.await_triggers[trigger]["alert"]).is_set():
+    #         logger.warning("Already triggered! Drop!")
+    #         return  # Already triggered! Drop!
 
-        evt.clear_system()
+    #     evt.clear_system()
 
-        self.await_triggers[trigger]["data"] = evt
-        logger.info(f"GOT: {evt.data}")
-        cast(
-            threading.Event, self.await_triggers[trigger]["alert"]
-        ).set()  # alert that you're done!
+    #     self.await_triggers[trigger]["data"] = evt
+    #     logger.info(f"GOT: {evt.data}")
+    #     cast(
+    #         threading.Event, self.await_triggers[trigger]["alert"]
+    #     ).set()  # alert that you're done!
 
-    def await_trigger(
-        self, trigger: tuple[uuid.UUID, star.StarTask], timeout=2.0
-    ) -> star.Event:
-        """Wait for await_event trigger. Used by AwaitEvent
+    # def await_trigger(
+    #     self, trigger: tuple[uuid.UUID, star.StarTask], timeout=2.0
+    # ) -> star.Event:
+    #     """Wait for await_event trigger. Used by AwaitEvent
 
-        Args:
-            trigger (tuple[uuid.UUID, star.StarTask]): Trigger ID
-            timeout (float, optional): Timeout for waiting. Defaults to 2.0.
+    #     Args:
+    #         trigger (tuple[uuid.UUID, star.StarTask]): Trigger ID
+    #         timeout (float, optional): Timeout for waiting. Defaults to 2.0.
 
-        Raises:
-            TimeoutError: Past timeout
+    #     Raises:
+    #         TimeoutError: Past timeout
 
-        Returns:
-            star.Event: event.
-        """
-        logger.info(
-            f"Trigger created: {cast(threading.Event, self.await_triggers[trigger]['alert']).is_set()}"
-        )
-        i = cast(threading.Event, self.await_triggers[trigger]["alert"]).wait(
-            timeout=timeout
-        )
-        if i:
-            return cast(star.Event, self.await_triggers[trigger]["data"])
-        else:
-            raise TimeoutError
+    #     Returns:
+    #         star.Event: event.
+    #     """
+    #     logger.info(
+    #         f"Trigger created: {cast(threading.Event, self.await_triggers[trigger]['alert']).is_set()}"
+    #     )
+    #     i = cast(threading.Event, self.await_triggers[trigger]["alert"]).wait(
+    #         timeout=timeout
+    #     )
+    #     if i:
+    #         return cast(star.Event, self.await_triggers[trigger]["data"])
+    #     else:
+    #         raise TimeoutError
 
-    def await_trigger_check(
-        self,
-        trigger: tuple[uuid.UUID, star.StarTask],
-    ) -> bool:
-        """Check if trigger has been received.
+    # def await_trigger_check(
+    #     self,
+    #     trigger: tuple[uuid.UUID, star.StarTask],
+    # ) -> bool:
+    #     """Check if trigger has been received.
 
-        Args:
-            trigger (tuple[uuid.UUID, star.StarTask]): Trigger ID
+    #     Args:
+    #         trigger (tuple[uuid.UUID, star.StarTask]): Trigger ID
 
-        Returns:
-            bool: Trigger received.
-        """
-        # TODO: Create struct for triggers.
-        return cast(threading.Event, self.await_triggers[trigger]["alert"]).is_set()
+    #     Returns:
+    #         bool: Trigger received.
+    #     """
+    #     # TODO: Create struct for triggers.
+    #     return cast(threading.Event, self.await_triggers[trigger]["alert"]).is_set()
 
-    def create_trigger(self, task_id: star.StarTask) -> tuple[uuid.UUID, star.StarTask]:
-        """Create trigger for TaskID.
+    # def create_trigger(self, task_id: star.StarTask) -> tuple[uuid.UUID, star.StarTask]:
+    #     """Create trigger for TaskID.
 
-        Args:
-            task_id (star.StarTask): TaskID
+    #     Args:
+    #         task_id (star.StarTask): TaskID
 
-        Returns:
-            tuple[uuid.UUID, star.StarTask]: TriggerID
-        """
-        original_task_id = task_id
-        trigger_id = (uuid.uuid4(), original_task_id.get_id())
+    #     Returns:
+    #         tuple[uuid.UUID, star.StarTask]: TriggerID
+    #     """
+    #     original_task_id = task_id
+    #     trigger_id = (uuid.uuid4(), original_task_id.get_id())
 
-        self.await_triggers[trigger_id] = {
-            "alert": threading.Event(),
-            "data": None,
-        }
-        cast(threading.Event, self.await_triggers[trigger_id]["alert"]).clear()
+    #     self.await_triggers[trigger_id] = {
+    #         "alert": threading.Event(),
+    #         "data": None,
+    #     }
+    #     cast(threading.Event, self.await_triggers[trigger_id]["alert"]).clear()
 
-        return trigger_id
+    #     return trigger_id
 
-    def clean_trigger(self, trigger: tuple[uuid.UUID, star.StarTask]):
-        """Remove trigger from engine
+    # def clean_trigger(self, trigger: tuple[uuid.UUID, star.StarTask]):
+    #     """Remove trigger from engine
 
-        Args:
-            trigger (tuple[uuid.UUID, star.StarTask]): TriggerID
-        """
-        del self.await_triggers[trigger]
+    #     Args:
+    #         trigger (tuple[uuid.UUID, star.StarTask]): TriggerID
+    #     """
+    #     del self.await_triggers[trigger]
 
     async def start_loops(self):
         """ASYNC COROUTINE. Start the various ASYNC Tasks"""
-        logger.info("Start Loops")
+        logger.info("ENGINE - Start Loops")
         executor_loop_t = asyncio.create_task(self.executor_loop())
         output_loop_t = asyncio.create_task(self.output_loop())
         # debug_loop_t = asyncio.create_task(self.debug_loop())
@@ -330,10 +428,10 @@ class NodeEngine:
         out = {
             "dispatch_event": self.recv_event,
             "get_node_id": lambda: self.node_id,
-            "await_trigger": self.await_trigger,
-            "create_trigger": self.create_trigger,
-            "is_trigger_ready": self.await_trigger_check,
-            "cleanup_trigger": self.clean_trigger,
+            # "await_trigger": self.await_trigger,
+            # "create_trigger": self.create_trigger,
+            # "is_trigger_ready": self.await_trigger_check,
+            # "cleanup_trigger": self.clean_trigger,
         }
         return out
 

@@ -18,6 +18,8 @@ from . import main_pb2 as pb_base
 from . import main_pb2_grpc as pb
 from ..core.star_components import StarAddress
 
+PEER_DISCOVERY_TIMEOUT = 1
+
 
 class PeerDiscoveryClient:
     # Sends requests to network.
@@ -27,9 +29,12 @@ class PeerDiscoveryClient:
         self.kp: KeepAlive_Management = self.transport.keep_alive
 
     async def Bootstrap(
-        self, peerID_to: bytes, transport_to: StarAddress, timeout=0.2
+        self,
+        peerID_to: bytes,
+        transport_to: StarAddress,
+        timeout=PEER_DISCOVERY_TIMEOUT,
     ) -> list[pb_base.Bootstrap_Item]:
-        logger.debug(f"Create Bootstrap Request for {peerID_to.hex()}")
+        logger.debug(f"DISCOVERY - Create Bootstrap Request for {peerID_to.hex()}")
         req = pb_base.Bootstrap_Request(
             peerID=self.peer_id, dial_from=self.transport.to_pb()
         )
@@ -39,9 +44,9 @@ class PeerDiscoveryClient:
         self.stub = pb.PeerServiceStub(channel)  # connect to the other peer. Not local!
 
         try:
-            recv = await self.stub.Bootstrap(req)
+            recv = await self.stub.Bootstrap(req, timeout=timeout)
         except Exception as e:
-            logger.debug(f"Deletion notice error")
+            logger.debug(f"DISCOVERY - Deletion notice error")
             await channel_kp.kill_update()
             return []
 
@@ -62,13 +67,13 @@ class PeerService(pb.PeerServiceServicer):
 
         peerID = request.peerID
         transport_address = StarAddress.from_pb(request.dial_from)
-        logger.debug(f"Got Bootstrap Request from {peerID.hex()}")
+        logger.debug(f"DISCOVERY - Got Bootstrap Request from {peerID.hex()}")
         await self.internal_callback.add_peer(peerID, transport_address)
 
         # peer_address = context.peer()
         # await self.keep_alive.receive_ping(peer_address)
 
-        peers = self.internal_callback.peer_table.fetch_copy()
+        peers = self.internal_callback.peer_table.fetch_dict()
         out = pb_base.Bootstrap_Response()
         for peer, val in peers.items():
             # key: bytes
