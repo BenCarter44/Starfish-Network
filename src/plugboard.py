@@ -16,8 +16,10 @@ import grpc
 from src.KeepAlive import KeepAlive_Management, TRIGGER_OFFLINE
 from src.TaskMonitor import MonitorService
 from src.communications.FileService import FileClient
+from src.communications.IOService import IOClient
 from src.communications.PeerService import PeerDiscoveryClient
 from src.core.File import HostedFile, FileManager
+from src.core.io_host import Device, IOHost
 from src.util.util import gaussian_bytes
 from .core.star_engine import NodeEngine
 from .core.DHT import *
@@ -60,12 +62,14 @@ class PlugBoard:
             DHTSelect.PEER_ID: {self.my_addr: set()},
             DHTSelect.TASK_ID: {self.my_addr: set()},
             DHTSelect.FILE_ID: {self.my_addr: set()},
+            DHTSelect.DEVICE_ID: {self.my_addr: set()},
         }  # stores KEY and peers caching.
 
         self.cache_subscriptions: dict[DHTSelect, set[bytes]] = {
             DHTSelect.PEER_ID: set(),
             DHTSelect.TASK_ID: set(),
             DHTSelect.FILE_ID: set(),
+            DHTSelect.DEVICE_ID: set(),
         }
 
         self.task_table = DHT(self.my_addr)
@@ -73,6 +77,9 @@ class PlugBoard:
 
         self.file_table = DHT(self.my_addr)
         self.file_table.update_addresses(node_id)
+
+        self.device_table = DHT(self.my_addr)
+        self.device_table.update_addresses(node_id)
 
         logger.info(
             f"META - Creating local channel: {self.local_addr.get_string_channel()}"
@@ -94,6 +101,9 @@ class PlugBoard:
         # self.file_monitor_servers: dict[bytes, bytes] = {}
 
         self.file_manager = FileManager(file_save)
+        self.io_host = IOHost(self.my_addr)  # all devices join here.
+        self.io_host.host_alloc_device = self.host_allocate_device  # type: ignore
+        self.io_host.host_dealloc_device = self.host_deallocate_device  # type: ignore
 
     def print_keep_alives(self):
         self.keep_alive_manager.fancy_print()
@@ -113,15 +123,24 @@ class PlugBoard:
 
     def print_cache_subscriptions_listening(self):
         for select in self.cache_subscriptions:
-            if select != DHTSelect.PEER_ID:
-                continue
-            for key in self.cache_subscriptions[select]:
-                logger.info(f"PEER - PEER_TABLE \t [{key.hex()}]")
+            if select == DHTSelect.PEER_ID:
+                for key in self.cache_subscriptions[select]:
+                    logger.info(f"PEER - PEER_TABLE \t [{key.hex()}]")
+            if select == DHTSelect.TASK_ID:
+                for key in self.cache_subscriptions[select]:
+                    logger.info(f"TASK - TASK_TABLE \t [{key.hex()}]")
+            if select == DHTSelect.FILE_ID:
+                for key in self.cache_subscriptions[select]:
+                    logger.info(f"FILE - FILE_TABLE \t [{key.hex()}]")
+            if select == DHTSelect.DEVICE_ID:
+                for key in self.cache_subscriptions[select]:
+                    logger.info(f"IO - DEVICE_TABLE \t [{key.hex()}]")
 
     def remove_peer_from_address_tables(self, peer):
         self.peer_table.remove_address(peer)
         self.task_table.remove_address(peer)
         self.file_table.remove_address(peer)
+        self.device_table.remove_address(peer)
 
     async def get_peer_transport(self, addr: bytes, ignore=[]) -> Optional[StarAddress]:
         """Use the DHT to get transport address given Node ID
@@ -201,6 +220,13 @@ class PlugBoard:
             return
 
         await self.dht_delete_plain(peer_id, DHTSelect.PEER_ID)
+
+    async def device_maintain_valid_offline(self, device_key, peer_id):
+        if peer_id is None:
+            logger.error("IO - Maintain CB can't be None!")
+            return
+
+        await self.dht_delete_plain(device_key, DHTSelect.DEVICE_ID)
 
     async def send_deletion_notice(self, key, select):
         tmp = set()
@@ -899,6 +925,117 @@ class PlugBoard:
         # It sets the value later.... (under raw store)
         await self.dht_set(hf.get_key(), b"", DHTSelect.FILE_ID)
 
+    async def host_allocate_device(self, dev: Device):
+        # Assume teletype device
+        logger.info(f"Allocating device {dev.get_name()}")
+        await self.dht_set(
+            dev.get_id(), self.my_addr, DHTSelect.DEVICE_ID, fixed_owner=True
+        )
+
+    async def host_deallocate_device(self, dev: Device):
+        logger.info(f"IO - Device dealloced! {dev.get_name()}")
+        await self.dht_delete_plain(dev.get_id(), DHTSelect.DEVICE_ID)
+
+    async def open_device(self, device, process_id):
+        local_id = self.io_host.open_device_connection(device, process_id)
+        return local_id
+
+    async def close_device(self, device):
+        local_id = self.io_host.close_device(device)
+
+        if local_id:
+            return DHTStatus.OK
+        else:
+            return DHTStatus.ERR
+
+    async def unmount_device(self, device):
+        await self.io_host.unmount_device(device)
+        return DHTStatus.OK
+
+    async def read_device(self, device, length):
+        r = await self.io_host.read_device(device, length)
+        return r, DHTStatus.OK
+
+    async def write_device(self, device, data):
+        await self.io_host.write_device(device, data)
+        return DHTStatus.OK
+
+    async def read_available(self, device):
+        r = await self.io_host.read_available(device)
+        if r is None:
+            return False, DHTStatus.ERR
+        else:
+            return r, DHTStatus.OK
+
+    async def write_handler(self, device: Device, data):
+        # search for device.
+        # send request to device.
+        who = await self.dht_get(device.get_id(), DHTSelect.DEVICE_ID)
+        assert who is not None
+        tp = await self.get_peer_transport(who)
+        assert tp is not None
+        ioc = IOClient(tp, who, device.get_local_device_identifier())
+        status = await ioc.WriteDevice(device, data)
+        logger.debug(f"IO - Write Output: {status}")
+        return status == DHTStatus.OK
+
+    async def read_handler(self, device: Device, l):
+        # search for device.
+        # send request to device.
+        who = await self.dht_get(device.get_id(), DHTSelect.DEVICE_ID)
+        assert who is not None
+        tp = await self.get_peer_transport(who)
+        assert tp is not None
+        ioc = IOClient(tp, who, device.get_local_device_identifier())
+        out = await ioc.ReadDevice(device, l)
+        logger.debug(f"IO - Read Output: {out}")
+        return out
+
+    async def read_available_handler(self, device: Device):
+        # search for device.
+        # send request to device.
+        who = await self.dht_get(device.get_id(), DHTSelect.DEVICE_ID)
+        assert who is not None
+        tp = await self.get_peer_transport(who)
+        assert tp is not None
+        ioc = IOClient(tp, who, device.get_local_device_identifier())
+        out = await ioc.ReadAvailable(device)
+        logger.debug(f"IO - ReadAvail Output: {out}")
+        return out
+
+    async def open_handler(self, device: Device):
+        # search for device.
+        # send request to device.
+        who = await self.dht_get(device.get_id(), DHTSelect.DEVICE_ID)
+        if who is None:
+            return None
+        tp = await self.get_peer_transport(who)
+        assert tp is not None
+        ioc = IOClient(tp, who, device.get_local_device_identifier())
+        out = await ioc.OpenDevice(device)
+        logger.debug(f"IO - Open Output: {out}")
+        return out
+
+    async def close_handler(self, device: Device):
+        # search for device.
+        # send request to device.
+        who = await self.dht_get(device.get_id(), DHTSelect.DEVICE_ID)
+        assert who is not None
+        tp = await self.get_peer_transport(who)
+        assert tp is not None
+        ioc = IOClient(tp, who, device.get_local_device_identifier())
+        return await ioc.CloseDevice(device)
+
+    async def unmount_handler(self, device: Device):
+        # search for device.
+        # send request to device.
+        who = await self.dht_get(device.get_id(), DHTSelect.DEVICE_ID)
+        assert who is not None
+        tp = await self.get_peer_transport(who)
+        assert tp is not None
+        ioc = IOClient(tp, who, device.get_local_device_identifier())
+        return await ioc.UnmountDevice(device)
+
     async def dht_get(
         self, key: bytes, select: DHTSelect, ignore=[]
     ) -> Optional[bytes]:
@@ -946,6 +1083,8 @@ class PlugBoard:
             response = self.task_table.get(key)
         elif select == DHTSelect.FILE_ID:
             response = self.file_table.get(key)
+        elif select == DHTSelect.DEVICE_ID:
+            response = self.device_table.get(key)
         else:
             logger.error(f"DHT - Unknown table selected!")
             return  # type: ignore
@@ -957,6 +1096,7 @@ class PlugBoard:
         value: bytes,
         select: DHTSelect,
         nodes_visited: list[bytes] = [],
+        fixed_owner=False,
     ) -> tuple[DHTStatus, bytes]:
         """Set value to DHT
 
@@ -970,7 +1110,7 @@ class PlugBoard:
         """
 
         status, who = await self.dht_interface.StoreItem(
-            key, value, select, nodes_visited=nodes_visited
+            key, value, select, nodes_visited=nodes_visited, fixed_owner=fixed_owner
         )
         return status, who
 
@@ -990,6 +1130,7 @@ class PlugBoard:
             result = self.peer_table.set_cache(key, value)
             self.task_table.update_addresses(key)
             self.file_table.update_addresses(key)
+            self.device_table.update_addresses(key)
             if not (result):
                 # I already owned it.
                 return
@@ -1004,6 +1145,12 @@ class PlugBoard:
 
         elif select == DHTSelect.FILE_ID:
             r = self.file_table.set_cache(key, value)
+            if not (r):
+                return  # I already owned it.
+            await self.dht_set_cache_notices(key, value, select, monitor)
+
+        elif select == DHTSelect.DEVICE_ID:
+            r = self.device_table.set_cache(key, value)
             if not (r):
                 return  # I already owned it.
             await self.dht_set_cache_notices(key, value, select, monitor)
@@ -1097,6 +1244,30 @@ class PlugBoard:
                 key
             ] = set()  # People who connect to me.
 
+        if select == DHTSelect.DEVICE_ID:
+            # cache.
+            addr = await self.get_peer_transport(last_chain)
+            assert addr is not None
+            channel = addr.get_channel()
+            self.keep_alive_manager.register_channel_service(
+                channel,
+                addr.get_string_channel(),
+                key,
+                lambda: self.device_maintain_valid_offline(last_chain, key),
+                TRIGGER_OFFLINE,
+            )
+
+            # Send to chain.
+            logger.debug(
+                f"DHT - Set plain cache. Register notices dest: {last_chain.hex()}"
+            )
+            client = DHTClient(addr, last_chain, self.my_addr, self.keep_alive_manager)
+            await client.register_notices(key, select)
+            self.cache_subscriptions[select].add(key)  # I am subscribed to updates
+            self.cache_subscriptions_serve[select][
+                key
+            ] = set()  # People who connect to me.
+
         logger.debug(f"DHT - DHT SET CACHE NOTICES DONE")
         logger.info(f"DHT - Listening:")
         self.print_cache_subscriptions_listening()
@@ -1127,6 +1298,7 @@ class PlugBoard:
         select: DHTSelect,
         addr_init: bytes,
         ignore: set[bytes] = set(),
+        fixed_owner=False,
     ) -> tuple[bytes, DHTStatus, list[bytes]]:
         """Messaging services: Store item in internal DHT
 
@@ -1145,6 +1317,7 @@ class PlugBoard:
             self.peer_table.update_addresses(key)
             self.task_table.update_addresses(key)
             self.file_table.update_addresses(key)
+            self.device_table.update_addresses(key)
             r = self.peer_table.set(key, value, ignore=ignore)
             if r.response_code == DHTStatus.OWNED:
                 #  Add callback to KeepAlive
@@ -1202,6 +1375,57 @@ class PlugBoard:
                 hf.local_filepath = self.file_manager.file_save_dir
                 monitor_peer = await self.create_file_monitor_request(hf, self.my_addr)
                 self.file_manager.host_file(hf, monitor_peer, is_monitor=False)
+
+        elif select == DHTSelect.DEVICE_ID:
+            r = self.device_table.set(
+                key, value, post_to_cache=True, ignore=ignore, neighbors=2
+            )
+            if r.response_code == DHTStatus.OWNED and fixed_owner:
+                #  Add callback to KeepAlive
+                # value is the peer it is stored on!
+                # tp = self.get_peer_transport(value)
+                # assert tp is not None
+                if value != self.my_addr:
+                    raise ValueError("Only own on self for devices!")
+                    # channel = tp.get_channel()
+                    # logger.debug(
+                    #     f"IO - Create callback to maintain device connection online"
+                    # )
+                    # self.keep_alive_manager.register_channel_service(
+                    #     channel,
+                    #     tp.get_string_channel(),
+                    #     key,
+                    #     lambda: self.device_maintain_valid_offline(key, value),
+                    #     TRIGGER_OFFLINE,
+                    # )
+                r.response_code = DHTStatus.FOUND
+                if key not in self.cache_subscriptions_serve[select]:
+                    self.cache_subscriptions_serve[select][key] = set()
+
+            elif r.response_code == DHTStatus.OWNED:
+                self.device_table.remove(key)
+                await self.dht_cache_store(
+                    key, value, DHTSelect.DEVICE_ID, value
+                )  # value owns it.
+
+                if key not in self.cache_subscriptions_serve[select]:
+                    self.cache_subscriptions_serve[select][key] = set()
+
+                tp = await self.get_peer_transport(value)
+                assert tp is not None
+                self.keep_alive_manager.register_channel_service(
+                    tp.get_channel(),
+                    tp.get_string_channel(),
+                    key,
+                    lambda: self.device_maintain_valid_offline(key, value),
+                    TRIGGER_OFFLINE,
+                )
+
+            logger.warning(f"IO - Device table")
+            self.device_table.fancy_print()
+            logger.warning(f"IO - Subscriptions")
+            self.print_cache_subscriptions_listening()
+
         else:
             logger.error(f"DHT - Unknown table selected!")
             return  # type: ignore
@@ -1215,6 +1439,10 @@ class PlugBoard:
             # I do have it.
             await self.dht_delete_plain(peer, DHTSelect.PEER_ID)
 
+    async def dht_update(self, key: bytes, select: DHTSelect):
+        # for updating records on the DHT that you might not own.
+        pass
+
     async def dht_delete_plain(self, key: bytes, select: DHTSelect):
         if select == DHTSelect.PEER_ID:
             if not (self.peer_table.exists(key)):
@@ -1223,6 +1451,14 @@ class PlugBoard:
             self.remove_peer_from_address_tables(key)
             await self.dht_delete_notice_plain(key, select)
             self.peer_table.remove(key)
+
+        if select == DHTSelect.DEVICE_ID:
+            if not (self.device_table.exists(key)):
+                return DHTStatus.ERR
+
+            await self.dht_delete_notice_plain(key, select)
+            self.device_table.remove(key)
+
         return DHTStatus.OK
 
     async def dht_update_plain(self, key: bytes, select: DHTSelect):
@@ -1246,6 +1482,27 @@ class PlugBoard:
             self.peer_table.fancy_print()
 
             logger.warning(f"DHT - Final Keep Alive listening  - delete")
+            self.print_keep_alives()
+
+            logger.warning(f"DHT - Final subscriptions listening  - delete")
+            self.print_cache_subscriptions_listening()
+
+        if select == DHTSelect.DEVICE_ID:
+            if not (self.device_table.exists(key)):
+                logger.debug(f"DHT - DHT DELETE NOTICE PLAIN ERR")
+                return DHTStatus.ERR
+            self.device_table.remove(key)
+
+            await self.send_deletion_notice(key, select)
+            if key in self.cache_subscriptions[select]:
+                self.cache_subscriptions[select].remove(key)
+            if key in self.cache_subscriptions_serve[select]:
+                del self.cache_subscriptions_serve[select][key]
+
+            logger.warning(f"DHT - Final Device ID - delete")
+            self.device_table.fancy_print()
+
+            logger.warning(f"DHT - Final  Device ID listening  - delete")
             self.print_keep_alives()
 
             logger.warning(f"DHT - Final subscriptions listening  - delete")

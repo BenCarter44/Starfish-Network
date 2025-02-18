@@ -18,6 +18,7 @@ enum DHTSelect {
     PEER_ID = 1;
     TASK_ID = 2;
     FILE_ID = 3;
+    DEVICE_ID = 4;
 }
 
 enum MODE {
@@ -67,6 +68,7 @@ message DHT_Store_Request {
     DHTStatus status = 4;
     DHTSelect select = 5;
     bytes who = 6;
+    int32 fixed_owner = 7;
 }
 
 message DHT_Store_Response {
@@ -263,6 +265,49 @@ message FileServiceResponse {
     bytes data = 2;
 }
 
+// /////////
+
+
+enum UPDATE_TYPE {
+    OTHER_DEV = 0;
+    READ_DEV = 1;
+    WRITE_DEV = 2;
+    READ_AVAILABLE = 3;
+    OPEN_DEV = 4;
+    CLOSE_DEV = 5;
+    UNMOUNT = 6;
+}
+
+
+message DeviceRequest {
+    bytes device_id = 1;
+    bytes process_id = 2;
+    UPDATE_TYPE request_type = 3;
+}
+
+message DeviceResponse {
+    bytes device_id = 1;
+    bytes local_device_identifier = 2;
+    DHTStatus status = 3;
+}
+
+message DataRequest {
+    bytes device_id = 1;
+    bytes local_device_identifier = 2;
+    UPDATE_TYPE request_type = 3;
+    bytes data = 4;
+    int32 field1 = 5;
+}
+
+message DataResponse {
+    bytes device_id = 1;
+    bytes local_device_identifier = 2;
+    bytes data = 3;
+    int32 field1 = 4;
+    DHTStatus status = 5;
+}
+
+
 // /////////////////////////////////////////
 
 service DHTService {
@@ -359,5 +404,29 @@ service FileService {
 
     // raw file transfer
     rpc SendFileContents(FileServiceRequest) returns (FileServiceResponse) {}
+
+}
+
+
+service IOService {
+
+    // open device
+    rpc OpenDevice(DeviceRequest) returns (DeviceResponse) {}
+    
+    // close device
+    rpc CloseDevice(DeviceRequest) returns (DeviceResponse) {}
+
+    // close device
+    rpc UnmountDevice(DeviceRequest) returns (DeviceResponse) {}
+    
+    // read from device
+    rpc ReadDevice(DataRequest) returns (DataResponse) {}
+
+    // write to device
+    rpc WriteDevice(DataRequest) returns (DataResponse) {}
+
+    // read available from device
+    rpc ReadAvailable(DataRequest) returns (DataResponse) {}
+    
 
 }

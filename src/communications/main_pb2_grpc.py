@@ -1231,3 +1231,315 @@ class FileService(object):
             metadata,
             _registered_method=True,
         )
+
+
+class IOServiceStub(object):
+    """Missing associated documentation comment in .proto file."""
+
+    def __init__(self, channel):
+        """Constructor.
+
+        Args:
+            channel: A grpc.Channel.
+        """
+        self.OpenDevice = channel.unary_unary(
+            "/protocol.IOService/OpenDevice",
+            request_serializer=main__pb2.DeviceRequest.SerializeToString,
+            response_deserializer=main__pb2.DeviceResponse.FromString,
+            _registered_method=True,
+        )
+        self.CloseDevice = channel.unary_unary(
+            "/protocol.IOService/CloseDevice",
+            request_serializer=main__pb2.DeviceRequest.SerializeToString,
+            response_deserializer=main__pb2.DeviceResponse.FromString,
+            _registered_method=True,
+        )
+        self.UnmountDevice = channel.unary_unary(
+            "/protocol.IOService/UnmountDevice",
+            request_serializer=main__pb2.DeviceRequest.SerializeToString,
+            response_deserializer=main__pb2.DeviceResponse.FromString,
+            _registered_method=True,
+        )
+        self.ReadDevice = channel.unary_unary(
+            "/protocol.IOService/ReadDevice",
+            request_serializer=main__pb2.DataRequest.SerializeToString,
+            response_deserializer=main__pb2.DataResponse.FromString,
+            _registered_method=True,
+        )
+        self.WriteDevice = channel.unary_unary(
+            "/protocol.IOService/WriteDevice",
+            request_serializer=main__pb2.DataRequest.SerializeToString,
+            response_deserializer=main__pb2.DataResponse.FromString,
+            _registered_method=True,
+        )
+        self.ReadAvailable = channel.unary_unary(
+            "/protocol.IOService/ReadAvailable",
+            request_serializer=main__pb2.DataRequest.SerializeToString,
+            response_deserializer=main__pb2.DataResponse.FromString,
+            _registered_method=True,
+        )
+
+
+class IOServiceServicer(object):
+    """Missing associated documentation comment in .proto file."""
+
+    def OpenDevice(self, request, context):
+        """open device"""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details("Method not implemented!")
+        raise NotImplementedError("Method not implemented!")
+
+    def CloseDevice(self, request, context):
+        """close device"""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details("Method not implemented!")
+        raise NotImplementedError("Method not implemented!")
+
+    def UnmountDevice(self, request, context):
+        """close device"""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details("Method not implemented!")
+        raise NotImplementedError("Method not implemented!")
+
+    def ReadDevice(self, request, context):
+        """read from device"""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details("Method not implemented!")
+        raise NotImplementedError("Method not implemented!")
+
+    def WriteDevice(self, request, context):
+        """write to device"""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details("Method not implemented!")
+        raise NotImplementedError("Method not implemented!")
+
+    def ReadAvailable(self, request, context):
+        """read available from device"""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details("Method not implemented!")
+        raise NotImplementedError("Method not implemented!")
+
+
+def add_IOServiceServicer_to_server(servicer, server):
+    rpc_method_handlers = {
+        "OpenDevice": grpc.unary_unary_rpc_method_handler(
+            servicer.OpenDevice,
+            request_deserializer=main__pb2.DeviceRequest.FromString,
+            response_serializer=main__pb2.DeviceResponse.SerializeToString,
+        ),
+        "CloseDevice": grpc.unary_unary_rpc_method_handler(
+            servicer.CloseDevice,
+            request_deserializer=main__pb2.DeviceRequest.FromString,
+            response_serializer=main__pb2.DeviceResponse.SerializeToString,
+        ),
+        "UnmountDevice": grpc.unary_unary_rpc_method_handler(
+            servicer.UnmountDevice,
+            request_deserializer=main__pb2.DeviceRequest.FromString,
+            response_serializer=main__pb2.DeviceResponse.SerializeToString,
+        ),
+        "ReadDevice": grpc.unary_unary_rpc_method_handler(
+            servicer.ReadDevice,
+            request_deserializer=main__pb2.DataRequest.FromString,
+            response_serializer=main__pb2.DataResponse.SerializeToString,
+        ),
+        "WriteDevice": grpc.unary_unary_rpc_method_handler(
+            servicer.WriteDevice,
+            request_deserializer=main__pb2.DataRequest.FromString,
+            response_serializer=main__pb2.DataResponse.SerializeToString,
+        ),
+        "ReadAvailable": grpc.unary_unary_rpc_method_handler(
+            servicer.ReadAvailable,
+            request_deserializer=main__pb2.DataRequest.FromString,
+            response_serializer=main__pb2.DataResponse.SerializeToString,
+        ),
+    }
+    generic_handler = grpc.method_handlers_generic_handler(
+        "protocol.IOService", rpc_method_handlers
+    )
+    server.add_generic_rpc_handlers((generic_handler,))
+    server.add_registered_method_handlers("protocol.IOService", rpc_method_handlers)
+
+
+# This class is part of an EXPERIMENTAL API.
+class IOService(object):
+    """Missing associated documentation comment in .proto file."""
+
+    @staticmethod
+    def OpenDevice(
+        request,
+        target,
+        options=(),
+        channel_credentials=None,
+        call_credentials=None,
+        insecure=False,
+        compression=None,
+        wait_for_ready=None,
+        timeout=None,
+        metadata=None,
+    ):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            "/protocol.IOService/OpenDevice",
+            main__pb2.DeviceRequest.SerializeToString,
+            main__pb2.DeviceResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True,
+        )
+
+    @staticmethod
+    def CloseDevice(
+        request,
+        target,
+        options=(),
+        channel_credentials=None,
+        call_credentials=None,
+        insecure=False,
+        compression=None,
+        wait_for_ready=None,
+        timeout=None,
+        metadata=None,
+    ):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            "/protocol.IOService/CloseDevice",
+            main__pb2.DeviceRequest.SerializeToString,
+            main__pb2.DeviceResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True,
+        )
+
+    @staticmethod
+    def UnmountDevice(
+        request,
+        target,
+        options=(),
+        channel_credentials=None,
+        call_credentials=None,
+        insecure=False,
+        compression=None,
+        wait_for_ready=None,
+        timeout=None,
+        metadata=None,
+    ):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            "/protocol.IOService/UnmountDevice",
+            main__pb2.DeviceRequest.SerializeToString,
+            main__pb2.DeviceResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True,
+        )
+
+    @staticmethod
+    def ReadDevice(
+        request,
+        target,
+        options=(),
+        channel_credentials=None,
+        call_credentials=None,
+        insecure=False,
+        compression=None,
+        wait_for_ready=None,
+        timeout=None,
+        metadata=None,
+    ):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            "/protocol.IOService/ReadDevice",
+            main__pb2.DataRequest.SerializeToString,
+            main__pb2.DataResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True,
+        )
+
+    @staticmethod
+    def WriteDevice(
+        request,
+        target,
+        options=(),
+        channel_credentials=None,
+        call_credentials=None,
+        insecure=False,
+        compression=None,
+        wait_for_ready=None,
+        timeout=None,
+        metadata=None,
+    ):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            "/protocol.IOService/WriteDevice",
+            main__pb2.DataRequest.SerializeToString,
+            main__pb2.DataResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True,
+        )
+
+    @staticmethod
+    def ReadAvailable(
+        request,
+        target,
+        options=(),
+        channel_credentials=None,
+        call_credentials=None,
+        insecure=False,
+        compression=None,
+        wait_for_ready=None,
+        timeout=None,
+        metadata=None,
+    ):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            "/protocol.IOService/ReadAvailable",
+            main__pb2.DataRequest.SerializeToString,
+            main__pb2.DataResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True,
+        )

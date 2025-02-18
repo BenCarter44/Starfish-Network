@@ -2,6 +2,9 @@ import struct
 import os, sys
 import asyncio
 
+import dill
+
+
 sys.path.append(os.path.join(os.path.dirname(__file__), "../../"))
 
 import hashlib
@@ -171,13 +174,24 @@ class FileManager:
 
 
 class FileFactory:
-    def __init__(self, plugboard, loop, process_id):
+    def __init__(self, plugboard, loop, process_id, engine_id):
         self.plugboard = plugboard
         self.loop = loop
         self.process_id = process_id
+        self.engine_id = engine_id
 
     def File(self, userID: bytes, filepath: str) -> "File":
         return File(userID, filepath, self.plugboard, self.loop, self.process_id)
+
+    def File_Import(self, b: bytes) -> "File":
+        raw = dill.loads(b)
+        hf = HostedFile.from_key(raw[0])
+        proc = raw[1]
+        local_id = raw[2]
+        hf.local_identifier = local_id
+        f = File(b"", "a", self.plugboard, self.loop, proc)
+        f.hf = hf
+        return f
 
 
 class File:
@@ -227,15 +241,30 @@ class File:
         )
         return future.result(timeout)
 
+    def export(self):
+        return dill.dumps(
+            (self.hf.get_key(), self.process_id, self.hf.get_local_identifier())
+        )
+
 
 class HostedFile:
-    def __init__(self, userID: bytes, filepath: str, is_monitor=False):
+    def __init__(self, userID: bytes, filepath: str, is_monitor=False, mode=TYPE_FILE):
         self.userID = userID
         if filepath[0] == "/":
             filepath = filepath[1:]
-        self.filepath = compress_str_to_bytes(filepath)
-        self.filepath = pad_bytes(self.filepath, 4)
-        self.mode = TYPE_FILE  # three bits!
+
+        if mode == TYPE_FILE:
+            self.filepath = compress_str_to_bytes(filepath)
+            self.filepath = pad_bytes(self.filepath, 4)
+        if mode == TYPE_IO:
+            # io_host_type = 'tty'
+            # /dev/tty00102
+            # io_host_type = self.filepath[5:8]
+            number = filepath[7:]  # skips the '/'
+            number_bytes = int.to_bytes(int(number), 4, "big")
+            self.filepath = pad_bytes(number_bytes, 4)
+
+        self.mode = mode  # three bits!
 
         self.local_file_object = None
         self.local_filepath = None
@@ -244,7 +273,17 @@ class HostedFile:
         self.local_identifier = b""
         self.is_monitor = is_monitor
 
-    def get_local_identifier(self):
+    def get_filepath(self) -> str:
+        if self.mode == TYPE_FILE:
+            return decompress_bytes_to_str(self.filepath)
+        elif self.mode == TYPE_IO:
+            return f"/dev/tty{int.from_bytes(self.filepath,'big')}"
+        return ""
+
+    def get_user(self) -> bytes:
+        return self.userID
+
+    def get_local_identifier(self) -> bytes:
         return self.local_identifier
 
     def get_key(self):
@@ -287,9 +326,13 @@ class HostedFile:
             raise ValueError("Invalid key")
 
         name_bin = and_bytes(key, mode_mask)
-        name = decompress_bytes_to_str(name_bin[4:])
 
-        c = cls(user, name)
+        if mode_set == TYPE_FILE:
+            name = decompress_bytes_to_str(name_bin[4:])
+        elif mode_set == TYPE_IO:
+            name = f"/dev/tty{int.from_bytes(name_bin[4:],'big')}"
+
+        c = cls(user, name, mode=mode_set)
         c.mode = mode_set
         return c
 

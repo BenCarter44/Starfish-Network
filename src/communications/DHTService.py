@@ -77,6 +77,7 @@ class DHTClient:
         select: pb_base.DHTSelect,
         nodes_visited: list[bytes] = [],
         timeout=DHT_REQ_TIMEOUT,
+        fixed_owner=False,
     ) -> tuple[pb_base.DHTStatus, bytes]:
         peer_id = self.peer_id
 
@@ -91,6 +92,7 @@ class DHTClient:
             select=select,
             query_chain=nodes_visited,
             who=self.peer_id,
+            fixed_owner=fixed_owner,
         )
         # request.query_chain.append(peer_id)
         # for x in request.query_chain:
@@ -365,7 +367,12 @@ class DHTService(pb.DHTServiceServicer):
         # Initial query has no callback!
         # Need to test: ignore all addresses that are in ignore list.
         data, status, neighbors = await self.internal_callback.dht_set_plain(
-            request.key, request.value, request.select, request.who, ignore=peers_update
+            request.key,
+            request.value,
+            request.select,
+            request.who,
+            ignore=peers_update,
+            fixed_owner=request.fixed_owner,
         )
         nodes_visited.append(self.addr)
 
@@ -383,12 +390,12 @@ class DHTService(pb.DHTServiceServicer):
 
         my_nice = nice_print(self.addr)
         logger.debug(f"DHT - Push to neighbors!")
+        logger.debug(f"DHT - Neighbors: {neighbors}")
         # Neighbor has to own it.
         send_tos = []
         for neighbor in neighbors:
             if neighbor not in nodes_visited:
                 send_tos.append(neighbor)
-                # logger.debug(f"DHT - Neighbor: {neighbor.hex()}")
 
         for addr in send_tos:
             # send to neighbor.

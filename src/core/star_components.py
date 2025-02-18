@@ -20,9 +20,11 @@ import sys, os
 try:
     from src.util.util import and_bytes, pad_bytes
     from src.core.File import FileFactory
+    from src.core.io_host import IOFactory
 except:
     from util.util import and_bytes, pad_bytes
     from core.File import FileFactory
+    from src.core.io_host import IOFactory
 
 
 sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
@@ -257,7 +259,20 @@ class StarTask:
         self.callable = None
 
     def get_file_factory(self):
-        return FileFactory(self.plugboard_callback, self.loop_callback, self.process_id)
+        return FileFactory(
+            self.plugboard_callback,
+            self.loop_callback,
+            self.process_id,
+            self.plugboard_callback.my_addr,
+        )
+
+    def get_io_factory(self):
+        return IOFactory(
+            self.plugboard_callback,
+            self.loop_callback,
+            self.process_id,
+            self.plugboard_callback.my_addr,
+        )
 
     def get_id(self):
         # first 32 bytes are routing

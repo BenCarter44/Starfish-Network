@@ -4,12 +4,10 @@ import os
 import random
 from typing import cast
 import uuid
+from src.communications.IOService import IOService
 from src.communications.KeepAliveService import KeepAliveCommService
 from src.communications.PeerService import PeerService
 from src.communications.FileService import FileService
-from src.communications.main_pb2_grpc import (
-    add_PeerServiceServicer_to_server,
-)
 from src.core.star_components import Event, Program, StarProcess, StarTask
 from src.plugboard import PlugBoard
 
@@ -34,6 +32,7 @@ try:
         add_PeerServiceServicer_to_server,
         add_KeepAliveServiceServicer_to_server,
         add_FileServiceServicer_to_server,
+        add_IOServiceServicer_to_server,
     )
     from .core.star_components import StarAddress
 except:
@@ -45,6 +44,7 @@ except:
         add_PeerServiceServicer_to_server,
         add_KeepAliveServiceServicer_to_server,
         add_FileServiceServicer_to_server,
+        add_IOServiceServicer_to_server,
     )
     from core.star_components import StarAddress
 
@@ -114,6 +114,12 @@ class Node:
             ),
             server=self.server,
         )
+        add_IOServiceServicer_to_server(
+            servicer=IOService(
+                self.plugboard,
+            ),
+            server=self.server,
+        )
 
         port = self.transport.get_string_channel()
         self.server.add_insecure_port(port)
@@ -138,7 +144,7 @@ class Node:
         """The peer discovery task. Do round every 5 sec"""
         while True:
             await asyncio.sleep(DISCOVERY_RATE)
-            # return
+            return
             if self.is_connected or self.plugboard.received_rpcs.is_set():
                 await self.plugboard.perform_discovery_round()
 
@@ -182,3 +188,6 @@ class Node:
         program.start.nonce = 0
         await self.plugboard.dispatch_event(program.start)
         return proc
+
+    def attach_device_host(self, tl_host):
+        self.plugboard.io_host.attach_device_host(tl_host)

@@ -242,7 +242,7 @@ class KeepAlive_Management:
                 continue
 
             # logger.debug(s)
-            logger.debug(str(self.roundrobin_channels))
+            logger.debug("KEEPALIVE - " + str(self.roundrobin_channels))
             asyncio.create_task(self.channels[s].heartbeat(True))  # heartbeat request.
             await asyncio.sleep(HEARTBEAT_INTERVAL / len(self.channels))
 

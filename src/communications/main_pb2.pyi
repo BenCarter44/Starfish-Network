@@ -28,6 +28,7 @@ class DHTSelect(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
     PEER_ID: _ClassVar[DHTSelect]
     TASK_ID: _ClassVar[DHTSelect]
     FILE_ID: _ClassVar[DHTSelect]
+    DEVICE_ID: _ClassVar[DHTSelect]
 
 class MODE(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
     __slots__ = ()
@@ -54,6 +55,16 @@ class FILE_REQUEST(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
     CONTENTS: _ClassVar[FILE_REQUEST]
     MONITOR_REQ: _ClassVar[FILE_REQUEST]
 
+class UPDATE_TYPE(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
+    __slots__ = ()
+    OTHER_DEV: _ClassVar[UPDATE_TYPE]
+    READ_DEV: _ClassVar[UPDATE_TYPE]
+    WRITE_DEV: _ClassVar[UPDATE_TYPE]
+    READ_AVAILABLE: _ClassVar[UPDATE_TYPE]
+    OPEN_DEV: _ClassVar[UPDATE_TYPE]
+    CLOSE_DEV: _ClassVar[UPDATE_TYPE]
+    UNMOUNT: _ClassVar[UPDATE_TYPE]
+
 UNKNOWN: DHTStatus
 FOUND: DHTStatus
 NOT_FOUND: DHTStatus
@@ -64,6 +75,7 @@ BLANK: DHTSelect
 PEER_ID: DHTSelect
 TASK_ID: DHTSelect
 FILE_ID: DHTSelect
+DEVICE_ID: DHTSelect
 NA: MODE
 FORWARD: MODE
 BACKWARD: MODE
@@ -80,6 +92,13 @@ OPEN: FILE_REQUEST
 TELL: FILE_REQUEST
 CONTENTS: FILE_REQUEST
 MONITOR_REQ: FILE_REQUEST
+OTHER_DEV: UPDATE_TYPE
+READ_DEV: UPDATE_TYPE
+WRITE_DEV: UPDATE_TYPE
+READ_AVAILABLE: UPDATE_TYPE
+OPEN_DEV: UPDATE_TYPE
+CLOSE_DEV: UPDATE_TYPE
+UNMOUNT: UPDATE_TYPE
 
 class DHT_Fetch_Request(_message.Message):
     __slots__ = ("key", "query_chain", "status", "select")
@@ -121,19 +140,29 @@ class DHT_Fetch_Response(_message.Message):
     ) -> None: ...
 
 class DHT_Store_Request(_message.Message):
-    __slots__ = ("key", "value", "query_chain", "status", "select", "who")
+    __slots__ = (
+        "key",
+        "value",
+        "query_chain",
+        "status",
+        "select",
+        "who",
+        "fixed_owner",
+    )
     KEY_FIELD_NUMBER: _ClassVar[int]
     VALUE_FIELD_NUMBER: _ClassVar[int]
     QUERY_CHAIN_FIELD_NUMBER: _ClassVar[int]
     STATUS_FIELD_NUMBER: _ClassVar[int]
     SELECT_FIELD_NUMBER: _ClassVar[int]
     WHO_FIELD_NUMBER: _ClassVar[int]
+    FIXED_OWNER_FIELD_NUMBER: _ClassVar[int]
     key: bytes
     value: bytes
     query_chain: _containers.RepeatedScalarFieldContainer[bytes]
     status: DHTStatus
     select: DHTSelect
     who: bytes
+    fixed_owner: int
     def __init__(
         self,
         key: _Optional[bytes] = ...,
@@ -142,6 +171,7 @@ class DHT_Store_Request(_message.Message):
         status: _Optional[_Union[DHTStatus, str]] = ...,
         select: _Optional[_Union[DHTSelect, str]] = ...,
         who: _Optional[bytes] = ...,
+        fixed_owner: _Optional[int] = ...,
     ) -> None: ...
 
 class DHT_Store_Response(_message.Message):
@@ -531,4 +561,82 @@ class FileServiceResponse(_message.Message):
         self,
         status: _Optional[_Union[DHTStatus, str]] = ...,
         data: _Optional[bytes] = ...,
+    ) -> None: ...
+
+class DeviceRequest(_message.Message):
+    __slots__ = ("device_id", "process_id", "request_type")
+    DEVICE_ID_FIELD_NUMBER: _ClassVar[int]
+    PROCESS_ID_FIELD_NUMBER: _ClassVar[int]
+    REQUEST_TYPE_FIELD_NUMBER: _ClassVar[int]
+    device_id: bytes
+    process_id: bytes
+    request_type: UPDATE_TYPE
+    def __init__(
+        self,
+        device_id: _Optional[bytes] = ...,
+        process_id: _Optional[bytes] = ...,
+        request_type: _Optional[_Union[UPDATE_TYPE, str]] = ...,
+    ) -> None: ...
+
+class DeviceResponse(_message.Message):
+    __slots__ = ("device_id", "local_device_identifier", "status")
+    DEVICE_ID_FIELD_NUMBER: _ClassVar[int]
+    LOCAL_DEVICE_IDENTIFIER_FIELD_NUMBER: _ClassVar[int]
+    STATUS_FIELD_NUMBER: _ClassVar[int]
+    device_id: bytes
+    local_device_identifier: bytes
+    status: DHTStatus
+    def __init__(
+        self,
+        device_id: _Optional[bytes] = ...,
+        local_device_identifier: _Optional[bytes] = ...,
+        status: _Optional[_Union[DHTStatus, str]] = ...,
+    ) -> None: ...
+
+class DataRequest(_message.Message):
+    __slots__ = (
+        "device_id",
+        "local_device_identifier",
+        "request_type",
+        "data",
+        "field1",
+    )
+    DEVICE_ID_FIELD_NUMBER: _ClassVar[int]
+    LOCAL_DEVICE_IDENTIFIER_FIELD_NUMBER: _ClassVar[int]
+    REQUEST_TYPE_FIELD_NUMBER: _ClassVar[int]
+    DATA_FIELD_NUMBER: _ClassVar[int]
+    FIELD1_FIELD_NUMBER: _ClassVar[int]
+    device_id: bytes
+    local_device_identifier: bytes
+    request_type: UPDATE_TYPE
+    data: bytes
+    field1: int
+    def __init__(
+        self,
+        device_id: _Optional[bytes] = ...,
+        local_device_identifier: _Optional[bytes] = ...,
+        request_type: _Optional[_Union[UPDATE_TYPE, str]] = ...,
+        data: _Optional[bytes] = ...,
+        field1: _Optional[int] = ...,
+    ) -> None: ...
+
+class DataResponse(_message.Message):
+    __slots__ = ("device_id", "local_device_identifier", "data", "field1", "status")
+    DEVICE_ID_FIELD_NUMBER: _ClassVar[int]
+    LOCAL_DEVICE_IDENTIFIER_FIELD_NUMBER: _ClassVar[int]
+    DATA_FIELD_NUMBER: _ClassVar[int]
+    FIELD1_FIELD_NUMBER: _ClassVar[int]
+    STATUS_FIELD_NUMBER: _ClassVar[int]
+    device_id: bytes
+    local_device_identifier: bytes
+    data: bytes
+    field1: int
+    status: DHTStatus
+    def __init__(
+        self,
+        device_id: _Optional[bytes] = ...,
+        local_device_identifier: _Optional[bytes] = ...,
+        data: _Optional[bytes] = ...,
+        field1: _Optional[int] = ...,
+        status: _Optional[_Union[DHTStatus, str]] = ...,
     ) -> None: ...
