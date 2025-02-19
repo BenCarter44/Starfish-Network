@@ -2,6 +2,7 @@ import sys
 import time
 import os
 
+
 sys.path.append(os.path.join(os.path.dirname(__file__), "..", "src"))
 try:
     from ..src.core import star_components as star
@@ -17,10 +18,24 @@ logger = logging.getLogger(__name__)
 
 @star.task("start_program", pass_task_id=True)
 def start_program(evt: star.Event, task: star.StarTask):
+    import time
+
     io_factory = task.get_io_factory()
+    IO_NONEXIST, IO_BUSY, IO_DETACHED, IO_OK = io_factory.get_io_constants()
     dev = io_factory.IODevice(b"\x00\x22\x00\x05\x04\x03\x02\x01", "/dev/tty0")
 
-    dev.open()
+    status = dev.open()
+    if status != IO_OK:
+        print("Unable to open device!")
+        if status == IO_NONEXIST:
+            print("Device nonexist!")
+        if status == IO_BUSY:
+            print("Device busy by another process")
+        if status == IO_DETACHED:
+            print("Device detached")
+        print("STOP")
+        time.sleep(1000)
+
     dev.write(b"\r\nWelcome to the program!\r\n")
 
     evt_new = star.Event()
@@ -35,11 +50,15 @@ def read_file(evt: star.Event, task: star.StarTask):
     import os
 
     io_factory = task.get_io_factory()
+    IO_NONEXIST, IO_BUSY, IO_DETACHED, IO_OK = io_factory.get_io_constants()
     dev = io_factory.IODevice_Import(evt.data["io_dev"])
 
     counter = 0
     while True:
-        if dev.read_available():
+        available, status = dev.read_available()
+        if status != IO_OK:
+            break
+        if available:
             r, status = dev.read()
             dev.write(r)
             if r == b"\r":
@@ -51,6 +70,8 @@ def read_file(evt: star.Event, task: star.StarTask):
             time.sleep(0.1)
             counter = 0
 
+    print("END OF PROGRAM")
+    time.sleep(1000)
     # dev.write(b"Hello again!\r\n")
     # dev.write(b"Could you type your name: \r\n")
 

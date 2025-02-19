@@ -268,7 +268,7 @@ if __name__ == "__main__":
         elif record.msg.startswith("TASK"):
             return False
         elif record.msg.startswith("FILE"):
-            return False
+            return True
         elif record.msg.startswith("DISCOVERY"):
             return False
         elif record.msg.startswith("DHT"):

@@ -53,13 +53,7 @@ class IOClient:
             request_type=pb_base.UPDATE_TYPE.OPEN_DEV,
         )
         resp = await self.stub.OpenDevice(dreq, timeout=timeout)
-        if resp.status != pb_base.DHTStatus.OK:
-            return resp.status
-        new_dev_id = resp.device_id
-        local_id = resp.local_device_identifier
-        dev = Device.from_id(new_dev_id)
-        dev.set_local_id(local_id)
-        return dev
+        return resp.local_device_identifier, resp.status
 
     async def CloseDevice(self, device, timeout=DEVICE_TIMEOUT):
         logger.info(f"IO - CloseDevice request {device.get_name()}")
@@ -95,7 +89,6 @@ class IOClient:
 
     async def WriteDevice(self, device: Device, data, timeout=DEVICE_TIMEOUT):
         logger.info(f"IO - WriteDevice request {device.get_name()}")
-        assert isinstance(data, bytes)
         dreq = pb_base.DataRequest(
             device_id=device.get_id(),
             local_device_identifier=device.get_local_device_identifier(),
@@ -133,12 +126,15 @@ class IOService(pb.IOServiceServicer):
                 local_device_identifier=b"",
                 status=pb_base.DHTStatus.ERR,
             )
+
         device = Device.from_id(request.device_id)
-        result = await self.plugboard_callback.open_device(device, request.process_id)
-        status = pb_base.DHTStatus.OK if result else pb_base.DHTStatus.ERR
+        result_id, status = await self.plugboard_callback.open_device(
+            device, request.process_id
+        )
+
         return pb_base.DeviceResponse(
             device_id=request.device_id,
-            local_device_identifier=result or b"",
+            local_device_identifier=result_id,
             status=status,
         )
 
@@ -153,7 +149,7 @@ class IOService(pb.IOServiceServicer):
                 status=pb_base.DHTStatus.ERR,
             )
         device = Device.from_id(request.device_id)
-        device.set_local_device_id(request.process_id)
+        device.set_local_id(request.process_id)
         result = await self.plugboard_callback.close_device(device)
         return pb_base.DeviceResponse(
             device_id=request.device_id,

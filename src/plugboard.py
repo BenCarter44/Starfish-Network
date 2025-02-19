@@ -19,7 +19,7 @@ from src.communications.FileService import FileClient
 from src.communications.IOService import IOClient
 from src.communications.PeerService import PeerDiscoveryClient
 from src.core.File import HostedFile, FileManager
-from src.core.io_host import Device, IOHost
+from src.core.io_host import IO_BUSY, IO_DETACHED, IO_NONEXIST, IO_OK, Device, IOHost
 from src.util.util import gaussian_bytes
 from .core.star_engine import NodeEngine
 from .core.DHT import *
@@ -31,6 +31,26 @@ from .core.star_components import StarTask, StarProcess, StarAddress, Event
 import logging
 
 logger = logging.getLogger(__name__)
+
+
+def convert_io_status(status):
+    if status == IO_OK:
+        return DHTStatus.OK
+    elif status == IO_BUSY:
+        return DHTStatus.FOUND
+    elif status == IO_DETACHED:
+        return DHTStatus.ERR
+    return DHTStatus.ERR
+
+
+def convert_to_io_status(status):
+    if status == DHTStatus.OK:
+        return IO_OK
+    if status == DHTStatus.FOUND:
+        return IO_BUSY
+    if status == DHTStatus.ERR:
+        return IO_DETACHED
+    return IO_NONEXIST
 
 
 class PlugBoard:
@@ -937,104 +957,132 @@ class PlugBoard:
         await self.dht_delete_plain(dev.get_id(), DHTSelect.DEVICE_ID)
 
     async def open_device(self, device, process_id):
-        local_id = self.io_host.open_device_connection(device, process_id)
-        return local_id
+        local_id, status = self.io_host.open_device_connection(device, process_id)
+        status = convert_io_status(status)
+        return local_id, status
 
     async def close_device(self, device):
-        local_id = self.io_host.close_device(device)
-
-        if local_id:
-            return DHTStatus.OK
-        else:
-            return DHTStatus.ERR
+        status = self.io_host.close_device(device)
+        return convert_io_status(status)
 
     async def unmount_device(self, device):
         await self.io_host.unmount_device(device)
         return DHTStatus.OK
 
-    async def read_device(self, device, length):
-        r = await self.io_host.read_device(device, length)
-        return r, DHTStatus.OK
+    async def read_device(self, device: Device, length: int):
+        r, status = await self.io_host.read_device(device, length)
+        return r, convert_io_status(status)
 
     async def write_device(self, device, data):
-        await self.io_host.write_device(device, data)
-        return DHTStatus.OK
+        status = await self.io_host.write_device(device, data)
+        return convert_io_status(status)
 
     async def read_available(self, device):
-        r = await self.io_host.read_available(device)
-        if r is None:
-            return False, DHTStatus.ERR
-        else:
-            return r, DHTStatus.OK
+        r, s = await self.io_host.read_available(device)
+        return r, convert_io_status(s)
 
     async def write_handler(self, device: Device, data):
         # search for device.
         # send request to device.
+        logger.info(f"IO - Write request")
         who = await self.dht_get(device.get_id(), DHTSelect.DEVICE_ID)
-        assert who is not None
+        if who is None:
+            return IO_NONEXIST
         tp = await self.get_peer_transport(who)
-        assert tp is not None
-        ioc = IOClient(tp, who, device.get_local_device_identifier())
+        if tp is None:
+            return IO_NONEXIST
+        idf = device.get_local_device_identifier()
+        if idf is None:
+            return IO_BUSY
+
+        ioc = IOClient(tp, who, idf)
         status = await ioc.WriteDevice(device, data)
-        logger.debug(f"IO - Write Output: {status}")
-        return status == DHTStatus.OK
+        status = convert_to_io_status(status)
+        logger.info(f"IO - Write request done")
+        return status
 
     async def read_handler(self, device: Device, l):
         # search for device.
         # send request to device.
         who = await self.dht_get(device.get_id(), DHTSelect.DEVICE_ID)
-        assert who is not None
+        if who is None:
+            return b"", IO_NONEXIST
         tp = await self.get_peer_transport(who)
-        assert tp is not None
-        ioc = IOClient(tp, who, device.get_local_device_identifier())
-        out = await ioc.ReadDevice(device, l)
-        logger.debug(f"IO - Read Output: {out}")
-        return out
+        if tp is None:
+            return b"", IO_NONEXIST
+        idf = device.get_local_device_identifier()
+        if idf is None:
+            return b"", IO_BUSY
+        ioc = IOClient(tp, who, idf)
+        out, status = await ioc.ReadDevice(device, l)
+        status = convert_to_io_status(status)
+        return out, status
 
     async def read_available_handler(self, device: Device):
         # search for device.
         # send request to device.
         who = await self.dht_get(device.get_id(), DHTSelect.DEVICE_ID)
-        assert who is not None
+        if who is None:
+            return False, IO_NONEXIST
         tp = await self.get_peer_transport(who)
-        assert tp is not None
-        ioc = IOClient(tp, who, device.get_local_device_identifier())
-        out = await ioc.ReadAvailable(device)
-        logger.debug(f"IO - ReadAvail Output: {out}")
-        return out
+        if tp is None:
+            return False, IO_NONEXIST
 
-    async def open_handler(self, device: Device):
+        idf = device.get_local_device_identifier()
+        if idf is None:
+            return b"", IO_BUSY
+        ioc = IOClient(tp, who, idf)
+        out, status = await ioc.ReadAvailable(device)
+        logger.debug(f"IO - ReadAvail Output: {out}")
+        return out, convert_to_io_status(status)
+
+    async def open_handler(self, device: Device, processID: bytes):
         # search for device.
         # send request to device.
+        logger.info("IO - Open request")
         who = await self.dht_get(device.get_id(), DHTSelect.DEVICE_ID)
         if who is None:
-            return None
+            return b"", IO_NONEXIST
         tp = await self.get_peer_transport(who)
-        assert tp is not None
-        ioc = IOClient(tp, who, device.get_local_device_identifier())
-        out = await ioc.OpenDevice(device)
-        logger.debug(f"IO - Open Output: {out}")
-        return out
+        if tp is None:
+            return b"", IO_NONEXIST
+
+        ioc = IOClient(tp, who, processID)
+        out_id, status = await ioc.OpenDevice(device)
+        logger.info("IO - Open request done")
+        return out_id, convert_to_io_status(status)
 
     async def close_handler(self, device: Device):
         # search for device.
         # send request to device.
         who = await self.dht_get(device.get_id(), DHTSelect.DEVICE_ID)
-        assert who is not None
+        if who is None:
+            return IO_NONEXIST
         tp = await self.get_peer_transport(who)
-        assert tp is not None
-        ioc = IOClient(tp, who, device.get_local_device_identifier())
-        return await ioc.CloseDevice(device)
+        if tp is None:
+            return IO_NONEXIST
+        idf = device.get_local_device_identifier()
+        if idf is None:
+            return b"", IO_BUSY
+        ioc = IOClient(tp, who, idf)
+        status = await ioc.CloseDevice(device)
+        return convert_to_io_status(status)
 
     async def unmount_handler(self, device: Device):
         # search for device.
         # send request to device.
         who = await self.dht_get(device.get_id(), DHTSelect.DEVICE_ID)
-        assert who is not None
+        if who is None:
+            return IO_NONEXIST
         tp = await self.get_peer_transport(who)
-        assert tp is not None
-        ioc = IOClient(tp, who, device.get_local_device_identifier())
-        return await ioc.UnmountDevice(device)
+        if tp is None:
+            return IO_NONEXIST
+        idf = device.get_local_device_identifier()
+        if idf is None:
+            return b"", IO_BUSY
+        ioc = IOClient(tp, who, idf)
+        status = await ioc.UnmountDevice(device)
+        return convert_to_io_status(status)
 
     async def dht_get(
         self, key: bytes, select: DHTSelect, ignore=[]

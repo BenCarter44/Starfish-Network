@@ -5,7 +5,7 @@
 
 import asyncio
 import io
-from typing import Any, cast
+from typing import Any, Optional, cast
 import dill
 import telnetlib3
 from io import StringIO
@@ -13,11 +13,22 @@ from rich.console import Console
 import os
 import sys
 
+
 sys.path.append(os.path.join(os.path.dirname(__file__), "../../"))
+try:
+    from src.plugboard import PlugBoard
+except:
+    PlugBoard = int  # type: ignore
+
 from src.core.File import TYPE_IO, HostedFile
 import logging
 
 logger = logging.getLogger(__name__)
+
+IO_DETACHED = 100
+IO_OK = 200
+IO_NONEXIST = 300
+IO_BUSY = 400
 
 
 class Device:
@@ -26,8 +37,9 @@ class Device:
         self.device_file = HostedFile(peerID[0:4], pathname, mode=TYPE_IO)
         self.mode = TYPE_IO
         self.peerID = peerID
-        self.plugboard_callback = None  # type: ignore
-        self.loop = None
+        self.plugboard_callback: PlugBoard = None  # type: ignore
+        self.loop: asyncio.AbstractEventLoop = None  # type: ignore
+        self.processID = b""
 
     def get_name(self):
         return self.name
@@ -59,8 +71,11 @@ class Device:
     def set_local_id(self, local_id: bytes):
         self.device_file.local_identifier = local_id
 
-    def get_local_device_identifier(self) -> bytes:
-        return self.device_file.get_local_identifier()
+    def get_local_device_identifier(self) -> Optional[bytes]:
+        b = self.device_file.get_local_identifier()
+        if b == b"":
+            return None
+        return b
 
     def __hash__(self):
         return hash(self.device_file.get_key())
@@ -72,61 +87,64 @@ class Device:
             return False
 
     def write(self, data: bytes):
-        if self.get_local_device_identifier() == None:
-            raise ValueError("Not open!")
+        if self.get_local_device_identifier() is None:
+            logger.warning("IO - Write no-exist")
+            return IO_NONEXIST
         # get peer ID.
-        asyncio.run_coroutine_threadsafe(
+        status = asyncio.run_coroutine_threadsafe(
             self.plugboard_callback.write_handler(self, data), loop=self.loop
         )
+        return status.result()
 
-    def read(self, l=-1) -> tuple[bytes, Any]:
-        if self.get_local_device_identifier() == None:
-            raise ValueError("Not open!")
+    def read(self, length=-1) -> tuple[bytes, Any]:
+        if self.get_local_device_identifier() is None:
+            return b"", IO_BUSY
         # get peer ID.
         result = asyncio.run_coroutine_threadsafe(
-            self.plugboard_callback.read_handler(self, l), loop=self.loop
+            self.plugboard_callback.read_handler(self, length), loop=self.loop
         )
-        return result.result()
+        data, status = result.result()
+        return data, status
 
     def read_available(self):
-        if self.get_local_device_identifier() == None:
-            raise ValueError("Not open!")
+        if self.get_local_device_identifier() is None:
+            return False, IO_BUSY
         # get peer ID.
         result = asyncio.run_coroutine_threadsafe(
             self.plugboard_callback.read_available_handler(self), loop=self.loop
         )
-        return result.result()[0]
+        r, s = result.result()
+        return r, s
 
     def open(self):
         # get peer ID.
         result = asyncio.run_coroutine_threadsafe(
-            self.plugboard_callback.open_handler(self), self.loop
+            self.plugboard_callback.open_handler(self, self.processID), self.loop
         )
-        new_val = result.result()
-        if new_val is None:
-            raise ValueError("Already open / Does not exist!")
+        identifier, status = result.result()
 
-        if isinstance(new_val, Device):
-            self.set_local_id(new_val.get_value_identifier())
-        else:
-            logger.warning("IO - Error open device")
-            return False
-        return True
+        if status == IO_OK:
+            self.set_local_id(identifier)
+            return status
+        return status
 
     def close(self):
-        if self.get_local_device_identifier() == None:
-            raise ValueError("Not open!")
+        if self.get_local_device_identifier() is None:
+            return IO_BUSY
         # get peer ID.
         result = asyncio.run_coroutine_threadsafe(
             self.plugboard_callback.close_handler(self), self.loop
         )
+        return result.result()
 
     def unmount(self):
-
+        if self.get_local_device_identifier() is None:
+            return IO_BUSY
         # get peer ID.
         result = asyncio.run_coroutine_threadsafe(
             self.plugboard_callback.unmount_handler(self), self.loop
         )
+        return result.result()
 
 
 class IOFactory:
@@ -138,6 +156,7 @@ class IOFactory:
 
     def IODevice(self, engine_id, filepath: str) -> "Device":
         dev = Device(engine_id, filepath)
+        dev.processID = self.process_id
         dev.plugboard_callback = self.plugboard
         dev.loop = self.loop
         logger.info(f"IO - Exe: define IO device {dev.get_id().hex()}")
@@ -146,8 +165,12 @@ class IOFactory:
     def IODevice_Import(self, export: bytes) -> "Device":
         dev = Device.import_packed(export)
         dev.plugboard_callback = self.plugboard
+        dev.processID = self.process_id
         dev.loop = self.loop
         return dev
+
+    def get_io_constants(self):
+        return IO_NONEXIST, IO_BUSY, IO_DETACHED, IO_OK
 
 
 class IOHost:
@@ -168,28 +191,36 @@ class IOHost:
         tl_host.deallocate_device = self.deallocate_device
         tl_host.peerID = self.my_addr
 
-    def open_device_connection(self, device, process_id):
+    def open_device_connection(self, device: Device, process_id):
+        logger.debug(
+            f"IO - Recv open dev connection {device.get_name()} {process_id.hex()}"
+        )
+
         if device not in self.device_connections:
-            return None
+            logger.debug("IO - Detached")
+            return b"", IO_DETACHED
 
         if process_id == self.device_connections[device]:
-            return process_id
+            logger.debug("IO - OK")
+            return process_id, IO_OK
 
         if self.device_connections[device] == b"":
             self.device_connections[device] = process_id
-            return process_id
+            logger.debug("IO - OK")
+            return process_id, IO_OK
 
-        return None
+        logger.debug("IO - Busy")
+        return b"", IO_BUSY
 
     def close_device(self, device):
         if device not in self.device_connections:
-            return None
+            return IO_NONEXIST
 
         if device.get_local_device_identifier() != self.device_connections[device]:
-            return None
+            return IO_BUSY
 
         self.device_connections[device] = b""
-        return True
+        return IO_OK
 
     async def allocate_device(self):
         # assumes teletype
@@ -219,18 +250,20 @@ class IOHost:
         del self.device_sockets[device]
         del self.device_connections[device]
 
-    async def unmount_device(self, device):
+    async def unmount_device(self, device: Device):
         if device not in self.device_sockets:
             logger.error("Device not in self.device_events")
-            return
-        return self.deallocate_device(device)
+            return IO_NONEXIST
+
+        await self.deallocate_device(device)
+        return IO_OK
 
     async def read_device(self, device: Device, length=-1):
         if length == 0:
-            return b""
+            return b"", IO_OK
         logger.debug(f"IO - Read challenge: {device.get_id().hex()} {length}")
         if device.get_local_device_identifier() != self.device_connections[device]:
-            return b""
+            return b"", IO_BUSY
 
         while not (self.device_sockets[device][0].empty()):
             try:
@@ -256,34 +289,38 @@ class IOHost:
             self.device_sockets[device][3] = self.device_sockets[device][3][length:]
 
         logger.debug(f"IO - Read challenge out: {b}")
-        return b
 
-    async def write_device(self, device: Device, data):
+        if self.device_sockets[device][2].is_set():
+            return b, IO_DETACHED
+        return b, IO_OK
+
+    async def write_device(self, device: Device, data: bytes):
         logger.info(f"IO - Write challenge: {device.get_id().hex()}")
         if device.get_local_device_identifier() != self.device_connections[device]:
             logger.warning(f"IO - Write challenge mismatch")
-            return None
+            return IO_BUSY
 
         if self.device_sockets[device][2].is_set():
-            return None  # device is closed!
+            return IO_DETACHED  # device is closed!
 
         logger.debug(f"IO - Place data on write queue {data}")
         await self.device_sockets[device][1].put(data)
+        return IO_OK
 
     async def read_available(self, device: Device):
         logger.debug(f"IO - ReadAvail challenge: {device.get_id().hex()}")
         if device.get_local_device_identifier() != self.device_connections[device]:
-            return None
+            return False, IO_BUSY
 
         if self.device_sockets[device][2].is_set():
-            return None  # device is closed!
+            return False, IO_DETACHED  # device is closed!
 
         out = (
             self.device_sockets[device][0].qsize() > 0
             or len(self.device_sockets[device][3]) > 0
         )
         logger.debug(f"IO - ReadAvail challenge out: {out}")
-        return out
+        return out, IO_OK
 
 
 def is_available(stream):
