@@ -144,7 +144,7 @@ class Node:
         """The peer discovery task. Do round every 5 sec"""
         while True:
             await asyncio.sleep(DISCOVERY_RATE)
-            return
+            # return
             if self.is_connected or self.plugboard.received_rpcs.is_set():
                 await self.plugboard.perform_discovery_round()
 
