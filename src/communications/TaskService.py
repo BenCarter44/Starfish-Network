@@ -16,6 +16,8 @@ except:
 
 logger = logging.getLogger(__name__)
 
+TASK_SERVICE_TIMEOUT = 1
+
 
 class TaskPeer:
     # Sends requests to network.
@@ -27,7 +29,9 @@ class TaskPeer:
         self.stub = pb.TaskServiceStub(channel)
         self.peer_id = my_addr
 
-    async def SendEvent(self, evt: Event, timeout=0.4) -> pb_base.SendEvent_Response:
+    async def SendEvent(
+        self, evt: Event, timeout=TASK_SERVICE_TIMEOUT
+    ) -> pb_base.SendEvent_Response:
         event = evt.to_pb()
         request = pb_base.SendEvent_Request(evt=event, who=self.peer_id)
         response = await self.stub.SendEvent(request, timeout=timeout)
@@ -35,7 +39,11 @@ class TaskPeer:
         return response
 
     async def SendMonitor_Request(
-        self, proc: StarProcess, my_addr: bytes, task: StarTask, timeout=0.4
+        self,
+        proc: StarProcess,
+        my_addr: bytes,
+        task: StarTask,
+        timeout=TASK_SERVICE_TIMEOUT,
     ):
         proc_data = proc.to_bytes()
         request = pb_base.SendMonitor_Request(
@@ -51,7 +59,7 @@ class TaskPeer:
         event_origin: Event | None,
         event_to: Event,
         addr_of_engine: bytes,
-        timeout=0.4,
+        timeout=TASK_SERVICE_TIMEOUT,
         backwards=False,
     ):
         proc_data = proc
@@ -93,13 +101,13 @@ class TaskService(pb.TaskServiceServicer):
 
         task: StarTask = evt.target
 
-        logger.debug("Get task owner")
+        logger.debug(f"TASK - Get task owner")
 
         # peer_address = context.peer()
         # await self.keep_alive.receive_ping(peer_address)
 
         peerID: bytes = await self.internal_callback.get_task_owner(task)
-        logger.debug(f"Task: {task.get_id().hex()} OWNED by {peerID.hex()}")
+        logger.debug(f"TASK - Task: {task.get_id().hex()} OWNED by {peerID.hex()}")
 
         if peerID == b"":
             return pb_base.SendEvent_Response(
@@ -112,12 +120,12 @@ class TaskService(pb.TaskServiceServicer):
 
         if evt.is_checkpoint:
             # Check-in to monitor --
-            logger.debug(evt.origin)
-            logger.debug(evt)
+            logger.debug(f"TASK - {evt.origin}")
+            logger.debug(f"TASK - {evt}")
 
             task_to = evt.target
             if evt.origin is None:
-                logger.warning("Send checkpoint when evt.origin is none????")
+                logger.warning(f"TASK - Send checkpoint when evt.origin is none????")
             else:
                 task_to = evt.origin.target
 
@@ -146,16 +154,16 @@ class TaskService(pb.TaskServiceServicer):
         # Send to peer that owns the task!
         tp = await self.internal_callback.get_peer_transport(peerID)
         if tp is None:
-            logger.info(f"Transport for {peerID.hex()} not found!")
+            logger.info(f"TASK - Transport for {peerID.hex()} not found!")
             return pb_base.SendEvent_Response(
                 status=pb_base.DHTStatus.NOT_FOUND, remaining=0
             )
 
         taskClient = TaskPeer(tp, peerID)
         try:
-            response = await taskClient.SendEvent(evt, timeout=0.4)
+            response = await taskClient.SendEvent(evt, timeout=TASK_SERVICE_TIMEOUT)
         except Exception as e:
-            logger.warning(f"Transport for {peerID.hex()} timeout {e}")
+            logger.warning(f"TASK - Transport for {peerID.hex()} timeout {e}")
             return pb_base.SendEvent_Response(
                 pb_base.DHTStatus.ERR, remaining=0, who=peerID
             )

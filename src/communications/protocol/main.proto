@@ -18,12 +18,32 @@ enum DHTSelect {
     PEER_ID = 1;
     TASK_ID = 2;
     FILE_ID = 3;
+    DEVICE_ID = 4;
 }
 
 enum MODE {
     NA = 0;
     FORWARD = 1;
     BACKWARD = 2;
+}
+
+enum FILE_TYPE {
+    FILE = 0;
+    IO = 1;
+    DIR = 2;
+    CHUNK = 3; // not used.
+}
+
+enum FILE_REQUEST {
+    READ = 0;
+    WRITE = 1;
+    SEEK = 2;
+    CREATE = 3;
+    CLOSE = 4;
+    OPEN = 5;
+    TELL = 6;
+    CONTENTS = 7;
+    MONITOR_REQ = 8;
 }
 
 message DHT_Fetch_Request {
@@ -48,6 +68,7 @@ message DHT_Store_Request {
     DHTStatus status = 4;
     DHTSelect select = 5;
     bytes who = 6;
+    int32 fixed_owner = 7;
 }
 
 message DHT_Store_Response {
@@ -204,6 +225,91 @@ message SendCheckpoint_Response {
 
 // /////////////////////////////////////////
 
+message FileGeneric {
+    FILE_TYPE type = 1;
+    bytes contents = 2;
+    bytes date_created = 3;
+}
+
+message FileValue {
+    bytes peerID = 1;
+    bytes identifier = 2;
+}
+
+message File {
+    int32 length = 1;
+    bytes data = 2;
+}
+
+message IOContainer {
+    bytes peerID = 1; // host bytes
+    bytes ioKey = 2; // IO key, used for address on the peer.
+}
+
+message Directory {
+    int32 number_of_files = 1;
+    repeated bytes file_list = 2;
+}
+
+message FileServiceRequest {
+    bytes local_file_identifier = 1;
+    bytes key = 2;
+    FILE_REQUEST file_request = 3;
+    bytes data = 4;
+    bytes process_id = 5;
+    bytes is_monitor = 6;
+}
+
+message FileServiceResponse {
+    DHTStatus status = 1;
+    bytes data = 2;
+}
+
+// /////////
+
+
+enum UPDATE_TYPE {
+    OTHER_DEV = 0;
+    READ_DEV = 1;
+    WRITE_DEV = 2;
+    READ_AVAILABLE = 3;
+    OPEN_DEV = 4;
+    CLOSE_DEV = 5;
+    UNMOUNT = 6;
+}
+
+
+message DeviceRequest {
+    bytes device_id = 1;
+    bytes process_id = 2;
+    UPDATE_TYPE request_type = 3;
+}
+
+message DeviceResponse {
+    bytes device_id = 1;
+    bytes local_device_identifier = 2;
+    DHTStatus status = 3;
+}
+
+message DataRequest {
+    bytes device_id = 1;
+    bytes local_device_identifier = 2;
+    UPDATE_TYPE request_type = 3;
+    bytes data = 4;
+    int32 field1 = 5;
+}
+
+message DataResponse {
+    bytes device_id = 1;
+    bytes local_device_identifier = 2;
+    bytes data = 3;
+    int32 field1 = 4;
+    DHTStatus status = 5;
+}
+
+
+// /////////////////////////////////////////
+
 service DHTService {
 
     // Fetch item from DHT
@@ -262,4 +368,65 @@ service KeepAliveService {
     
     // KeepAlive
     rpc SendHeartbeat(Heartbeat_Request) returns (Heartbeat_Response) {}
+}
+
+// ////////////////////////
+
+
+
+service FileService {
+
+    // create file
+    rpc CreateFile(FileServiceRequest) returns (FileServiceResponse) {}
+
+    // open file
+    rpc OpenFile(FileServiceRequest) returns (FileServiceResponse) {}
+    
+    // read from file
+    rpc ReadFile(FileServiceRequest) returns (FileServiceResponse) {}
+
+    // write to file
+    rpc WriteFile(FileServiceRequest) returns (FileServiceResponse) {}
+
+    // seek file
+    rpc SeekFile(FileServiceRequest) returns (FileServiceResponse) {}
+    
+    // seek file
+    rpc TellFile(FileServiceRequest) returns (FileServiceResponse) {}
+
+    // close file
+    rpc CloseFile(FileServiceRequest) returns (FileServiceResponse) {}
+
+    // System events ==============================
+
+    // request monitor
+    rpc SendMonitorRequest(FileServiceRequest) returns (FileServiceResponse) {}
+
+    // raw file transfer
+    rpc SendFileContents(FileServiceRequest) returns (FileServiceResponse) {}
+
+}
+
+
+service IOService {
+
+    // open device
+    rpc OpenDevice(DeviceRequest) returns (DeviceResponse) {}
+    
+    // close device
+    rpc CloseDevice(DeviceRequest) returns (DeviceResponse) {}
+
+    // close device
+    rpc UnmountDevice(DeviceRequest) returns (DeviceResponse) {}
+    
+    // read from device
+    rpc ReadDevice(DataRequest) returns (DataResponse) {}
+
+    // write to device
+    rpc WriteDevice(DataRequest) returns (DataResponse) {}
+
+    // read available from device
+    rpc ReadAvailable(DataRequest) returns (DataResponse) {}
+    
+
 }

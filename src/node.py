@@ -1,10 +1,13 @@
 # try:
+import glob
+import os
 import random
 from typing import cast
 import uuid
+from src.communications.IOService import IOService
 from src.communications.KeepAliveService import KeepAliveCommService
 from src.communications.PeerService import PeerService
-from src.communications.main_pb2_grpc import add_PeerServiceServicer_to_server
+from src.communications.FileService import FileService
 from src.core.star_components import Event, Program, StarProcess, StarTask
 from src.plugboard import PlugBoard
 
@@ -16,6 +19,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+DISCOVERY_RATE = 2
 
 import grpc
 
@@ -27,6 +31,8 @@ try:
         add_TaskServiceServicer_to_server,
         add_PeerServiceServicer_to_server,
         add_KeepAliveServiceServicer_to_server,
+        add_FileServiceServicer_to_server,
+        add_IOServiceServicer_to_server,
     )
     from .core.star_components import StarAddress
 except:
@@ -37,23 +43,33 @@ except:
         add_TaskServiceServicer_to_server,
         add_PeerServiceServicer_to_server,
         add_KeepAliveServiceServicer_to_server,
+        add_FileServiceServicer_to_server,
+        add_IOServiceServicer_to_server,
     )
     from core.star_components import StarAddress
 
 
 class Node:
     # Support only one transport now!
-    def __init__(self, bin_addr: bytes, transport: StarAddress):
+    def __init__(self, bin_addr: bytes, transport: StarAddress, file_save_dir: str):
         """Host a node.
 
         Args:
             bin_addr (bytes): The node binary address (Peer ID)
             transport (StarAddress): Transport address to serve on.
         """
-        self.plugboard = PlugBoard(bin_addr, transport)
+        self.plugboard = PlugBoard(bin_addr, transport, file_save_dir)
         self.addr = bin_addr
         self.transport = transport
         self.is_connected = False
+
+        # delete all files in save dir.
+        for file in glob.glob(f"{file_save_dir}/*.stg"):
+            logger.debug(f"FILE - Deleting previous {file}")
+            os.unlink(file)
+        for file in glob.glob(f"{file_save_dir}/*.stm"):
+            logger.debug(f"FILE - Deleting previous {file}")
+            os.unlink(file)
 
     async def run(self):
         """Run the gRPC servers and start the execution engine"""
@@ -90,10 +106,24 @@ class Node:
             ),
             server=self.server,
         )
+        add_FileServiceServicer_to_server(
+            servicer=FileService(
+                self.plugboard,
+                self.addr,
+                self.plugboard.get_kp_man(),
+            ),
+            server=self.server,
+        )
+        add_IOServiceServicer_to_server(
+            servicer=IOService(
+                self.plugboard,
+            ),
+            server=self.server,
+        )
 
         port = self.transport.get_string_channel()
         self.server.add_insecure_port(port)
-        logger.info(f"Serving on: {port}")
+        logger.info(f"META - Serving on: {port}")
         await self.server.start()
         asyncio.create_task(self.peer_discovery_task())
         await self.server.wait_for_termination()
@@ -113,7 +143,7 @@ class Node:
     async def peer_discovery_task(self):
         """The peer discovery task. Do round every 5 sec"""
         while True:
-            await asyncio.sleep(10)
+            await asyncio.sleep(DISCOVERY_RATE)
             # return
             if self.is_connected or self.plugboard.received_rpcs.is_set():
                 await self.plugboard.perform_discovery_round()
@@ -148,13 +178,16 @@ class Node:
 
         await self.plugboard.allocate_program(proc)  # includes callable inside.
 
-        # logger.info(f"Task DHT of {self.addr.hex()}")
+        # logger.info(f""META - Task DHT of {self.addr.hex()}")
         # print(self.plugboard.task_table.fetch_dict())
 
         program.start.target.attach_to_process(proc)
 
         # await asyncio.sleep(100)
-        logger.info(f"Start Event: {program.start.target.get_id().hex()}")
+        logger.info(f"TASK - Start Event: {program.start.target.get_id().hex()}")
         program.start.nonce = 0
         await self.plugboard.dispatch_event(program.start)
         return proc
+
+    def attach_device_host(self, tl_host):
+        self.plugboard.io_host.attach_device_host(tl_host)

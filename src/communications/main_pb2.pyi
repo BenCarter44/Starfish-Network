@@ -28,12 +28,42 @@ class DHTSelect(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
     PEER_ID: _ClassVar[DHTSelect]
     TASK_ID: _ClassVar[DHTSelect]
     FILE_ID: _ClassVar[DHTSelect]
+    DEVICE_ID: _ClassVar[DHTSelect]
 
 class MODE(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
     __slots__ = ()
     NA: _ClassVar[MODE]
     FORWARD: _ClassVar[MODE]
     BACKWARD: _ClassVar[MODE]
+
+class FILE_TYPE(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
+    __slots__ = ()
+    FILE: _ClassVar[FILE_TYPE]
+    IO: _ClassVar[FILE_TYPE]
+    DIR: _ClassVar[FILE_TYPE]
+    CHUNK: _ClassVar[FILE_TYPE]
+
+class FILE_REQUEST(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
+    __slots__ = ()
+    READ: _ClassVar[FILE_REQUEST]
+    WRITE: _ClassVar[FILE_REQUEST]
+    SEEK: _ClassVar[FILE_REQUEST]
+    CREATE: _ClassVar[FILE_REQUEST]
+    CLOSE: _ClassVar[FILE_REQUEST]
+    OPEN: _ClassVar[FILE_REQUEST]
+    TELL: _ClassVar[FILE_REQUEST]
+    CONTENTS: _ClassVar[FILE_REQUEST]
+    MONITOR_REQ: _ClassVar[FILE_REQUEST]
+
+class UPDATE_TYPE(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
+    __slots__ = ()
+    OTHER_DEV: _ClassVar[UPDATE_TYPE]
+    READ_DEV: _ClassVar[UPDATE_TYPE]
+    WRITE_DEV: _ClassVar[UPDATE_TYPE]
+    READ_AVAILABLE: _ClassVar[UPDATE_TYPE]
+    OPEN_DEV: _ClassVar[UPDATE_TYPE]
+    CLOSE_DEV: _ClassVar[UPDATE_TYPE]
+    UNMOUNT: _ClassVar[UPDATE_TYPE]
 
 UNKNOWN: DHTStatus
 FOUND: DHTStatus
@@ -45,9 +75,30 @@ BLANK: DHTSelect
 PEER_ID: DHTSelect
 TASK_ID: DHTSelect
 FILE_ID: DHTSelect
+DEVICE_ID: DHTSelect
 NA: MODE
 FORWARD: MODE
 BACKWARD: MODE
+FILE: FILE_TYPE
+IO: FILE_TYPE
+DIR: FILE_TYPE
+CHUNK: FILE_TYPE
+READ: FILE_REQUEST
+WRITE: FILE_REQUEST
+SEEK: FILE_REQUEST
+CREATE: FILE_REQUEST
+CLOSE: FILE_REQUEST
+OPEN: FILE_REQUEST
+TELL: FILE_REQUEST
+CONTENTS: FILE_REQUEST
+MONITOR_REQ: FILE_REQUEST
+OTHER_DEV: UPDATE_TYPE
+READ_DEV: UPDATE_TYPE
+WRITE_DEV: UPDATE_TYPE
+READ_AVAILABLE: UPDATE_TYPE
+OPEN_DEV: UPDATE_TYPE
+CLOSE_DEV: UPDATE_TYPE
+UNMOUNT: UPDATE_TYPE
 
 class DHT_Fetch_Request(_message.Message):
     __slots__ = ("key", "query_chain", "status", "select")
@@ -89,19 +140,29 @@ class DHT_Fetch_Response(_message.Message):
     ) -> None: ...
 
 class DHT_Store_Request(_message.Message):
-    __slots__ = ("key", "value", "query_chain", "status", "select", "who")
+    __slots__ = (
+        "key",
+        "value",
+        "query_chain",
+        "status",
+        "select",
+        "who",
+        "fixed_owner",
+    )
     KEY_FIELD_NUMBER: _ClassVar[int]
     VALUE_FIELD_NUMBER: _ClassVar[int]
     QUERY_CHAIN_FIELD_NUMBER: _ClassVar[int]
     STATUS_FIELD_NUMBER: _ClassVar[int]
     SELECT_FIELD_NUMBER: _ClassVar[int]
     WHO_FIELD_NUMBER: _ClassVar[int]
+    FIXED_OWNER_FIELD_NUMBER: _ClassVar[int]
     key: bytes
     value: bytes
     query_chain: _containers.RepeatedScalarFieldContainer[bytes]
     status: DHTStatus
     select: DHTSelect
     who: bytes
+    fixed_owner: int
     def __init__(
         self,
         key: _Optional[bytes] = ...,
@@ -110,6 +171,7 @@ class DHT_Store_Request(_message.Message):
         status: _Optional[_Union[DHTStatus, str]] = ...,
         select: _Optional[_Union[DHTSelect, str]] = ...,
         who: _Optional[bytes] = ...,
+        fixed_owner: _Optional[int] = ...,
     ) -> None: ...
 
 class DHT_Store_Response(_message.Message):
@@ -400,3 +462,181 @@ class SendCheckpoint_Response(_message.Message):
     STATUS_FIELD_NUMBER: _ClassVar[int]
     status: DHTStatus
     def __init__(self, status: _Optional[_Union[DHTStatus, str]] = ...) -> None: ...
+
+class FileGeneric(_message.Message):
+    __slots__ = ("type", "contents", "date_created")
+    TYPE_FIELD_NUMBER: _ClassVar[int]
+    CONTENTS_FIELD_NUMBER: _ClassVar[int]
+    DATE_CREATED_FIELD_NUMBER: _ClassVar[int]
+    type: FILE_TYPE
+    contents: bytes
+    date_created: bytes
+    def __init__(
+        self,
+        type: _Optional[_Union[FILE_TYPE, str]] = ...,
+        contents: _Optional[bytes] = ...,
+        date_created: _Optional[bytes] = ...,
+    ) -> None: ...
+
+class FileValue(_message.Message):
+    __slots__ = ("peerID", "identifier")
+    PEERID_FIELD_NUMBER: _ClassVar[int]
+    IDENTIFIER_FIELD_NUMBER: _ClassVar[int]
+    peerID: bytes
+    identifier: bytes
+    def __init__(
+        self, peerID: _Optional[bytes] = ..., identifier: _Optional[bytes] = ...
+    ) -> None: ...
+
+class File(_message.Message):
+    __slots__ = ("length", "data")
+    LENGTH_FIELD_NUMBER: _ClassVar[int]
+    DATA_FIELD_NUMBER: _ClassVar[int]
+    length: int
+    data: bytes
+    def __init__(
+        self, length: _Optional[int] = ..., data: _Optional[bytes] = ...
+    ) -> None: ...
+
+class IOContainer(_message.Message):
+    __slots__ = ("peerID", "ioKey")
+    PEERID_FIELD_NUMBER: _ClassVar[int]
+    IOKEY_FIELD_NUMBER: _ClassVar[int]
+    peerID: bytes
+    ioKey: bytes
+    def __init__(
+        self, peerID: _Optional[bytes] = ..., ioKey: _Optional[bytes] = ...
+    ) -> None: ...
+
+class Directory(_message.Message):
+    __slots__ = ("number_of_files", "file_list")
+    NUMBER_OF_FILES_FIELD_NUMBER: _ClassVar[int]
+    FILE_LIST_FIELD_NUMBER: _ClassVar[int]
+    number_of_files: int
+    file_list: _containers.RepeatedScalarFieldContainer[bytes]
+    def __init__(
+        self,
+        number_of_files: _Optional[int] = ...,
+        file_list: _Optional[_Iterable[bytes]] = ...,
+    ) -> None: ...
+
+class FileServiceRequest(_message.Message):
+    __slots__ = (
+        "local_file_identifier",
+        "key",
+        "file_request",
+        "data",
+        "process_id",
+        "is_monitor",
+    )
+    LOCAL_FILE_IDENTIFIER_FIELD_NUMBER: _ClassVar[int]
+    KEY_FIELD_NUMBER: _ClassVar[int]
+    FILE_REQUEST_FIELD_NUMBER: _ClassVar[int]
+    DATA_FIELD_NUMBER: _ClassVar[int]
+    PROCESS_ID_FIELD_NUMBER: _ClassVar[int]
+    IS_MONITOR_FIELD_NUMBER: _ClassVar[int]
+    local_file_identifier: bytes
+    key: bytes
+    file_request: FILE_REQUEST
+    data: bytes
+    process_id: bytes
+    is_monitor: bytes
+    def __init__(
+        self,
+        local_file_identifier: _Optional[bytes] = ...,
+        key: _Optional[bytes] = ...,
+        file_request: _Optional[_Union[FILE_REQUEST, str]] = ...,
+        data: _Optional[bytes] = ...,
+        process_id: _Optional[bytes] = ...,
+        is_monitor: _Optional[bytes] = ...,
+    ) -> None: ...
+
+class FileServiceResponse(_message.Message):
+    __slots__ = ("status", "data")
+    STATUS_FIELD_NUMBER: _ClassVar[int]
+    DATA_FIELD_NUMBER: _ClassVar[int]
+    status: DHTStatus
+    data: bytes
+    def __init__(
+        self,
+        status: _Optional[_Union[DHTStatus, str]] = ...,
+        data: _Optional[bytes] = ...,
+    ) -> None: ...
+
+class DeviceRequest(_message.Message):
+    __slots__ = ("device_id", "process_id", "request_type")
+    DEVICE_ID_FIELD_NUMBER: _ClassVar[int]
+    PROCESS_ID_FIELD_NUMBER: _ClassVar[int]
+    REQUEST_TYPE_FIELD_NUMBER: _ClassVar[int]
+    device_id: bytes
+    process_id: bytes
+    request_type: UPDATE_TYPE
+    def __init__(
+        self,
+        device_id: _Optional[bytes] = ...,
+        process_id: _Optional[bytes] = ...,
+        request_type: _Optional[_Union[UPDATE_TYPE, str]] = ...,
+    ) -> None: ...
+
+class DeviceResponse(_message.Message):
+    __slots__ = ("device_id", "local_device_identifier", "status")
+    DEVICE_ID_FIELD_NUMBER: _ClassVar[int]
+    LOCAL_DEVICE_IDENTIFIER_FIELD_NUMBER: _ClassVar[int]
+    STATUS_FIELD_NUMBER: _ClassVar[int]
+    device_id: bytes
+    local_device_identifier: bytes
+    status: DHTStatus
+    def __init__(
+        self,
+        device_id: _Optional[bytes] = ...,
+        local_device_identifier: _Optional[bytes] = ...,
+        status: _Optional[_Union[DHTStatus, str]] = ...,
+    ) -> None: ...
+
+class DataRequest(_message.Message):
+    __slots__ = (
+        "device_id",
+        "local_device_identifier",
+        "request_type",
+        "data",
+        "field1",
+    )
+    DEVICE_ID_FIELD_NUMBER: _ClassVar[int]
+    LOCAL_DEVICE_IDENTIFIER_FIELD_NUMBER: _ClassVar[int]
+    REQUEST_TYPE_FIELD_NUMBER: _ClassVar[int]
+    DATA_FIELD_NUMBER: _ClassVar[int]
+    FIELD1_FIELD_NUMBER: _ClassVar[int]
+    device_id: bytes
+    local_device_identifier: bytes
+    request_type: UPDATE_TYPE
+    data: bytes
+    field1: int
+    def __init__(
+        self,
+        device_id: _Optional[bytes] = ...,
+        local_device_identifier: _Optional[bytes] = ...,
+        request_type: _Optional[_Union[UPDATE_TYPE, str]] = ...,
+        data: _Optional[bytes] = ...,
+        field1: _Optional[int] = ...,
+    ) -> None: ...
+
+class DataResponse(_message.Message):
+    __slots__ = ("device_id", "local_device_identifier", "data", "field1", "status")
+    DEVICE_ID_FIELD_NUMBER: _ClassVar[int]
+    LOCAL_DEVICE_IDENTIFIER_FIELD_NUMBER: _ClassVar[int]
+    DATA_FIELD_NUMBER: _ClassVar[int]
+    FIELD1_FIELD_NUMBER: _ClassVar[int]
+    STATUS_FIELD_NUMBER: _ClassVar[int]
+    device_id: bytes
+    local_device_identifier: bytes
+    data: bytes
+    field1: int
+    status: DHTStatus
+    def __init__(
+        self,
+        device_id: _Optional[bytes] = ...,
+        local_device_identifier: _Optional[bytes] = ...,
+        data: _Optional[bytes] = ...,
+        field1: _Optional[int] = ...,
+        status: _Optional[_Union[DHTStatus, str]] = ...,
+    ) -> None: ...

@@ -16,36 +16,23 @@ import logging
 import grpc
 import sys, os
 
+
+try:
+    from src.util.util import and_bytes, pad_bytes
+    from src.core.File import FileFactory
+    from src.core.io_host import IOFactory
+except:
+    from util.util import and_bytes, pad_bytes
+    from core.File import FileFactory
+    from src.core.io_host import IOFactory
+
+
 sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
 
 try:
     import communications.primitives_pb2 as pb_p
 except:
     from ..communications import primitives_pb2 as pb_p
-
-
-def and_bytes(a: bytes, b: bytes):
-    assert len(a) == len(b)
-    c = (int.from_bytes(a, "big") & int.from_bytes(b, "big")).to_bytes(
-        max(len(a), len(b)), "big"
-    )
-    return c
-
-
-def pad_bytes(b: bytes, l: int) -> bytes:
-    """Pad bytes on left (most significant bit first, big endian)
-
-    Args:
-        b (bytes): bytes to pad
-        l (int): length
-
-    Returns:
-        bytes: The padded bytes
-    """
-    data = bytearray(b)
-    padding_byte = b"\x00"
-    data = data.rjust(l, padding_byte)  # pad on MSB
-    return bytes(data)
 
 
 class StarProcess:
@@ -166,6 +153,12 @@ class StarTask:
         self.hold_process: Optional[StarProcess] = None
         self.monitor = b""
 
+        self.plugboard_callback = None
+        self.loop_callback = None  # struct for file factory
+
+    def get_user(self) -> bytes:
+        return self.user_id
+
     def to_bytes(self) -> bytes:
         """Serialize StarTask to bytes
 
@@ -264,6 +257,22 @@ class StarTask:
 
     def clear_callable(self):
         self.callable = None
+
+    def get_file_factory(self):
+        return FileFactory(
+            self.plugboard_callback,
+            self.loop_callback,
+            self.process_id,
+            self.plugboard_callback.my_addr,
+        )
+
+    def get_io_factory(self):
+        return IOFactory(
+            self.plugboard_callback,
+            self.loop_callback,
+            self.process_id,
+            self.plugboard_callback.my_addr,
+        )
 
     def get_id(self):
         # first 32 bytes are routing
@@ -404,10 +413,10 @@ class Event:
         if self.origin is None:
             event_origin = b""
         else:
-            logger.debug(self.origin.target)
-            logger.debug(self.target)
+            logger.debug(f"TASK - {self.origin.target}")
+            logger.debug(f"TASK - {self.target}")
             self.origin.origin = None  # No recursion.
-            logger.debug(self.origin.target)
+            logger.debug(f"TASK - {self.origin.target}")
             event_origin = self.origin.to_bytes()
 
         event_origin_previous = self.origin_previous
@@ -697,8 +706,8 @@ def dispatch_event(evt: Event, originating_task: StarTask) -> None:
     evt.origin = originating_task.hold_past_event
     evt.origin_previous = originating_task.hold_past_event_pre
     evt.is_checkpoint = False
-    logger.info(evt.target)
-    logger.info(f"SEND: {evt.data}")
+    logger.info(f"TASK - {evt.target}")
+    logger.info(f"TASK - SEND: {evt.data}")
     f = BINDINGS["dispatch_event"]
     return f(evt, increment=True)
 
@@ -875,7 +884,7 @@ def compile(start_event: Event) -> Program:
         task_to_checkpoint[name] = checkpoint
         counter += 1
 
-    logger.debug(task_to_checkpoint)
+    logger.debug(f"TASK - {task_to_checkpoint}")
 
     for name, f_wrap, pass_task_id, checkpoint in preview_task_list:
         # print(name, f_wrap)
@@ -968,12 +977,12 @@ def compile(start_event: Event) -> Program:
         task_list.add(task_identifier)
 
     for task in task_list:
-        logger.info(f"Registered: {task}")
+        logger.info(f"TASK - Registered: {task}")
         task.runtime_data = task_to_id
 
     start_event.target.task_id = task_to_id[start_event.target_string]
     start_event.is_checkpoint = True
-    logger.info(f"Start: {start_event.target}")
+    logger.info(f"TASK - Start: {start_event.target}")
     program = Program(task_list=task_list, start_event=start_event)
     # program.show_dependencies()
     return program
