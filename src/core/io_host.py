@@ -339,18 +339,18 @@ class TelNetConsoleHost:
         self.deallocate_device = None
         self.peerID = b""
 
-        self.kernel_out = asyncio.Queue()
-        self.kernel_in = asyncio.Queue()
-        self.is_kernel_enable = True
+        self.kernel_out: asyncio.Queue[tuple[Device, bytes]] = asyncio.Queue()
+        self.kernel_in: dict[Device, asyncio.Queue] = {}
+        self.is_kernel_enable: dict[Device, bool] = {}
 
-        self.default_sys_reader = asyncio.Queue()
+        self.dict_sys_reader: dict[Device, asyncio.Queue] = {}
 
     def get_kernel_queues(self):
         return self.kernel_out, self.kernel_in
 
-    async def exit_kernel(self):
-        self.is_kernel_enable = False
-        await self.default_sys_reader.put(b"\n")  # causes reset.
+    async def exit_kernel(self, device: Device):
+        self.is_kernel_enable[device] = False
+        await self.dict_sys_reader[device].put(b"\n")  # causes reset.
 
     # async def run(self, coro):
     #     loop = asyncio.get_event_loop()
@@ -362,7 +362,6 @@ class TelNetConsoleHost:
     ):
         logger.info("IO - Got Connection!")
         device, sys_reader, sys_writer, evt_done = await self.allocate_device()
-        self.default_sys_reader = sys_reader
         device = cast(Device, device)
         sys_reader = cast(asyncio.Queue, sys_reader)
         sys_writer = cast(asyncio.Queue, sys_writer)
@@ -398,6 +397,11 @@ class TelNetConsoleHost:
         writer.write(console.file.getvalue())
         await writer.drain()
         logger.info("IO - Creating tasks")
+
+        self.kernel_in[device] = asyncio.Queue()
+        self.is_kernel_enable[device] = True
+        self.dict_sys_reader[device] = sys_reader
+
         asyncio.create_task(
             self.reader_processing(
                 reader, writer, sys_reader, evt_done, console, device
@@ -408,7 +412,7 @@ class TelNetConsoleHost:
         )
         # for kernel feedback
         asyncio.create_task(
-            self.writer_processing(writer, self.kernel_in, evt_done, console)
+            self.writer_processing(writer, self.kernel_in[device], evt_done, console)
         )
 
     async def writer_processing(
@@ -459,12 +463,12 @@ class TelNetConsoleHost:
                         and line_buffer[0:6] == b"kernel"
                     )
 
-                    if is_kernel or self.is_kernel_enable:
-                        self.is_kernel_enable = True
+                    if is_kernel or self.is_kernel_enable[device]:
+                        self.is_kernel_enable[device] = True
                         logger.info("IO - Enter pressed - submit to kernel")
-                        await self.kernel_out.put(bytes(line_buffer))
+                        await self.kernel_out.put((device, bytes(line_buffer)))
 
-                    elif not (self.is_kernel_enable):
+                    elif not (self.is_kernel_enable[device]):
                         logger.info("IO - Enter pressed - submit to device")
                         await sys_reader.put(bytes(line_buffer))
 

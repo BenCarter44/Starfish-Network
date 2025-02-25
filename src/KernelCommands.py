@@ -25,9 +25,17 @@ import io
 import sys
 import logging
 
-from src.core.io_host import TelNetConsoleHost
-import src.core.star_components as star
-from src.util.util import compress_str_to_bytes
+from src.core.io_host import Device
+
+try:
+    from src.core.io_host import TelNetConsoleHost
+    import src.core.star_components as star
+    from src.util.util import compress_str_to_bytes
+except:
+
+    class TelNetConsoleHost:
+        pass
+
 
 logger = logging.getLogger(__name__)
 
@@ -97,7 +105,7 @@ class CapturingArgumentParser(argparse.ArgumentParser):
 
 
 class ShellProcessor:
-    def __init__(self, parser: argparse._SubParsersAction):
+    def __init__(self, parser: argparse._SubParsersAction, writer: asyncio.Queue):
         shell_parser = parser.add_parser(
             "shell",
             description="Commands to control a shell in StarfishOS",
@@ -106,13 +114,23 @@ class ShellProcessor:
             help="Kernel shell control command to execute"
         )
         shell_sub.required = True
-        shell_attach = shell_sub.add_parser(
+        shell_attach: argparse.ArgumentParser = shell_sub.add_parser(
             "attach", description="Login and attach shell"
         )
+        shell_attach.add_argument(
+            "user",
+            help="start a shell for user connected to this device",
+        )
+        shell_attach.set_defaults(func=self.shell_attach)
+        self.writer = writer
+
+    async def shell_attach(self, args):
+        s = f"Attaching a shell for user: {args.user} to this device\n"
+        await self.writer.put(s.encode("utf-8"))
 
 
 class ProcProcessor:
-    def __init__(self, parser: argparse._SubParsersAction):
+    def __init__(self, parser: argparse._SubParsersAction, writer: asyncio.Queue):
         proc_parser = parser.add_parser(
             "proc", description="Commands to manage registered processes in StarfishOS"
         )
@@ -120,12 +138,48 @@ class ProcProcessor:
             help="Kernel process control command to execute"
         )
         proc_sub.required = True
-        proc_ls = proc_sub.add_parser("ls", description="List tasks in engine")
-        proc_start = proc_sub.add_parser("start", description="Start task from kernel")
+        proc_ls: argparse.ArgumentParser = proc_sub.add_parser(
+            "ls",
+            description="List tasks in engine",
+        )
+        proc_start: argparse.ArgumentParser = proc_sub.add_parser(
+            "start", description="Start task from kernel"
+        )
+        self.writer = writer
+        # ls options
+
+        proc_ls.add_argument(
+            "-a",
+            "--all",
+            action="store_true",
+            help="Retrieve all processes from network",
+        )
+        proc_ls.add_argument(
+            "-e",
+            "--everyone",
+            action="store_true",
+            help="Include all users' processes (everyone)",
+        )
+
+        proc_start.add_argument("starprogram", help="Path to star file")
+        proc_start.add_argument(
+            "-u", "--user", help="User to run the process in", required=True
+        )
+        proc_ls.set_defaults(func=self.proc_ls)
+        proc_start.set_defaults(func=self.proc_start)
+
+    async def proc_ls(self, args):
+        logger.info("KERNEL - Process List command")
+        out = f"Process List - All: {args.all} - Everyone: {args.everyone}\n"
+        await self.writer.put(out.encode("utf-8"))
+
+    async def proc_start(self, args):
+        out = f"Process Start - {args.starprogram} - User: {args.user}\n"
+        await self.writer.put(out.encode("utf-8"))
 
 
 class PeerProcessor:
-    def __init__(self, parser: argparse._SubParsersAction):
+    def __init__(self, parser: argparse._SubParsersAction, writer: asyncio.Queue):
         peer_parser = parser.add_parser(
             "peer", description="Commands to manage peer connections in StarfishOS"
         )
@@ -133,34 +187,119 @@ class PeerProcessor:
             help="Kernel process control command to execute"
         )
         peer_sub.required = True
-        peer_ls = peer_sub.add_parser("ls", description="List peers in network")
-        peer_connect = peer_sub.add_parser(
+        peer_ls: argparse.ArgumentParser = peer_sub.add_parser(
+            "ls", description="List peers in network"
+        )
+        peer_ls.set_defaults(func=self.peer_ls)
+        peer_connect: argparse.ArgumentParser = peer_sub.add_parser(
             "connect", description="Connect to peer in network, aka bootstrapping"
         )
+        peer_connect.set_defaults(func=self.peer_connect)
+        self.writer = writer
+
+        peer_connect.add_argument("-p", "--peer", help="Peer ID", required=True)
+        peer_connect.add_argument(
+            "-t", "--transport", help="Transport Address in URL format", required=True
+        )
+
+    async def peer_ls(self, args):
+        out = f"Peer ls\n"
+        await self.writer.put(out.encode("utf-8"))
+
+    async def peer_connect(self, args):
+        out = f"Peer Connect to {args.peer} to transport {args.transport}\n"
+        await self.writer.put(out.encode("utf-8"))
 
 
 class IOProcessor:
-    def __init__(self, parser: argparse._SubParsersAction):
+    def __init__(self, parser: argparse._SubParsersAction, writer: asyncio.Queue):
         fileIO_parser = parser.add_parser(
-            "io", description="Commands to manage I/O and Files in StarfishOS"
+            "file", description="Commands to manage Files in StarfishOS"
         )
-        file_sub = fileIO_parser.add_subparsers(
-            help="Kernel I/O and File command to execute"
+        file_sub = fileIO_parser.add_subparsers(help="Kernel File command to execute")
+        io_parser = parser.add_parser(
+            "io", description="Commands to manage I/O in StarfishOS"
         )
+        io_sub = io_parser.add_subparsers(help="Kernel I/O command to execute")
+        io_sub.required = True
         file_sub.required = True
-        file_ls = file_sub.add_parser("ls", description="List hosted files and devices")
+        file_ls: argparse.ArgumentParser = file_sub.add_parser(
+            "ls", description="List hosted files"
+        )
+        file_ls.set_defaults(func=self.file_ls)
+        io_ls: argparse.ArgumentParser = file_sub.add_parser(
+            "ls", description="List hosted I/O devices"
+        )
+        io_ls.set_defaults(func=self.io_ls)
+        self.writer = writer
+
+        file_ls.add_argument(
+            "-a",
+            "--all",
+            action="store_true",
+            help="Retrieve all file IDs from network",
+        )
+        file_ls.add_argument(
+            "-e",
+            "--everyone",
+            action="store_true",
+            help="Include all users' files (everyone)",
+        )
+
+        io_ls.add_argument(
+            "-a",
+            "--all",
+            action="store_true",
+            help="Retrieve all device IDs from network",
+        )
+        io_ls.add_argument(
+            "-e",
+            "--everyone",
+            action="store_true",
+            help="Include all users' devices (everyone)",
+        )
+
+    async def file_ls(self, args):
+        out = f"File List - All: {args.all} - Everyone: {args.everyone}\n"
+        await self.writer.put(out.encode("utf-8"))
+
+    async def io_ls(self, args):
+        out = f"Device List - All: {args.all} - Everyone: {args.everyone}\n"
+        await self.writer.put(out.encode("utf-8"))
 
 
-class ExitDummy:
-    def __init__(self, parser: argparse._SubParsersAction):
+class StatProcessor:
+    def __init__(self, parser: argparse._SubParsersAction, writer: asyncio.Queue):
         ex_parse = parser.add_parser("exit", description="Exit kernel mode")
+        stat_parse: argparse.ArgumentParser = parser.add_parser(
+            "stat", description="Exit kernel mode"
+        )
+        stat_parse.add_argument(
+            "-t", "--task", help="Get task count", action="store_true"
+        )
+        stat_parse.add_argument(
+            "-f", "--file", help="Get file count", action="store_true"
+        )
+        stat_parse.add_argument("-i", "--io", help="Get IO count", action="store_true")
+        stat_parse.add_argument(
+            "-k", "--keepalive", help="Get keep-alive count", action="store_true"
+        )
+        stat_parse.add_argument(
+            "-n", "--network", help="Get stats from entire OS", action="store_true"
+        )
+        stat_parse.set_defaults(func=self.stat)
+        self.writer = writer
+
+    async def stat(self, args):
+        out = f"Stats: Task:{args.task} File:{args.file} KeepAlive:{args.keepalive} Network:{args.network}"
+        await self.writer.put(out.encode("utf-8"))
 
 
 class KernelCommandProcessor:
     def __init__(
         self,
-        reader: asyncio.Queue,
-        writer: asyncio.Queue,
+        reader: asyncio.Queue[tuple[Device, bytes]],
+        writer: dict[Device, asyncio.Queue],
         node: Node,
         tel: TelNetConsoleHost,
     ):
@@ -173,11 +312,11 @@ class KernelCommandProcessor:
         subparsers = self.parser.add_subparsers(help="Kernel command to execute")
         subparsers.required = True
 
-        self.shell = ShellProcessor(subparsers)
-        self.proc = ProcProcessor(subparsers)
-        self.peer_p = PeerProcessor(subparsers)
-        self.io_p = IOProcessor(subparsers)
-        self.exit_p = ExitDummy(subparsers)
+        self.shell = ShellProcessor(subparsers, None)  # type: ignore
+        self.proc = ProcProcessor(subparsers, None)  # type: ignore
+        self.peer_p = PeerProcessor(subparsers, None)  # type: ignore
+        self.io_p = IOProcessor(subparsers, None)  # type: ignore
+        self.exit_p = StatProcessor(subparsers, None)  # type: ignore
         self.node = node
         self.reader = reader
         self.writer = writer
@@ -188,10 +327,11 @@ class KernelCommandProcessor:
         # write out to kernel writer
         did_start_shell = False
         while True:
-            command_line_b = await self.reader.get()
+            device, command_line_b = await self.reader.get()
+            local_writer = self.writer[device]
             command_line = command_line_b.decode("utf-8")
             if command_line == "exit":
-                await self.telnet.exit_kernel()
+                await self.telnet.exit_kernel(device)
                 if not (did_start_shell):
                     pgrm = star.Program(read_pgrm="examples/shell.star")
                     logger.info(
@@ -204,19 +344,27 @@ class KernelCommandProcessor:
                 continue
 
             if command_line != "":
-                output = self.process_command(command_line)
-                await self.writer.put(output.encode("utf-8"))
-            await self.writer.put(
+                output = await self.process_command(command_line, device)
+                await local_writer.put(output.encode("utf-8"))
+            await local_writer.put(
                 "\n[dark_goldenrod]kernel# [/dark_goldenrod]".encode("utf-8")
             )
 
-    def process_command(self, command: str):
+    async def process_command(self, command: str, device: Device):
+        self.shell.writer = self.writer[device]
+        self.proc.writer = self.writer[device]
+        self.peer_p.writer = self.writer[device]
+        self.io_p.writer = self.writer[device]
+        self.exit_p.writer = self.writer[device]
+
         items = command.split(" ")
         if items[0] == "kernel":
             items = items[1:]
         if len(items) == 0:
             return ""
         command_input = self.parser.parse_args(items)
+        if "func" in command_input:
+            await command_input.func(command_input)
         data = self.parser.get_output()
         return data
 
@@ -225,7 +373,7 @@ class KernelCommandProcessor:
 # Logger - rotating file. Separate program reads the logging directory and pushes it to server
 # Logger - gRPC files.
 if __name__ == "__main__":
-    kc = KernelCommandProcessor(None, None, None)
+    kc = KernelCommandProcessor(None, None, None, None)
     while True:
         i = input("kernel# ")
         s = kc.process_command(i)
