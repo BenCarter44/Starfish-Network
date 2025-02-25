@@ -339,6 +339,19 @@ class TelNetConsoleHost:
         self.deallocate_device = None
         self.peerID = b""
 
+        self.kernel_out = asyncio.Queue()
+        self.kernel_in = asyncio.Queue()
+        self.is_kernel_enable = True
+
+        self.default_sys_reader = asyncio.Queue()
+
+    def get_kernel_queues(self):
+        return self.kernel_out, self.kernel_in
+
+    async def exit_kernel(self):
+        self.is_kernel_enable = False
+        await self.default_sys_reader.put(b"\n")  # causes reset.
+
     # async def run(self, coro):
     #     loop = asyncio.get_event_loop()
     #     server = loop(coro)
@@ -349,6 +362,7 @@ class TelNetConsoleHost:
     ):
         logger.info("IO - Got Connection!")
         device, sys_reader, sys_writer, evt_done = await self.allocate_device()
+        self.default_sys_reader = sys_reader
         device = cast(Device, device)
         sys_reader = cast(asyncio.Queue, sys_reader)
         sys_writer = cast(asyncio.Queue, sys_writer)
@@ -377,7 +391,7 @@ class TelNetConsoleHost:
             end="\r\n",
         )
         console.print(end="\r\n")
-        console.print("Loading...", end="\r\n")
+        console.print("[dark_goldenrod]kernel# [/dark_goldenrod]", end="")
         # console.print(
         #     "[bright_blue bold]userID[/bright_blue bold]:[orange1]/[/orange1]$", end=" "
         # )
@@ -385,10 +399,16 @@ class TelNetConsoleHost:
         await writer.drain()
         logger.info("IO - Creating tasks")
         asyncio.create_task(
-            self.reader_processing(reader, sys_reader, evt_done, console, device)
+            self.reader_processing(
+                reader, writer, sys_reader, evt_done, console, device
+            )
         )
         asyncio.create_task(
             self.writer_processing(writer, sys_writer, evt_done, console)
+        )
+        # for kernel feedback
+        asyncio.create_task(
+            self.writer_processing(writer, self.kernel_in, evt_done, console)
         )
 
     async def writer_processing(
@@ -402,12 +422,12 @@ class TelNetConsoleHost:
         while not (queue_done.is_set()):
             item: bytes = await sys_writer.get()
 
-            logger.info(f"IO - Writer proc task recv {item}")
-
+            # logger.info(f"IO - Writer proc task recv {s}")
             s = item.decode("utf-8")
-            # console.file.truncate(0)
-            # console.print(s, end="")
-            writer.write(s)
+            console.file.truncate(0)
+            console.print(s, end="")
+            s_out = console.file.getvalue()
+            writer.write(s_out.replace("\n", "\r\n"))
             await writer.drain()
 
         writer.close()
@@ -416,24 +436,58 @@ class TelNetConsoleHost:
     async def reader_processing(
         self,
         reader: telnetlib3.TelnetReader,
+        writer: telnetlib3.TelnetWriter,
         sys_reader: asyncio.Queue,
         queue_done: asyncio.Event,
         console: Console,
         device: Device,
     ):
         logger.info("IO - Reader proc task")
+        # Break into lines.
+        line_buffer = bytearray()
+        ignore_space = True
         while True:
             logger.debug("IO - Waiting for read")
-            b_in = await reader.read(1024)  # 1KB window size
-            b_in = b_in.encode("utf-8")
-            logger.debug(f"IO - Done read '{b_in}'")
-            if len(b_in) == 0:
+            in_str = await reader.read(1024)  # 1KB window size, returns string!
+            if len(in_str) == 0:
                 break
+            # break on '\n'
+            for ch in in_str:
+                if ch == "\r":
+                    is_kernel = (
+                        len(line_buffer) >= len("kernel")
+                        and line_buffer[0:6] == b"kernel"
+                    )
+
+                    if is_kernel or self.is_kernel_enable:
+                        self.is_kernel_enable = True
+                        logger.info("IO - Enter pressed - submit to kernel")
+                        await self.kernel_out.put(bytes(line_buffer))
+
+                    elif not (self.is_kernel_enable):
+                        logger.info("IO - Enter pressed - submit to device")
+                        await sys_reader.put(bytes(line_buffer))
+
+                    line_buffer.clear()
+                    ignore_space = True
+                    writer.write("\r\n")
+                elif ch == "\n":
+                    continue
+                elif ch == " " and ignore_space:
+                    continue
+                elif ch == "\x7f":
+                    # backspace
+                    if len(line_buffer) > 0:
+                        line_buffer.pop()
+                        writer.write(ch)  # auto echo
+                else:
+                    ignore_space = False
+                    line_buffer.extend(ch.encode("utf-8"))
+                    writer.write(ch)  # auto echo
 
             if queue_done.is_set():
                 break
-
-            await sys_reader.put(b_in)
+            await writer.drain()
 
         logger.info("IO - Detected telnet close!")
         reader.close()

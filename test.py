@@ -8,6 +8,7 @@ It is these nodes that interact with other nodes in the network, creating the OS
 import asyncio
 import os
 import sys
+from src.KernelCommands import KernelCommandProcessor
 from src.core.io_host import TelNetConsoleHost
 from src.node import Node
 import src.core.star_components as star
@@ -71,22 +72,22 @@ if __name__ == "__main__":
                 b"\xA8\x00\x00\x00\x00\x00\x00\x00",
                 star.StarAddress("tcp://127.0.0.1:9287"),
             ),
-            (
-                b"\xC0\x00\x00\x00\x00\x00\x00\x00",
-                star.StarAddress("tcp://127.0.0.1:9288"),
-            ),
-            (
-                b"\xD0\x00\x00\x00\x00\x00\x00\x00",
-                star.StarAddress("tcp://127.0.0.1:9289"),
-            ),
-            (
-                b"\xE0\x00\x00\x00\x00\x00\x00\x00",
-                star.StarAddress("tcp://127.0.0.1:9290"),
-            ),
-            (
-                b"\xF0\x00\x00\x00\x00\x00\x00\x00",
-                star.StarAddress("tcp://127.0.0.1:9291"),
-            ),
+            # (
+            #     b"\xC0\x00\x00\x00\x00\x00\x00\x00",
+            #     star.StarAddress("tcp://127.0.0.1:9288"),
+            # ),
+            # (
+            #     b"\xD0\x00\x00\x00\x00\x00\x00\x00",
+            #     star.StarAddress("tcp://127.0.0.1:9289"),
+            # ),
+            # (
+            #     b"\xE0\x00\x00\x00\x00\x00\x00\x00",
+            #     star.StarAddress("tcp://127.0.0.1:9290"),
+            # ),
+            # (
+            #     b"\xF0\x00\x00\x00\x00\x00\x00\x00",
+            #     star.StarAddress("tcp://127.0.0.1:9291"),
+            # ),
         ]
         node = Node(
             addr_table[server_number - 1][0],
@@ -102,6 +103,11 @@ if __name__ == "__main__":
 
             tl_host = TelNetConsoleHost()
             node.attach_device_host(tl_host)
+
+            read_in, write_out = tl_host.get_kernel_queues()  # reader, writer
+
+            kcommand = KernelCommandProcessor(read_in, write_out, node, tl_host)
+            asyncio.create_task(kcommand.run())
 
             logger.info("Connecting Addr#1 to Addr#2")
             await node.connect_to_peer(addr_table[1][0], addr_table[1][1])
@@ -119,72 +125,72 @@ if __name__ == "__main__":
             logger.warning("Final subscriptions listening")
             node.plugboard.print_cache_subscriptions_listening()
 
-        elif server_number == 2:
-            await asyncio.sleep(7)
-            logger.info("Connecting Addr#2 to Addr#3 & 4")
-            await node.connect_to_peer(addr_table[2][0], addr_table[2][1])
-            await node.connect_to_peer(addr_table[3][0], addr_table[3][1])
+        # elif server_number == 2:
+        #     await asyncio.sleep(7)
+        #     logger.info("Connecting Addr#2 to Addr#3 & 4")
+        #     await node.connect_to_peer(addr_table[2][0], addr_table[2][1])
+        #     await node.connect_to_peer(addr_table[3][0], addr_table[3][1])
 
-            logger.warning("Final Node2")
-            node.plugboard.peer_table.fancy_print()
+        #     logger.warning("Final Node2")
+        #     node.plugboard.peer_table.fancy_print()
 
-            logger.warning("Final Keep Alive listening")
-            node.plugboard.print_keep_alives()
+        #     logger.warning("Final Keep Alive listening")
+        #     node.plugboard.print_keep_alives()
 
-            logger.warning("Final subscriptions serving")
-            node.plugboard.print_cache_subscriptions_serve()
+        #     logger.warning("Final subscriptions serving")
+        #     node.plugboard.print_cache_subscriptions_serve()
 
-            logger.warning("Final subscriptions listening")
-            node.plugboard.print_cache_subscriptions_listening()
+        #     logger.warning("Final subscriptions listening")
+        #     node.plugboard.print_cache_subscriptions_listening()
 
-        elif server_number == 3:
-            await asyncio.sleep(10)
-            logger.info("Connecting Addr#2 to Addr#3 & 4")
-            await node.connect_to_peer(addr_table[3][0], addr_table[3][1])
-            await node.connect_to_peer(addr_table[4][0], addr_table[4][1])
-            await node.connect_to_peer(addr_table[5][0], addr_table[5][1])
+        # elif server_number == 3:
+        #     await asyncio.sleep(10)
+        #     logger.info("Connecting Addr#2 to Addr#3 & 4")
+        #     await node.connect_to_peer(addr_table[3][0], addr_table[3][1])
+        #     await node.connect_to_peer(addr_table[4][0], addr_table[4][1])
+        #     await node.connect_to_peer(addr_table[5][0], addr_table[5][1])
 
-            logger.warning("Final Node2")
-            node.plugboard.peer_table.fancy_print()
+        #     logger.warning("Final Node2")
+        #     node.plugboard.peer_table.fancy_print()
 
-            logger.warning("Final Keep Alive listening")
-            node.plugboard.print_keep_alives()
+        #     logger.warning("Final Keep Alive listening")
+        #     node.plugboard.print_keep_alives()
 
-            logger.warning("Final subscriptions serving")
-            node.plugboard.print_cache_subscriptions_serve()
+        #     logger.warning("Final subscriptions serving")
+        #     node.plugboard.print_cache_subscriptions_serve()
 
-            logger.warning("Final subscriptions listening")
-            node.plugboard.print_cache_subscriptions_listening()
+        #     logger.warning("Final subscriptions listening")
+        #     node.plugboard.print_cache_subscriptions_listening()
 
-        if server_number == 4:
-            await asyncio.sleep(15)
-            await node.connect_to_peer(addr_table[6][0], addr_table[6][1])
-            await node.connect_to_peer(addr_table[7][0], addr_table[7][1])
-            await node.connect_to_peer(addr_table[8][0], addr_table[8][1])
-            await node.connect_to_peer(addr_table[9][0], addr_table[9][1])
-            await node.connect_to_peer(addr_table[10][0], addr_table[10][1])
-            await node.connect_to_peer(addr_table[11][0], addr_table[11][1])
+        # if server_number == 4:
+        #     await asyncio.sleep(15)
+        #     await node.connect_to_peer(addr_table[6][0], addr_table[6][1])
+        #     await node.connect_to_peer(addr_table[7][0], addr_table[7][1])
+        #     # await node.connect_to_peer(addr_table[8][0], addr_table[8][1])
+        #     # await node.connect_to_peer(addr_table[9][0], addr_table[9][1])
+        #     # await node.connect_to_peer(addr_table[10][0], addr_table[10][1])
+        #     # await node.connect_to_peer(addr_table[11][0], addr_table[11][1])
 
-            logger.warning("Final Node2")
-            node.plugboard.peer_table.fancy_print()
+        #     logger.warning("Final Node2")
+        #     node.plugboard.peer_table.fancy_print()
 
-            logger.warning("Final Keep Alive listening")
-            node.plugboard.print_keep_alives()
+        #     logger.warning("Final Keep Alive listening")
+        #     node.plugboard.print_keep_alives()
 
-            logger.warning("Final subscriptions serving")
-            node.plugboard.print_cache_subscriptions_serve()
+        #     logger.warning("Final subscriptions serving")
+        #     node.plugboard.print_cache_subscriptions_serve()
 
-            logger.warning("Final subscriptions listening")
-            node.plugboard.print_cache_subscriptions_listening()
+        #     logger.warning("Final subscriptions listening")
+        #     node.plugboard.print_cache_subscriptions_listening()
 
         if server_number == 1:
             pass
-            await asyncio.sleep(20)
-            pgrm = star.Program(read_pgrm="examples/io_program.star")
-            logger.info(
-                f"I: Opening program '{pgrm.saved_data['pgrm_name']}' from {pgrm.saved_data['date_compiled']}\n"
-            )
-            process = await node.start_program(pgrm, b"Test")
+            # await asyncio.sleep(10)
+            # pgrm = star.Program(read_pgrm="examples/shell.star")
+            # logger.info(
+            #     f"I: Opening program '{pgrm.saved_data['pgrm_name']}' from {pgrm.saved_data['date_compiled']}\n"
+            # )
+            # process = await node.start_program(pgrm, b"Test")
 
         #     logger.warning("Final Node1 PEER LIST - task")
         #     node.plugboard.peer_table.fancy_print()
@@ -201,47 +207,47 @@ if __name__ == "__main__":
         #     logger.warning("Final subscriptions listening")
         #     node.plugboard.print_cache_subscriptions_listening()
 
-        elif server_number == 2:
-            pass
-            await asyncio.sleep(20)
-            logger.warning("Final Node1 TASK LIST - task")
-            node.plugboard.task_table.fancy_print()
+        # elif server_number == 2:
+        #     pass
+        #     await asyncio.sleep(20)
+        #     logger.warning("Final Node1 TASK LIST - task")
+        #     node.plugboard.task_table.fancy_print()
 
-            pgrm = star.Program(read_pgrm="examples/file_program.star")
-            logger.info(
-                f"I: Opening program '{pgrm.saved_data['pgrm_name']}' from {pgrm.saved_data['date_compiled']}\n"
-            )
-            process = await node.start_program(pgrm, os.urandom(4))
+        # pgrm = star.Program(read_pgrm="examples/file_program.star")
+        # logger.info(
+        #     f"I: Opening program '{pgrm.saved_data['pgrm_name']}' from {pgrm.saved_data['date_compiled']}\n"
+        # )
+        # process = await node.start_program(pgrm, os.urandom(4))
 
-            # pgrm = star.Program(read_pgrm="examples/file_program.star")
-            # logger.info(
-            #     f"I: Opening program '{pgrm.saved_data['pgrm_name']}' from {pgrm.saved_data['date_compiled']}\n"
-            # )
-            # process = await node.start_program(pgrm, b"Bob")
+        #     # pgrm = star.Program(read_pgrm="examples/file_program.star")
+        #     # logger.info(
+        #     #     f"I: Opening program '{pgrm.saved_data['pgrm_name']}' from {pgrm.saved_data['date_compiled']}\n"
+        #     # )
+        #     # process = await node.start_program(pgrm, b"Bob")
 
-        elif server_number in [3, 7, 9, 10]:
-            pass
-            await asyncio.sleep(25)
-            logger.warning("Final Node1 TASK LIST - task")
-            node.plugboard.task_table.fancy_print()
+        # elif server_number in [3, 7, 9, 10]:
+        #     pass
+        #     await asyncio.sleep(25)
+        #     logger.warning("Final Node1 TASK LIST - task")
+        #     node.plugboard.task_table.fancy_print()
 
-            pgrm = star.Program(read_pgrm="examples/file_program.star")
-            logger.info(
-                f"I: Opening program '{pgrm.saved_data['pgrm_name']}' from {pgrm.saved_data['date_compiled']}\n"
-            )
-            process = await node.start_program(pgrm, os.urandom(4))
+        #     pgrm = star.Program(read_pgrm="examples/file_program.star")
+        #     logger.info(
+        #         f"I: Opening program '{pgrm.saved_data['pgrm_name']}' from {pgrm.saved_data['date_compiled']}\n"
+        #     )
+        #     process = await node.start_program(pgrm, os.urandom(4))
 
-        elif server_number == 4:
-            pass
-            await asyncio.sleep(25)
-            logger.warning("Final Node1 TASK LIST - task")
-            node.plugboard.task_table.fancy_print()
+        # elif server_number == 4:
+        #     pass
+        #     await asyncio.sleep(25)
+        #     logger.warning("Final Node1 TASK LIST - task")
+        #     node.plugboard.task_table.fancy_print()
 
-            pgrm = star.Program(read_pgrm="examples/my_program.star")
-            logger.info(
-                f"I: Opening program '{pgrm.saved_data['pgrm_name']}' from {pgrm.saved_data['date_compiled']}\n"
-            )
-            process = await node.start_program(pgrm, os.urandom(4))
+        #     pgrm = star.Program(read_pgrm="examples/io_program.star")
+        #     logger.info(
+        #         f"I: Opening program '{pgrm.saved_data['pgrm_name']}' from {pgrm.saved_data['date_compiled']}\n"
+        #     )
+        #     process = await node.start_program(pgrm, os.urandom(4))
 
         await asyncio.sleep(1000)
         logger.critical("Main done!")
@@ -268,7 +274,7 @@ if __name__ == "__main__":
         elif record.msg.startswith("TASK"):
             return True
         elif record.msg.startswith("FILE"):
-            return True
+            return False
         elif record.msg.startswith("DISCOVERY"):
             return False
         elif record.msg.startswith("DHT"):
@@ -282,6 +288,6 @@ if __name__ == "__main__":
         return True
 
     ch.addFilter(filter_messages_by_label)
-    logging.basicConfig(handlers=[ch], level=logging.DEBUG)
+    logging.basicConfig(handlers=[ch], level=logging.INFO)
     asyncio.get_event_loop().set_debug(True)
     asyncio.run(main())
