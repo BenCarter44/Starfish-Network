@@ -80,7 +80,12 @@ class FileClient:
             process_id=self.process_id,
             is_monitor=skmt,
         )
-        response = await self.stub.OpenFile(request, timeout=timeout)
+        try:
+            response = await self.stub.OpenFile(request, timeout=timeout)
+        except:
+            logger.warning("FILE - Error on stub send")
+            self.kp_channel.kill_update()
+            return b""
         self.kp_channel.update()
         return response.data
 
@@ -107,7 +112,12 @@ class FileClient:
             process_id=self.process_id,
             is_monitor=skmt,
         )
-        response = await self.stub.ReadFile(request, timeout=timeout)
+        try:
+            response = await self.stub.ReadFile(request, timeout=timeout)
+        except:
+            logger.warning("FILE - Error on stub send")
+            self.kp_channel.kill_update()
+            return b""
         self.kp_channel.update()
         return response.data
 
@@ -131,7 +141,12 @@ class FileClient:
             process_id=self.process_id,
             is_monitor=skmt,
         )
-        response = await self.stub.WriteFile(request, timeout=timeout)
+        try:
+            response = await self.stub.WriteFile(request, timeout=timeout)
+        except:
+            logger.warning("FILE - Error on stub send")
+            self.kp_channel.kill_update()
+            return b""
         self.kp_channel.update()
         return response.data
 
@@ -159,7 +174,12 @@ class FileClient:
             process_id=self.process_id,
             is_monitor=skmt,
         )
-        response = await self.stub.SeekFile(request, timeout=timeout)
+        try:
+            response = await self.stub.SeekFile(request, timeout=timeout)
+        except:
+            logger.warning("FILE - Error on stub send")
+            self.kp_channel.kill_update()
+            return b""
         self.kp_channel.update()
         return response.data
 
@@ -183,7 +203,12 @@ class FileClient:
             process_id=self.process_id,
             is_monitor=skmt,
         )
-        response = await self.stub.TellFile(request, timeout=timeout)
+        try:
+            response = await self.stub.TellFile(request, timeout=timeout)
+        except:
+            logger.warning("FILE - Error on stub send")
+            self.kp_channel.kill_update()
+            return 0
         self.kp_channel.update()
         out = int.from_bytes(response.data, "big")
         return out
@@ -209,7 +234,13 @@ class FileClient:
             process_id=self.process_id,
             is_monitor=skmt,
         )
-        response = await self.stub.CloseFile(request, timeout=timeout)
+        try:
+            response = await self.stub.CloseFile(request, timeout=timeout)
+        except:
+            logger.warning("FILE - Error on stub send")
+            self.kp_channel.kill_update()
+            return pb_base.DHTStatus.ERR
+
         self.kp_channel.update()
         return response.status
 
@@ -240,7 +271,13 @@ class FileClient:
             process_id=self.process_id,
             is_monitor=skmt,
         )
-        response = await self.stub.SendMonitorRequest(request, timeout=timeout)
+
+        try:
+            response = await self.stub.SendMonitorRequest(request, timeout=timeout)
+        except:
+            logger.warning("FILE - Error on stub send")
+            self.kp_channel.kill_update()
+            return pb_base.DHTStatus.ERR
         self.kp_channel.update()
         return response.status
 
@@ -266,7 +303,13 @@ class FileClient:
             process_id=self.process_id,
             is_monitor=skmt,
         )
-        response = await self.stub.SendFileContents(request, timeout=timeout)
+        try:
+            response = await self.stub.SendFileContents(request, timeout=timeout)
+        except:
+            logger.warning("FILE - Error on stub send")
+            self.kp_channel.kill_update()
+            return pb_base.DHTStatus.ERR
+
         self.kp_channel.update()
         return response.status
 

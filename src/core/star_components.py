@@ -520,6 +520,11 @@ class Event:
         self.target_string = target
         self.target = task_identifier
 
+    def set_kill_target(self) -> None:
+        # Tells OS that program is done!
+        self.target_string = ""
+        self.target = None
+
     def set_conditional_target(self, target: StarTask | str) -> None:
         """Set target task of event.
 

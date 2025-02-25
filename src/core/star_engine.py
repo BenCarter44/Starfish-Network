@@ -260,6 +260,10 @@ class NodeEngine:
         if evt.system is not None and evt.system["await"] and evt.system["initial"]:
             evt.system["initial"] = False
 
+        if evt.target is None:
+            logger.info("ENGINE - Process thread finished")
+            return
+
         # clear out the user/proc id and replace it with the task.
         evt.target.attach_to_process_task(task)
 

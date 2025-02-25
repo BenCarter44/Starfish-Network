@@ -134,13 +134,20 @@ class TaskService(pb.TaskServiceServicer):
                 pass
             else:
                 # tell the next person checkpoint.
-                await self.internal_callback.send_checkpoint_forward(
-                    task_to.get_id(), evt.origin, evt
-                )
+                try:
+                    await self.internal_callback.send_checkpoint_forward(
+                        task_to.get_id(), evt.origin, evt
+                    )
+                except:
+                    logger.warning("TASK - Failed to send checkpoint forward")
+
                 # tell the previous person that we are good.
-                await self.internal_callback.send_checkpoint_backward(
-                    task_to.get_id(), evt.origin, evt.origin_previous, evt
-                )
+                try:
+                    await self.internal_callback.send_checkpoint_backward(
+                        task_to.get_id(), evt.origin, evt.origin_previous, evt
+                    )
+                except:
+                    logger.warning("TASK - Failed to send checkpoint backward")
 
         if peerID == self.addr:
             # It's to me!

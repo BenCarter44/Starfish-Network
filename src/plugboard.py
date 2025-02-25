@@ -396,7 +396,11 @@ class PlugBoard:
         logger.debug(f"TASK - {evt.origin}")
         assert str(evt).find("Event object") != -1
         # Sends to local.
-        resp = await self.task_interface.SendEvent(evt)
+        try:
+            resp = await self.task_interface.SendEvent(evt)
+        except:
+            logger.info("Unable to deliver event to node!")
+            return False
 
         if resp.status == DHTStatus.NOT_FOUND:
             logger.info("Unable to deliver event to node!")

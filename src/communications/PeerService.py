@@ -46,7 +46,7 @@ class PeerDiscoveryClient:
         try:
             recv = await self.stub.Bootstrap(req, timeout=timeout)
         except Exception as e:
-            logger.debug(f"DISCOVERY - Deletion notice error")
+            logger.debug(f"DISCOVERY - Bootstrap notice error")
             await channel_kp.kill_update()
             return []
 

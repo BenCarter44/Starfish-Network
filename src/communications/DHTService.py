@@ -63,7 +63,7 @@ class DHTClient:
         try:
             response = await self.stub.FetchItem(request, timeout=timeout)
         except Exception as e:
-            logger.debug(f"DHT - FetchItem error {e}")
+            logger.warning(f"DHT - FetchItem error {e}")
             await self.kp_channel.kill_update()
             return b"", pb_base.DHTStatus.ERR, pb_base.DHTSelect.BLANK
 
@@ -127,7 +127,7 @@ class DHTClient:
                 timeout=timeout,
             )
         except Exception as e:
-            logger.debug(f"DHT - Delete error")
+            logger.warning(f"DHT - Delete error")
             await self.kp_channel.kill_update()
             return pb_base.DHTStatus.ERR
 
@@ -142,22 +142,17 @@ class DHTClient:
         logger.debug(f"DHT - {key}")
         logger.debug(f"DHT - {select}")
         logger.debug(f"DHT - {self.peer_me}")
-        resp = await self.stub.DeletedNotice(
-            pb_base.DHT_Delete_Notice_Request(key=key, select=select, who=self.peer_me),
-            timeout=timeout,
-        )
-
-        # try:
-        #     resp = await self.stub.DeletedNotice(
-        #         pb_base.DHT_Delete_Notice_Request(
-        #             key=key, select=select, who=self.peer_me
-        #         ),
-        #         timeout=timeout,
-        #     )
-        # except Exception as e:
-        #     logger.warning(f"Deletion notice error {e}")
-        #     await self.kp_channel.kill_update()
-        #     return pb_base.DHTStatus.ERR
+        try:
+            resp = await self.stub.DeletedNotice(
+                pb_base.DHT_Delete_Notice_Request(
+                    key=key, select=select, who=self.peer_me
+                ),
+                timeout=timeout,
+            )
+        except Exception as e:
+            logger.warning(f"Deletion notice error {e}")
+            await self.kp_channel.kill_update()
+            return pb_base.DHTStatus.ERR
 
         self.kp_channel.update()
         return resp.status
