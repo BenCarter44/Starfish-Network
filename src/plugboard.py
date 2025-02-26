@@ -58,7 +58,7 @@ class PlugBoard:
     to the Messaging services, DHT, and other components.
     """
 
-    def __init__(self, node_id: bytes, local_addr: StarAddress, file_save: str):
+    def __init__(self, node_id: bytes, local_addr: StarAddress, file_save: str, node):
         """Create the middleware manager: Plugboard
 
         Args:
@@ -124,6 +124,7 @@ class PlugBoard:
         self.io_host = IOHost(self.my_addr)  # all devices join here.
         self.io_host.host_alloc_device = self.host_allocate_device  # type: ignore
         self.io_host.host_dealloc_device = self.host_deallocate_device  # type: ignore
+        self.node_object = node
 
     def print_keep_alives(self):
         self.keep_alive_manager.fancy_print()

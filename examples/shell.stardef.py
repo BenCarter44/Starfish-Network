@@ -41,6 +41,9 @@ logger = logging.getLogger(__name__)
 #          - general peer count, file count, io count, etc....
 
 
+# Priorities???? Are there task priorities? Priorities to files?
+
+
 @star.task("start_program", pass_task_id=True)
 def start_program(evt: star.Event, task: star.StarTask):
     import time

@@ -99,31 +99,31 @@ if __name__ == "__main__":
         logger.debug(f"META - Server up: {server_number}")
         await asyncio.sleep(5)
 
-        if server_number == 1:
+        # if server_number == 1:
 
-            tl_host = TelNetConsoleHost()
-            node.attach_device_host(tl_host)
+        tl_host = TelNetConsoleHost(2320 + server_number)
+        node.attach_device_host(tl_host)
 
-            read_in, write_out = tl_host.get_kernel_queues()  # reader, writer
+        read_in, write_out = tl_host.get_kernel_queues()  # reader, writer
 
-            kcommand = KernelCommandProcessor(read_in, write_out, node, tl_host)
-            asyncio.create_task(kcommand.run())
+        kcommand = KernelCommandProcessor(read_in, write_out, node, tl_host)
+        asyncio.create_task(kcommand.run())
 
-            logger.info("Connecting Addr#1 to Addr#2")
-            await node.connect_to_peer(addr_table[1][0], addr_table[1][1])
+        # logger.info("Connecting Addr#1 to Addr#2")
+        # await node.connect_to_peer(addr_table[1][0], addr_table[1][1])
 
-            await asyncio.sleep(5)
-            logger.warning("Final Node1 PEER LIST")
-            node.plugboard.peer_table.fancy_print()
+        # await asyncio.sleep(5)
+        # logger.warning("Final Node1 PEER LIST")
+        # node.plugboard.peer_table.fancy_print()
 
-            logger.warning("Final Keep Alive listening")
-            node.plugboard.print_keep_alives()
+        # logger.warning("Final Keep Alive listening")
+        # node.plugboard.print_keep_alives()
 
-            logger.warning("Final subscriptions serving")
-            node.plugboard.print_cache_subscriptions_serve()
+        # logger.warning("Final subscriptions serving")
+        # node.plugboard.print_cache_subscriptions_serve()
 
-            logger.warning("Final subscriptions listening")
-            node.plugboard.print_cache_subscriptions_listening()
+        # logger.warning("Final subscriptions listening")
+        # node.plugboard.print_cache_subscriptions_listening()
 
         # elif server_number == 2:
         #     await asyncio.sleep(7)
@@ -185,8 +185,8 @@ if __name__ == "__main__":
 
         if server_number == 1:
             pass
-            # await asyncio.sleep(10)
-            # pgrm = star.Program(read_pgrm="examples/shell.star")
+            # # await asyncio.sleep(10)
+            # pgrm = star.Program(read_pgrm="examples/my_program.star")
             # logger.info(
             #     f"I: Opening program '{pgrm.saved_data['pgrm_name']}' from {pgrm.saved_data['date_compiled']}\n"
             # )

@@ -1,4 +1,5 @@
 # Register tasks (hash: name, condition)
+import asyncio
 import hashlib
 import json
 import marshal
@@ -17,6 +18,7 @@ import grpc
 import sys, os
 
 
+sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
 try:
     from src.util.util import and_bytes, pad_bytes
     from src.core.File import FileFactory
@@ -26,8 +28,6 @@ except:
     from core.File import FileFactory
     from src.core.io_host import IOFactory
 
-
-sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
 
 try:
     import communications.primitives_pb2 as pb_p
@@ -135,6 +135,25 @@ class StarProcess:
         # return custom_bytes + self.user_id + self.process_id + self.name
         return custom
 
+    def get_user(self) -> bytes:
+        return self.user_id
+
+
+class NodeSyscall:
+    def __init__(self, node, loop):
+        self.node = node
+        self.loop = loop
+
+    def get_peerID(self):
+        t = asyncio.run_coroutine_threadsafe(self.node.get_peerID(), self.loop)
+        return t.result()
+
+    def start_program(self, program: "Program", user_id: bytes):
+        t = asyncio.run_coroutine_threadsafe(
+            self.node.start_program(program, user_id), self.loop
+        )
+        return t.result()
+
 
 class StarTask:
     def __init__(
@@ -155,9 +174,13 @@ class StarTask:
 
         self.plugboard_callback = None
         self.loop_callback = None  # struct for file factory
+        self.node_callback = None
 
     def get_user(self) -> bytes:
         return self.user_id
+
+    def get_node_kernel(self) -> NodeSyscall:
+        return NodeSyscall(self.node_callback, self.loop_callback)
 
     def to_bytes(self) -> bytes:
         """Serialize StarTask to bytes

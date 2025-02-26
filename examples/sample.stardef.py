@@ -28,6 +28,7 @@ def input_event(evt: star.Event, task: star.StarTask):
     import time
 
     print(f"Query: {evt.data['counter']}. My user ID: {task.get_user()}")
+    print(task.get_node_kernel().get_peerID())
     a = print("Type in a number: ", end=" ")
     a = random.randint(0, 10)
     print(a)

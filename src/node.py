@@ -1,4 +1,5 @@
 # try:
+import datetime
 import glob
 import os
 import random
@@ -8,6 +9,9 @@ from src.communications.IOService import IOService
 from src.communications.KeepAliveService import KeepAliveCommService
 from src.communications.PeerService import PeerService
 from src.communications.FileService import FileService
+from src.communications.primitives_pb2 import TaskValue
+from src.core.File import File, HostedFile
+from src.core.io_host import Device
 from src.core.star_components import Event, Program, StarProcess, StarTask
 from src.plugboard import PlugBoard
 
@@ -16,6 +20,8 @@ from src.plugboard import PlugBoard
 
 import asyncio
 import logging
+
+from src.util.util import decompress_bytes_to_str
 
 logger = logging.getLogger(__name__)
 
@@ -58,7 +64,7 @@ class Node:
             bin_addr (bytes): The node binary address (Peer ID)
             transport (StarAddress): Transport address to serve on.
         """
-        self.plugboard = PlugBoard(bin_addr, transport, file_save_dir)
+        self.plugboard = PlugBoard(bin_addr, transport, file_save_dir, self)
         self.addr = bin_addr
         self.transport = transport
         self.is_connected = False
@@ -148,7 +154,12 @@ class Node:
             if self.is_connected or self.plugboard.received_rpcs.is_set():
                 await self.plugboard.perform_discovery_round()
 
-    async def start_program(self, program: Program, user_id: bytes) -> StarProcess:
+    async def get_peerID(self):
+        return self.addr
+
+    async def start_program(
+        self, program: Program, user_id: bytes, initial_data={}
+    ) -> StarProcess:
         """Put a program on the execution queue of the OS
 
         Args:
@@ -186,8 +197,65 @@ class Node:
         # await asyncio.sleep(100)
         logger.info(f"TASK - Start Event: {program.start.target.get_id().hex()}")
         program.start.nonce = 0
+        program.start.data = initial_data
         await self.plugboard.dispatch_event(program.start)
         return proc
 
     def attach_device_host(self, tl_host):
         self.plugboard.io_host.attach_device_host(tl_host)
+        tl_host.star_addr = self.transport
+
+    def process_list(self, network=False, include_tasks=False):
+        tasks = self.plugboard.task_table.fetch_dict(network)
+        process_out = set()
+        out = []
+        for key, task in tasks.items():
+            tv = TaskValue.FromString(task)
+            proc = StarProcess.from_bytes(tv.process_data)
+            if include_tasks:
+                out.append((tv.address, StarTask.from_bytes(tv.task_data)))
+
+            elif proc.get_id() not in process_out:
+                out.append(proc)
+                process_out.add(proc.get_id())
+        return out
+
+    def peer_list(self):
+        peers = self.plugboard.peer_table.fetch_dict()
+        out = []
+        for key, value in peers.items():
+            address = StarAddress.from_bytes(value)
+
+            str_channel = address.get_string_channel()
+            last_seen = "Not Connected"
+            if str_channel in self.plugboard.keep_alive_manager.channels:
+                channel = self.plugboard.keep_alive_manager.channels[str_channel]
+                dt = datetime.datetime.fromtimestamp(channel.last_seen)
+                last_seen = str(dt)
+            out.append((key, str_channel, last_seen))
+        return out
+
+    def file_list(self, network=False):
+        file_table = self.plugboard.file_table.fetch_dict(network)
+        out = []
+        for key, value in file_table.items():
+            hf = HostedFile.from_key(key)
+            out.append(
+                (key, value, decompress_bytes_to_str(hf.get_user()), hf.get_filepath())
+            )
+        return out
+
+    def io_list(self, network=False):
+        device_table = self.plugboard.device_table.fetch_dict()
+        out = []
+        for key, value in device_table.items():
+            dev = Device.from_id(key)
+            if not (network) and value != self.addr:
+                continue
+            out.append((key, value, dev.get_name()))
+        self.plugboard.device_table.fancy_print()
+        return out
+
+    # async def set_file(self, user, filename, data):
+    #     hf = HostedFile(user, filename)
+    #     await self.plugboard.create_file(hf)

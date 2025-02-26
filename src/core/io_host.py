@@ -68,6 +68,9 @@ class Device:
 
         return cls(user, path_name)
 
+    def get_peer(self):
+        return self.device_file.get_user()
+
     def set_local_id(self, local_id: bytes):
         self.device_file.local_identifier = local_id
 
@@ -338,6 +341,7 @@ class TelNetConsoleHost:
         self.allocate_device = None
         self.deallocate_device = None
         self.peerID = b""
+        self.star_addr = None
 
         self.kernel_out: asyncio.Queue[tuple[Device, bytes]] = asyncio.Queue()
         self.kernel_in: dict[Device, asyncio.Queue] = {}
@@ -386,7 +390,11 @@ class TelNetConsoleHost:
             end="\r\n",
         )
         console.print(
-            f"Servicer PeerID: [green1]{self.peerID.hex(sep='-').upper()}[/green1]",
+            f"Servicer PeerID: [green1]{self.peerID.hex(sep=':').upper()}[/green1]",
+            end="\r\n",
+        )
+        console.print(
+            f"StarAddress: [green1]tcp://{self.star_addr.get_string_channel()}[/green1]",
             end="\r\n",
         )
         console.print(end="\r\n")
@@ -408,11 +416,13 @@ class TelNetConsoleHost:
             )
         )
         asyncio.create_task(
-            self.writer_processing(writer, sys_writer, evt_done, console)
+            self.writer_processing(writer, sys_writer, evt_done, console, device)
         )
         # for kernel feedback
         asyncio.create_task(
-            self.writer_processing(writer, self.kernel_in[device], evt_done, console)
+            self.writer_processing(
+                writer, self.kernel_in[device], evt_done, console, device
+            )
         )
 
     async def writer_processing(
@@ -421,6 +431,7 @@ class TelNetConsoleHost:
         sys_writer: asyncio.Queue,
         queue_done: asyncio.Event,
         console: Console,
+        device: Device,
     ):
         logger.info("IO - Writer proc task")
         while not (queue_done.is_set()):
@@ -428,6 +439,9 @@ class TelNetConsoleHost:
 
             # logger.info(f"IO - Writer proc task recv {s}")
             s = item.decode("utf-8")
+            if s == "--SHELL_DISCONNECT--":
+                await self.kernel_out.put((device, item))
+                self.is_kernel_enable[device] = True
             console.file.truncate(0)
             console.print(s, end="")
             s_out = console.file.getvalue()

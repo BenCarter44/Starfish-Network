@@ -199,6 +199,7 @@ class NodeEngine:
 
                 # for file factory
                 task.plugboard_callback = self.plugboard_internal
+                task.node_callback = self.plugboard_internal.node_object
                 task.loop_callback = self.loop
                 task.hold_past_event = evt
                 task.hold_past_event_pre = star.StarTask.from_bytes(evt_copy_pre)
