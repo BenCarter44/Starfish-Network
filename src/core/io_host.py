@@ -172,6 +172,13 @@ class IOFactory:
         dev.loop = self.loop
         return dev
 
+    def IODevice_FromID(self, identifier: bytes) -> "Device":
+        dev = Device.from_id(identifier)
+        dev.plugboard_callback = self.plugboard
+        dev.processID = self.process_id
+        dev.loop = self.loop
+        return dev
+
     def get_io_constants(self):
         return IO_NONEXIST, IO_BUSY, IO_DETACHED, IO_OK
 
@@ -312,6 +319,8 @@ class IOHost:
 
     async def read_available(self, device: Device):
         logger.debug(f"IO - ReadAvail challenge: {device.get_id().hex()}")
+        if device not in self.device_connections:
+            return False, IO_NONEXIST
         if device.get_local_device_identifier() != self.device_connections[device]:
             return False, IO_BUSY
 
@@ -442,6 +451,7 @@ class TelNetConsoleHost:
             if s == "--SHELL_DISCONNECT--":
                 await self.kernel_out.put((device, item))
                 self.is_kernel_enable[device] = True
+                continue
             console.file.truncate(0)
             console.print(s, end="")
             s_out = console.file.getvalue()

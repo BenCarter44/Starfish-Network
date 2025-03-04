@@ -82,7 +82,7 @@ class KeepAlive_Channel:
             # offline!
             self.kill_count += 1
         else:
-            self.update()
+            await self.update()
 
         if self.kill_count > FAIL_MAX:
             await self.mark_offline()
@@ -94,7 +94,7 @@ class KeepAlive_Channel:
             await self.mark_offline()
             return
 
-    def update(self):
+    async def update(self):
         # logger.info(f"UPDATE: {self.peer_id_assoc.hex()}")
         self.last_seen = time.time()
         self.connected = True

@@ -35,7 +35,7 @@ class TaskPeer:
         event = evt.to_pb()
         request = pb_base.SendEvent_Request(evt=event, who=self.peer_id)
         response = await self.stub.SendEvent(request, timeout=timeout)
-        self.kp_channel.update()
+        await self.kp_channel.update()
         return response
 
     async def SendMonitor_Request(
@@ -50,7 +50,7 @@ class TaskPeer:
             process_data=proc_data, who=my_addr, task=task.to_pb(include_callable=True)
         )
         response = await self.stub.SendMonitorRequest(request, timeout=timeout)
-        self.kp_channel.update()
+        await self.kp_channel.update()
         return response
 
     async def SendCheckpoint(
@@ -80,7 +80,7 @@ class TaskPeer:
             mode=mode,
         )
         response = await self.stub.SendCheckpoint(request, timeout=timeout)
-        self.kp_channel.update()
+        await self.kp_channel.update()
         return response
 
 

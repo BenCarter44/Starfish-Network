@@ -148,11 +148,17 @@ class NodeSyscall:
         t = asyncio.run_coroutine_threadsafe(self.node.get_peerID(), self.loop)
         return t.result()
 
-    def start_program(self, program: "Program", user_id: bytes):
+    def start_program(self, program: "Program", user_id: bytes, extra={}):
         t = asyncio.run_coroutine_threadsafe(
-            self.node.start_program(program, user_id), self.loop
+            self.node.start_program(program, user_id, extra), self.loop
         )
         return t.result()
+
+    def get_file_list(self):
+        return self.node.file_list(True)
+
+    def get_io_list(self):
+        return self.node.io_list(True)
 
 
 class StarTask:
@@ -920,6 +926,9 @@ def compile(start_event: Event) -> Program:
             def edit_task_id(*args, **kwargs):
                 e = func(*args, **kwargs)
                 # print(e.target_string, "ENGINE")
+                if e.target is None:
+                    logger.info("ENGINE - Kill Event")
+                    return None
                 if e.target_string is None:
                     logger.error(
                         "Program error: Did you forget a event.set_target()? Target unknwon. Dropping."
@@ -950,7 +959,7 @@ def compile(start_event: Event) -> Program:
         for s, out in cond_str_dict.items():
             conditions_tmp.append((out, eval(s, {}, {})))
 
-        def custom_decision_tree(evt):
+        def custom_decision_tree(evt, task=None):
             e = evt
             for token in conditions_tmp:
                 task_id_out, lambda_condition = token

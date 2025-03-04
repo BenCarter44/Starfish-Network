@@ -84,9 +84,9 @@ class FileClient:
             response = await self.stub.OpenFile(request, timeout=timeout)
         except:
             logger.warning("FILE - Error on stub send")
-            self.kp_channel.kill_update()
+            await self.kp_channel.kill_update()
             return b""
-        self.kp_channel.update()
+        await self.kp_channel.update()
         return response.data
 
     async def ReadFile(
@@ -116,9 +116,9 @@ class FileClient:
             response = await self.stub.ReadFile(request, timeout=timeout)
         except:
             logger.warning("FILE - Error on stub send")
-            self.kp_channel.kill_update()
+            await self.kp_channel.kill_update()
             return b""
-        self.kp_channel.update()
+        await self.kp_channel.update()
         return response.data
 
     async def WriteFile(self, file: HostedFile, data: bytes, timeout=FILE_REQ_TIMEOUT):
@@ -145,9 +145,9 @@ class FileClient:
             response = await self.stub.WriteFile(request, timeout=timeout)
         except:
             logger.warning("FILE - Error on stub send")
-            self.kp_channel.kill_update()
+            await self.kp_channel.kill_update()
             return b""
-        self.kp_channel.update()
+        await self.kp_channel.update()
         return response.data
 
     async def SeekFile(
@@ -178,9 +178,9 @@ class FileClient:
             response = await self.stub.SeekFile(request, timeout=timeout)
         except:
             logger.warning("FILE - Error on stub send")
-            self.kp_channel.kill_update()
+            await self.kp_channel.kill_update()
             return b""
-        self.kp_channel.update()
+        await self.kp_channel.update()
         return response.data
 
     async def TellFile(self, file: HostedFile, timeout=FILE_REQ_TIMEOUT):
@@ -207,9 +207,9 @@ class FileClient:
             response = await self.stub.TellFile(request, timeout=timeout)
         except:
             logger.warning("FILE - Error on stub send")
-            self.kp_channel.kill_update()
+            await self.kp_channel.kill_update()
             return 0
-        self.kp_channel.update()
+        await self.kp_channel.update()
         out = int.from_bytes(response.data, "big")
         return out
 
@@ -238,10 +238,10 @@ class FileClient:
             response = await self.stub.CloseFile(request, timeout=timeout)
         except:
             logger.warning("FILE - Error on stub send")
-            self.kp_channel.kill_update()
+            await self.kp_channel.kill_update()
             return pb_base.DHTStatus.ERR
 
-        self.kp_channel.update()
+        await self.kp_channel.update()
         return response.status
 
     async def SendMonitorRequest(
@@ -276,9 +276,9 @@ class FileClient:
             response = await self.stub.SendMonitorRequest(request, timeout=timeout)
         except:
             logger.warning("FILE - Error on stub send")
-            self.kp_channel.kill_update()
+            await self.kp_channel.kill_update()
             return pb_base.DHTStatus.ERR
-        self.kp_channel.update()
+        await self.kp_channel.update()
         return response.status
 
     async def SendFileContents(
@@ -307,10 +307,10 @@ class FileClient:
             response = await self.stub.SendFileContents(request, timeout=timeout)
         except:
             logger.warning("FILE - Error on stub send")
-            self.kp_channel.kill_update()
+            await self.kp_channel.kill_update()
             return pb_base.DHTStatus.ERR
 
-        self.kp_channel.update()
+        await self.kp_channel.update()
         return response.status
 
 

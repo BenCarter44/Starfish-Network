@@ -22,6 +22,7 @@
 import argparse
 import asyncio
 import io
+import shlex
 import sys
 import logging
 from typing import cast
@@ -608,7 +609,9 @@ class KernelCommandProcessor:
 
         if command == "--SHELL_DISCONNECT--":
             self.shell.shell_attach_dict[device] = False
-        items = command.split(" ")
+            return ""
+        # items = command.split(" ")
+        items = shlex.split(command)
         if items[0] == "kernel":
             items = items[1:]
         if len(items) == 0:

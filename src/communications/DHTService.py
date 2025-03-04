@@ -67,7 +67,7 @@ class DHTClient:
             await self.kp_channel.kill_update()
             return b"", pb_base.DHTStatus.ERR, pb_base.DHTSelect.BLANK
 
-        self.kp_channel.update()
+        await self.kp_channel.update()
         return response.value, response.status, response.select
 
     async def StoreItem(
@@ -105,7 +105,7 @@ class DHTClient:
             await self.kp_channel.kill_update()
             return pb_base.DHTStatus.ERR, b""
 
-        self.kp_channel.update()
+        await self.kp_channel.update()
         # try:
         #     response_stream =
         #     async for r in response_stream:
@@ -131,7 +131,7 @@ class DHTClient:
             await self.kp_channel.kill_update()
             return pb_base.DHTStatus.ERR
 
-        self.kp_channel.update()
+        await self.kp_channel.update()
         return resp.status
 
     async def send_deletion_notice(
@@ -154,7 +154,7 @@ class DHTClient:
             await self.kp_channel.kill_update()
             return pb_base.DHTStatus.ERR
 
-        self.kp_channel.update()
+        await self.kp_channel.update()
         return resp.status
 
     async def update(
@@ -178,7 +178,7 @@ class DHTClient:
             await self.kp_channel.kill_update()
             return pb_base.DHTStatus.ERR
 
-        self.kp_channel.update()
+        await self.kp_channel.update()
         return resp.status
 
     async def send_update_notice(
@@ -202,7 +202,7 @@ class DHTClient:
             await self.kp_channel.kill_update()
             return pb_base.DHTStatus.ERR
 
-        self.kp_channel.update()
+        await self.kp_channel.update()
         return resp.status
 
     async def register_notices(
@@ -232,7 +232,7 @@ class DHTClient:
             return pb_base.DHTStatus.ERR
 
         logger.debug(f"DHT - Done. Create Register notice request")
-        self.kp_channel.update()
+        await self.kp_channel.update()
         return resp.status
 
 

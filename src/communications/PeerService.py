@@ -50,7 +50,7 @@ class PeerDiscoveryClient:
             await channel_kp.kill_update()
             return []
 
-        channel_kp.update()
+        await channel_kp.update()
         # await channel.close()
         return recv.value
 

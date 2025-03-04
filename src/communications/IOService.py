@@ -56,9 +56,9 @@ class IOClient:
             resp = await self.stub.OpenDevice(dreq, timeout=timeout)
         except:
             logger.warning("IO - Error on stub send")
-            self.kp_channel.kill_update()
+            await self.kp_channel.kill_update()
             return b"", pb_base.DHTStatus.ERR
-        self.kp_channel.update()
+        await self.kp_channel.update()
         return resp.local_device_identifier, resp.status
 
     async def CloseDevice(self, device, timeout=DEVICE_TIMEOUT):
@@ -72,9 +72,9 @@ class IOClient:
             resp = await self.stub.CloseDevice(dreq, timeout=timeout)
         except:
             logger.warning("IO - Error on stub send")
-            self.kp_channel.kill_update()
+            await self.kp_channel.kill_update()
             return pb_base.DHTStatus.ERR
-        self.kp_channel.update()
+        await self.kp_channel.update()
         return resp.status
 
     async def UnmountDevice(self, device, timeout=DEVICE_TIMEOUT):
@@ -88,9 +88,9 @@ class IOClient:
             resp = await self.stub.UnmountDevice(dreq, timeout=timeout)
         except:
             logger.warning("IO - Error on stub send")
-            self.kp_channel.kill_update()
+            await self.kp_channel.kill_update()
             return pb_base.DHTStatus.ERR
-        self.kp_channel.update()
+        await self.kp_channel.update()
         return resp.status
 
     async def ReadDevice(self, device, number_of_bytes: int, timeout=DEVICE_TIMEOUT):
@@ -106,9 +106,9 @@ class IOClient:
             resp = await self.stub.ReadDevice(dreq, timeout=timeout)
         except:
             logger.warning("IO - Error on stub send")
-            self.kp_channel.kill_update()
+            await self.kp_channel.kill_update()
             return b"", pb_base.DHTStatus.ERR
-        self.kp_channel.update()
+        await self.kp_channel.update()
         return resp.data, resp.status
 
     async def WriteDevice(self, device: Device, data, timeout=DEVICE_TIMEOUT):
@@ -124,7 +124,7 @@ class IOClient:
             resp = await self.stub.WriteDevice(dreq, timeout=timeout)
         except:
             logger.warning("IO - Error on stub send")
-            self.kp_channel.kill_update()
+            await self.kp_channel.kill_update()
             return pb_base.DHTStatus.ERR
         return resp.status
 
@@ -141,9 +141,9 @@ class IOClient:
             resp = await self.stub.ReadAvailable(dreq, timeout=timeout)
         except:
             logger.warning("IO - Error on stub send")
-            self.kp_channel.kill_update()
+            await self.kp_channel.kill_update()
             return 0, pb_base.DHTStatus.ERR
-        self.kp_channel.update()
+        await self.kp_channel.update()
         return resp.field1, resp.status
 
 

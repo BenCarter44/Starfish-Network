@@ -251,7 +251,7 @@ class NodeEngine:
         """
         evt = evt_future.result()
         if evt is None:
-            logger.error("ENGINE - Malformed event! Dropping!")
+            logger.warning("ENGINE - Malformed event! Dropping! (or kill event)")
             return
 
         # if evt.is_checkpoint:  # only track if IS CHECKPOINT.

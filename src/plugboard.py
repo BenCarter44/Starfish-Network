@@ -513,7 +513,7 @@ class PlugBoard:
             tmp,
             TRIGGER_OFFLINE,
         )
-        kp_channel.update()
+        await kp_channel.update()
         self.engine.update_monitor(task, monitor_peer)
         return monitor_peer
 
@@ -580,7 +580,7 @@ class PlugBoard:
             tmp,
             TRIGGER_OFFLINE,
         )
-        kp_channel.update()
+        await kp_channel.update()
         # update monitor in file manager
         self.file_manager.update_monitor(file, monitor_peer)
         logger.info("FILE - Done. Have Monitor for file!")
@@ -1068,7 +1068,7 @@ class PlugBoard:
             return IO_NONEXIST
         idf = device.get_local_device_identifier()
         if idf is None:
-            return b"", IO_BUSY
+            return IO_BUSY
         ioc = IOClient(tp, who, idf)
         status = await ioc.CloseDevice(device)
         return convert_to_io_status(status)
