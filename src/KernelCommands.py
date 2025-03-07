@@ -463,7 +463,7 @@ class StatProcessor:
     async def stat(self, args):
         # out = f"Stats: Task:{args.task} File:{args.file} KeepAlive:{args.keepalive} Network:{args.network}"
         # await self.writer.put(out.encode("utf-8"))
-        if not (args.task or args.file or args.keepalive):
+        if not (args.task or args.file or args.io or args.peers or args.keepalive):
             args.task = True
             args.file = True
             args.keepalive = True

@@ -1,0 +1,11 @@
+
+# Run a single node accessible on host.
+services:
+  mainnode:
+    build: .
+    network_mode: "host"
+    environment:
+      - ADDRESS='01:02:03:04:05:06:07:08'
+      - IOPORT=2321
+      - TRANSPORT='tcp://127.0.0.1:9281'
+
