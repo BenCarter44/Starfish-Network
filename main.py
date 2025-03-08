@@ -28,6 +28,7 @@ from src.node import Node
 
 import logging
 import asyncio
+import socket
 from src.util.log_format import CustomFormatter
 
 logger = logging.getLogger(__name__)
@@ -44,8 +45,14 @@ def create_parser():
     parser.add_argument(
         "-t",
         "--transport",
-        default="tcp://127.0.0.1:9820",
-        help="Set transport address (Default: tcp://127.0.0.1:9820)",
+        default=None,
+        help="Set transport address (Default: tcp://HOST_IP:9820)",
+    )
+    parser.add_argument(
+        "-p",
+        "--public",
+        action="store_true",
+        help="Public bind, bind to 0.0.0.0:PORT",
     )
     parser.add_argument(
         "-i",
@@ -71,9 +78,9 @@ def create_parser():
     return parser
 
 
-async def main(peer_address, star_address, savedir, ioport):
+async def main(peer_address, star_address, savedir, ioport, ispublic):
 
-    node = Node(peer_address, star_address, savedir)
+    node = Node(peer_address, star_address, savedir, ispublic)
     asyncio.create_task(node.run())
     print(f"META - Server up")
     await asyncio.sleep(1)
@@ -93,6 +100,19 @@ if __name__ == "__main__":
 
     parser = create_parser()
     args = parser.parse_args()
+
+    # if args.transport is None or args.transport == "default":
+    #     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    #     s.connect(("8.8.8.8", 80))
+    #     my_ip = s.getsockname()[0]
+    #     s.close()
+    #     args.transport = transport = f"tcp://{my_ip}:9280"
+
+    # if args.transport == "docker":
+    #     host = socket.gethostname()
+    #     my_ip = socket.gethostbyname(host)
+    #     args.transport = transport = f"tcp://{my_ip}:9280"
+
     print("Starting up node....")
     print(f"Peer Address: {args.address}")
     print(f"Transport Address: {args.transport}")
@@ -157,7 +177,7 @@ if __name__ == "__main__":
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     asyncio.get_event_loop().create_task(
-        main(peer_address, star_address, args.savedir, args.ioport)
+        main(peer_address, star_address, args.savedir, args.ioport, args.public)
     )
 
     if args.verbose == 0:

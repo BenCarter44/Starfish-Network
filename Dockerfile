@@ -7,14 +7,18 @@ ENV DEBIAN_FRONTEND=nointeractive
 RUN apt update
 RUN apt install wget g++ -y
 RUN apt install python3 -y
+RUN apt install net-tools -y
+RUN apt install iputils-ping -y
+ADD https://astral.sh/uv/install.sh /uv-installer.sh
+RUN sh /uv-installer.sh && rm /uv-installer.sh
+ENV PATH="/root/.local/bin/:$PATH"
 
 WORKDIR "/home/ubuntu"
 
-RUN apt install python3-pip -y
-RUN pip install virtualenv --break-system-packages
-
-COPY requirements.txt .
-RUN pip install -r requirements.txt --break-system-packages
+COPY pyproject.toml .
+COPY .python-version .
+COPY uv.lock .
+# RUN uv init
 
 # copy repository into /home/ubuntu
 RUN mkdir filestorage
@@ -22,11 +26,8 @@ COPY examples examples
 COPY src src
 COPY main.py main.py
 
-
-
 ENV ADDRESS="01:02:03:04:05:06:07:08"
-# CMD ["bash"]
-ENV TRANSPORT="tcp://0.0.0.0:9820"
+ENV TRANSPORT="tcp://127.0.0.1:9280"
 ENV IOPORT=2321
-# CMD ["python3","main.py","-a", "${address_var}","-t","${transport_var}","-i","${ioport_var}"]
-CMD ["sh","-c","python3 main.py -a ${ADDRESS} -t ${TRANSPORT} -i ${IOPORT}"]
+# CMD ["bash"]
+CMD ["sh","-c","uv run main.py -a ${ADDRESS} -t ${TRANSPORT} -i ${IOPORT} -p"]

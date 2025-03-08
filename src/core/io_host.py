@@ -344,7 +344,9 @@ def is_available(stream):
 
 class TelNetConsoleHost:
     def __init__(self, port=2323):
-        coro = telnetlib3.create_server(port=port, shell=self.receive_connection)
+        coro = telnetlib3.create_server(
+            host="0.0.0.0", port=port, shell=self.receive_connection
+        )
         asyncio.create_task(coro)
         logger.info(f"IO - TelNetHost open to connections on localhost:{port}")
         self.allocate_device = None

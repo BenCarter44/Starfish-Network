@@ -57,7 +57,13 @@ except:
 
 class Node:
     # Support only one transport now!
-    def __init__(self, bin_addr: bytes, transport: StarAddress, file_save_dir: str):
+    def __init__(
+        self,
+        bin_addr: bytes,
+        transport: StarAddress,
+        file_save_dir: str,
+        public_bind=False,
+    ):
         """Host a node.
 
         Args:
@@ -76,6 +82,8 @@ class Node:
         for file in glob.glob(f"{file_save_dir}/*.stm"):
             logger.debug(f"FILE - Deleting previous {file}")
             os.unlink(file)
+
+        self.public_bind = public_bind
 
     async def run(self):
         """Run the gRPC servers and start the execution engine"""
@@ -128,8 +136,14 @@ class Node:
         )
 
         port = self.transport.get_string_channel()
-        self.server.add_insecure_port(port)
-        logger.info(f"META - Serving on: {port}")
+        if self.public_bind:
+            self.server.add_insecure_port(
+                f"0.0.0.0:{self.transport.port.decode('utf-8')}"
+            )
+            logger.info(f"META - Serving on: 0.0.0.0:9280")
+        else:
+            self.server.add_insecure_port(port)
+            logger.info(f"META - Serving on: {port}")
         await self.server.start()
         asyncio.create_task(self.peer_discovery_task())
         await self.server.wait_for_termination()
