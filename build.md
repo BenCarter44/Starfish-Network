@@ -19,5 +19,6 @@ sudo docker run -p 9280:9280 -p 2322:2321 -e ADDRESS="01:02:03:04:05:06:07:08" -
 
 ### Run image without using docker (with uv)
 ``` sh
+mkdir -p filestorage
 uv run --python 3.11 main.py -a 01:02:03:04:05:06:07:08 -i 2321 -t tcp://127.0.0.1:9281
 ```
