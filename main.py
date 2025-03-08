@@ -25,6 +25,7 @@ from src.KernelCommands import KernelCommandProcessor
 from src.core.io_host import TelNetConsoleHost
 from src.core.star_components import StarAddress
 from src.node import Node
+import src.core.star_components as star
 
 import logging
 import asyncio
