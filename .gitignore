@@ -14,6 +14,7 @@ src/star/scratchwork/
 *.debug.json
 src/star/.vscode/
 example.txt
+.env
 
 # Compiled Java class files
 *.class
