@@ -51,6 +51,7 @@ message DHT_Fetch_Request {
     repeated bytes query_chain = 2;
     DHTStatus status = 3;
     DHTSelect select = 4;
+    string simulation_session = 5;
 }
 
 message DHT_Fetch_Response {
@@ -69,6 +70,7 @@ message DHT_Store_Request {
     DHTSelect select = 5;
     bytes who = 6;
     int32 fixed_owner = 7;
+    string simulation_session = 8;
 }
 
 message DHT_Store_Response {
@@ -171,6 +173,7 @@ message TaskAllocate_Response {
 message SendEvent_Request {
     Event evt = 1;
     bytes who = 2;
+    string simulation_session = 3;
 }
 
 message SendEvent_Response {

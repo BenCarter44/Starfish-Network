@@ -10,6 +10,7 @@ import src.core.star_components as star
 import asyncio
 import time
 import logging
+import src.util.sim_log as sim
 
 import os, sys
 
@@ -218,6 +219,15 @@ class NodeEngine:
                 logger.info(f"ENGINE - Run: {task} Org: {a}")
                 logger.debug(f"ENGINE - {func}")
 
+                slog = sim.SimLogger()
+                session = slog.start_session()
+                slog.log(
+                    sim.LOG_PROCESS_TASK_START,
+                    self.plugboard_internal.my_addr,
+                    contentID=task.get_id(),
+                    session=session,
+                )
+
                 if not (task.pass_id):
                     out_future = asyncio.get_event_loop().run_in_executor(
                         pool, functools.partial(func, evt)
@@ -233,6 +243,7 @@ class NodeEngine:
                         task,
                         star.Event.from_bytes(evt_copy),
                         star.Event.from_bytes(evt_copy_pre),
+                        session,
                     )
                 )
                 # await send_to_out_queue(out)
@@ -242,6 +253,7 @@ class NodeEngine:
         task: star.StarTask,
         old_event: star.Event,
         old_event_pre: star.Event,
+        simulation_session: str,
         evt_future: concurrent.futures.Future[star.Event],
     ):
         """Callback. Send out event generated from task.
@@ -249,6 +261,14 @@ class NodeEngine:
         Args:
             evt (star.Event): Receiving event.
         """
+        slog = sim.SimLogger()
+        slog.log(
+            sim.LOG_PROCESS_TASK_END,
+            task.plugboard_callback.my_addr,
+            contentID=task.get_id(),
+            session=simulation_session,
+        )
+
         evt = evt_future.result()
         if evt is None:
             logger.warning("ENGINE - Malformed event! Dropping! (or kill event)")

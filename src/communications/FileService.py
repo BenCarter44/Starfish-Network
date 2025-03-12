@@ -11,6 +11,7 @@ from src.core.File import HostedFile
 from . import main_pb2 as pb_base
 from . import main_pb2_grpc as pb
 from ..core.star_components import Event, StarAddress, StarProcess, StarTask
+import src.util.sim_log as sim
 
 try:
     from src.plugboard import PlugBoard  # For typing purposes.
@@ -391,6 +392,15 @@ class FileService(pb.FileServiceServicer):
                 monitor_peer = new_peer
                 tp = await self.internal_callback.get_peer_transport(monitor_peer)
                 assert tp is not None
+
+            slog = sim.SimLogger()
+            slog.log(
+                sim.LOG_FILE_CHECKPOINT_SEND,
+                self.addr,
+                monitor_peer,
+                contentID=key,
+                other="open",
+            )
             fc = FileClient(tp, monitor_peer, request.process_id, is_monitor=True)
             await fc.OpenFile(f)
 
@@ -443,6 +453,15 @@ class FileService(pb.FileServiceServicer):
                 monitor_peer = new_peer
                 tp = await self.internal_callback.get_peer_transport(monitor_peer)
                 assert tp is not None
+
+            slog = sim.SimLogger()
+            slog.log(
+                sim.LOG_FILE_CHECKPOINT_SEND,
+                self.addr,
+                monitor_peer,
+                contentID=key,
+                other="read",
+            )
             fc = FileClient(tp, monitor_peer, request.process_id, is_monitor=True)
             await fc.ReadFile(f, length)
 
@@ -493,6 +512,15 @@ class FileService(pb.FileServiceServicer):
                 monitor_peer = new_peer
                 tp = await self.internal_callback.get_peer_transport(monitor_peer)
                 assert tp is not None
+
+            slog = sim.SimLogger()
+            slog.log(
+                sim.LOG_FILE_CHECKPOINT_SEND,
+                self.addr,
+                monitor_peer,
+                contentID=key,
+                other="write",
+            )
             fc = FileClient(tp, monitor_peer, request.process_id, is_monitor=True)
             await fc.WriteFile(f, request.data)
 
@@ -543,6 +571,15 @@ class FileService(pb.FileServiceServicer):
                 monitor_peer = new_peer
                 tp = await self.internal_callback.get_peer_transport(monitor_peer)
                 assert tp is not None
+
+            slog = sim.SimLogger()
+            slog.log(
+                sim.LOG_FILE_CHECKPOINT_SEND,
+                self.addr,
+                monitor_peer,
+                contentID=key,
+                other="seek",
+            )
             fc = FileClient(tp, monitor_peer, request.process_id, is_monitor=True)
             await fc.SeekFile(f, offset, whence)
 
@@ -625,6 +662,15 @@ class FileService(pb.FileServiceServicer):
                 monitor_peer = new_peer
                 tp = await self.internal_callback.get_peer_transport(monitor_peer)
                 assert tp is not None
+
+            slog = sim.SimLogger()
+            slog.log(
+                sim.LOG_FILE_CHECKPOINT_SEND,
+                self.addr,
+                monitor_peer,
+                contentID=key,
+                other="close",
+            )
             fc = FileClient(tp, monitor_peer, request.process_id, is_monitor=True)
             await fc.CloseFile(f)
 

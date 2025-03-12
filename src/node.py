@@ -21,6 +21,7 @@ from src.plugboard import PlugBoard
 import asyncio
 import logging
 
+import src.util.sim_log as sim
 from src.util.util import decompress_bytes_to_str
 
 logger = logging.getLogger(__name__)
@@ -84,6 +85,10 @@ class Node:
             os.unlink(file)
 
         self.public_bind = public_bind
+
+        # sim log
+        log = sim.SimLogger()
+        log.log(sim.LOG_DHT_NODE_CREATE, self.addr)
 
     async def run(self):
         """Run the gRPC servers and start the execution engine"""

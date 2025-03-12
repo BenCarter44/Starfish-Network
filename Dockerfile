@@ -15,6 +15,7 @@ ENV PATH="/root/.local/bin/:$PATH"
 
 WORKDIR "/home/ubuntu"
 
+COPY .env .env
 COPY pyproject.toml .
 COPY .python-version .
 COPY uv.lock .
