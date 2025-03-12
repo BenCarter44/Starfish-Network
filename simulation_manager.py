@@ -3,8 +3,6 @@ import os
 import random
 import time
 
-from src.util.util import gaussian_bytes
-import matplotlib.pyplot as plt
 
 import paho.mqtt.client as mqtt
 from dotenv import load_dotenv
@@ -170,6 +168,48 @@ class SimulationOrchestrator:
             time.sleep(0.1)
         self.prune()
 
+    def send_connect_command(self, ip, host, port, peerID, transport):
+        while not (self.command_data[ip]["available"]):
+            time.sleep(0.1)
+
+        ret = random.randint(1, (2**32) - 1)
+        val = {
+            "command": "tel-connect",
+            "host": host,
+            "port": port,
+            "peerID": peerID.hex(),
+            "transport": transport,
+            "return": ret,
+        }
+
+        self.client.publish(f"starfish/ips/{ip}/command", json.dumps(val), 2)
+        while not (
+            self.command_data[ip]["available"]
+            and self.command_data[ip]["return"] == ret
+        ):
+            time.sleep(0.1)
+
+    def send_start_pgrm_command(self, ip, host, port, pgrm, user):
+        while not (self.command_data[ip]["available"]):
+            time.sleep(0.1)
+
+        ret = random.randint(1, (2**32) - 1)
+        val = {
+            "command": "tel-start",
+            "host": host,
+            "port": port,
+            "pgrm": pgrm,
+            "user": user,
+            "return": ret,
+        }
+
+        self.client.publish(f"starfish/ips/{ip}/command", json.dumps(val), 2)
+        while not (
+            self.command_data[ip]["available"]
+            and self.command_data[ip]["return"] == ret
+        ):
+            time.sleep(0.1)
+
     def view_peer(self, peer):
         return self.known_peers[peer.hex()]
 
@@ -190,62 +230,3 @@ class SimulationOrchestrator:
     def stop(self):
         self.is_stopping = True
         self.client.loop_stop()
-
-
-def local_distribution(number_of_peers):
-    maxval = (1 << 32) - 1  # max of 4 byte unsigned
-    minval = 0
-
-    step = int((maxval - minval) / number_of_peers)
-    tick = 0
-    out = []
-    means = []
-
-    print(f"Step size: {step}")
-    for start in range(number_of_peers):
-        mean = tick + step // 2
-        tick += step
-        std_dev = step // 4
-        rand: bytes = gaussian_bytes(mean.to_bytes(4, "big"), std_dev, 4)
-        r = int.from_bytes(rand, "big")
-        if r < minval:
-            r = minval + 1
-        elif r > maxval:
-            r = maxval - 1
-        out.append(r)
-        means.append(mean)
-    return out, means
-
-
-# number_of_peers = 4000
-# outs, means = local_distribution(number_of_peers)
-
-# fig, ax = plt.subplots(figsize=(10, 5))
-# for val in outs:
-#     ax.axvline(x=val, color="blue", alpha=0.8, linewidth=1)
-# for mean in means:
-#     ax.axvline(x=mean, color="black", alpha=0.3, linewidth=1.5)
-
-# ax.set_xlim(0, (1 << 32) - 1)
-# ax.set_title("Random Number Distribution with Step Means")
-# ax.set_xlabel("Value Range (0 to 8-byte max)")
-# ax.set_ylabel("Density")
-# plt.show()
-
-
-orchestrator = SimulationOrchestrator()
-time.sleep(12)  # wait a moment to discover hosts....
-ips = orchestrator.get_ips()
-print(ips)
-p = os.urandom(8)
-orchestrator.run_node(ips[0], p)
-peers = orchestrator.get_peers()
-print(peers)
-input("Wait to kill....")
-orchestrator.kill_node(ips[0], p)
-print("Done")
-
-peers = orchestrator.get_peers()
-print(peers)
-
-orchestrator.stop()

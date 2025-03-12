@@ -8,6 +8,8 @@ import paho.mqtt.client as mqtt
 import socket
 from dotenv import load_dotenv
 
+from simulation_terminal import SynchronousTerminal
+
 load_dotenv()  # take environment variables from .env.
 
 
@@ -145,6 +147,24 @@ def run_command(client: mqtt.Client, command):
     if c["command"] == "kill":
         # create new
         kill_node(client, c["peerID"])
+
+    if c["command"] == "tel-connect":
+        host = c["host"]
+        port = c["port"]
+        peerID = c["peerID"]
+        transport = c["transport"]
+        st = SynchronousTerminal(host, port)
+        st.connect_peer(bytes.fromhex(peerID), transport)
+
+    if c["command"] == "tel-start":
+        host = c["host"]
+        port = c["port"]
+        pgrm = c["pgrm"]
+        usr = c["user"]
+
+        st = SynchronousTerminal(host, port)
+        st.start_program(pgrm, usr)
+
     ret = 0
     if "return" in c:
         ret = c["return"]

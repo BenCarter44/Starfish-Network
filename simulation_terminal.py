@@ -52,33 +52,49 @@ class Terminal:
         """Allows synchronous calls to send commands."""
         await self.queue.put(command)
 
-    async def get_header(self):
-        return await self.queue_out.get()
+    # async def get_header(self):
+    #     return await self.queue_out.get()
 
     async def close(self):
         """Closes the connection."""
         await self.send_command(None)  # Signal to stop processing queue
 
 
-class KernelController:
+class KernelControllerAsync:
     def __init__(self, tel: Terminal):
         self.tel = tel
 
-    def connect_to_peer(self, peerID: bytes, transport: StarAddress):
-        self.tel.send_command(
-            f"peer connect -p {peerID.hex(sep=':')} -t {transport.get_string_channel()}"
+    async def connect_to_peer(self, peerID: bytes, transport: StarAddress):
+        await self.tel.send_command(
+            f"peer connect -p {peerID.hex(sep=':')} -t tcp://{transport.get_string_channel()}"
         )
 
-    def start_program(self, pgrm_name: str, usr: str):
-        self.tel.send_command(f"proc start {pgrm_name} -u {usr}")
+    async def start_program(self, pgrm_name: str, usr: str):
+        await self.tel.send_command(f"proc start {pgrm_name} -u {usr}")
 
 
-async def main():
-    tel = Terminal("localhost", 2321)
-    await tel.open()
-    await asyncio.sleep(20)
-    await tel.close()
+class SynchronousTerminal:
+    def __init__(self, host, port):
+        self.tel = Terminal(host, port)
+        self.kc = KernelControllerAsync(self.tel)
 
+    def connect_peer(self, peerID: bytes, transport_str: str):
+        addr = StarAddress(transport_str)
+        asyncio.run(self.run_connect_to_peer(peerID, addr))
 
-if __name__ == "__main__":
-    asyncio.run(main(), debug=True)
+    def start_program(self, pgrm: str, usr: str):
+        asyncio.run(self.run_start_program(pgrm, usr))
+
+    async def run_connect_to_peer(self, peerID, transport):
+        await self.tel.open()
+        await asyncio.sleep(2)
+        await self.kc.connect_to_peer(peerID, transport)
+        await asyncio.sleep(3)
+        await self.tel.close()
+
+    async def run_start_program(self, pgrm_name, usr):
+        await self.tel.open()
+        await asyncio.sleep(2)
+        await self.kc.start_program(pgrm_name, usr)
+        await asyncio.sleep(3)
+        await self.tel.close()
