@@ -1,3 +1,4 @@
+import json
 import os
 from queue import Queue
 import threading
@@ -6,11 +7,17 @@ from typing import Optional
 import urllib3
 from dotenv import load_dotenv
 
-from src.communications.main_pb2 import DHTSelect
+# from src.communications.main_pb2 import DHTSelect
 
 load_dotenv()
 
-TURN_OFF_LOG = True
+MQTT_SERVER = os.getenv("MQTT_SERVER", "")
+MQTT_PORT = int(os.getenv("MQTT_PORT", 1883))
+MQTT_USER = os.getenv("MQTT_USER", "")
+MQTT_PWD = os.getenv("MQTT_PWD", "")
+
+
+TURN_OFF_LOG = False
 
 LOG_DHT_NODE_CREATE = "DHT_NODE_CREATE"
 LOG_DHT_NODE_DELETE = "DHT_NODE_DELETE"
@@ -36,46 +43,35 @@ LOG_FILE_STORE = "FILE_STORE"
 LOG_IO_REQUEST = "IO_REQUEST"
 LOG_IO_STORE = "IO_STORE"
 
+import string
+import random
+
+import paho.mqtt.client as mqtt
+
+
+def generate_random_string(length=45):
+    characters = (
+        string.ascii_letters + string.digits
+    )  # Includes uppercase, lowercase, and digits
+    return "".join(random.choices(characters, k=length))
+
 
 class SimLoggerHandler:
-    def __init__(self):
-        self.queue = Queue()
-        self.is_running = False
-        self.th = threading.Thread(None, target=self.run)
-        self.http = urllib3.PoolManager(20)
-
-        self.queue_pre_sessions = Queue(10)
-        self.th2 = threading.Thread(None, target=self.run_pre_session)
-
-    def run(self):
-        while True:
-            item = self.queue.get()
-            self.run_log(*item)
-
-    def run_pre_session(self):
-        while True:
-            self.queue_pre_sessions.put(self.run_start_session())
+    def __init__(self, peerID):
+        self.peerID = peerID
+        if TURN_OFF_LOG:
+            return
+        self.client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
+        self.client.loop_start()
+        self.client.username_pw_set(MQTT_USER, MQTT_PWD)
+        self.client.connect(MQTT_SERVER, MQTT_PORT, 30)
+        data = {"eventType": "START", "time": time.time()}
+        self.client.publish(f"starfish/logs/{peerID}", json.dumps(data), 1)
 
     def start_session(self):
         if TURN_OFF_LOG:
             return ""
-        clock = time.time()
-        if not (self.is_running):
-            self.th.start()
-            self.th2.start()
-            self.is_running = True
-        s = self.queue_pre_sessions.get()
-        # print(f"Time waiting for session: {(time.time() - clock) * 1000}")
-        return s
-
-    def run_start_session(self):
-        response = self.http.request(
-            "POST",
-            os.getenv("START_SESSION_URL"),
-            fields={"key": os.getenv("SIM_LOGGER_KEY")},
-        )
-        sessionID = response.data.decode("utf-8")
-        return sessionID
+        return generate_random_string(10)
 
     def log(
         self,
@@ -87,33 +83,9 @@ class SimLoggerHandler:
         other=None,
         select=None,
     ):
-        if TURN_OFF_LOG:
-            return
-        clock = time.time()
-        if not (self.is_running):
-            self.th.start()
-            self.th2.start()
-            self.is_running = True
-        item = (evt_type, peerFrom, peerTo, session, contentID, other, select)
-        self.queue.put(item)
-        # print(f"Time waiting for log: {(time.time() - clock) * 1000}")
-
-    def run_log(
-        self,
-        evt_type,
-        peerFrom: Optional[bytes] = None,
-        peerTo: Optional[bytes] = None,
-        session=None,
-        contentID=None,
-        other=None,
-        select=None,
-    ):
-        if session == "":
-            session = None
         if session is None:
-            session = self.start_session()
-
-        data = {"key": os.getenv("SIM_LOGGER_KEY")}
+            session = ""
+        data = {"time": time.time()}
         data["session"] = session
         data["eventType"] = evt_type
         if peerFrom is not None:
@@ -124,27 +96,25 @@ class SimLoggerHandler:
             data["contentID"] = contentID.hex()
         if other is not None:
             data["other"] = other
+        # if select is not None and select == DHTSelect.PEER_ID:
+        #     data["select"] = "PEER"
+        # if select is not None and select == DHTSelect.TASK_ID:
+        #     data["select"] = "TASK"
+        # if select is not None and select == DHTSelect.FILE_ID:
+        #     data["select"] = "FILE"
+        # if select is not None and select == DHTSelect.DEVICE_ID:
+        #     data["select"] = "DEVICE"
 
-        if select is not None and select == DHTSelect.PEER_ID:
-            data["select"] = "PEER"
-        if select is not None and select == DHTSelect.TASK_ID:
-            data["select"] = "TASK"
-        if select is not None and select == DHTSelect.FILE_ID:
-            data["select"] = "FILE"
-        if select is not None and select == DHTSelect.DEVICE_ID:
-            data["select"] = "DEVICE"
-
-        response = self.http.request(
-            "POST",
-            os.getenv("SIM_LOGGER_URL"),
-            fields=data,
-        )
-        if response.data != b"good":
-            raise ValueError(response.data)
+        self.client.publish(f"starfish/logs/{self.peerID}", json.dumps(data))
 
 
-sl = SimLoggerHandler()
+sl = None
 
 
-def SimLogger() -> SimLoggerHandler:
+def SimLogger(item=None) -> SimLoggerHandler:
+    global sl
+    if sl is None and item is None:
+        raise ValueError
+    elif sl is None:
+        sl = SimLoggerHandler(item.hex())
     return sl

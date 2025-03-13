@@ -71,6 +71,10 @@ class Node:
             bin_addr (bytes): The node binary address (Peer ID)
             transport (StarAddress): Transport address to serve on.
         """
+        # sim log
+        log = sim.SimLogger(bin_addr)
+        log.log(sim.LOG_DHT_NODE_CREATE, bin_addr)
+
         self.plugboard = PlugBoard(bin_addr, transport, file_save_dir, self)
         self.addr = bin_addr
         self.transport = transport
@@ -85,10 +89,6 @@ class Node:
             os.unlink(file)
 
         self.public_bind = public_bind
-
-        # sim log
-        log = sim.SimLogger()
-        log.log(sim.LOG_DHT_NODE_CREATE, self.addr)
 
     async def run(self):
         """Run the gRPC servers and start the execution engine"""
