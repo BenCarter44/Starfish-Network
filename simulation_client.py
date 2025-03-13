@@ -156,8 +156,12 @@ def run_command(client: mqtt.Client, command):
         port = c["port"]
         peerID = c["peerID"]
         transport = c["transport"]
-        st = SynchronousTerminal(host, port)
-        st.connect_peer(bytes.fromhex(peerID), transport)
+        try:
+            st = SynchronousTerminal(host, port)
+            st.connect_peer(bytes.fromhex(peerID), transport)
+        except Exception as e:
+            print("ERROR---- tel connect")
+            print(e)
 
     if c["command"] == "tel-start":
         host = c["host"]
@@ -165,8 +169,12 @@ def run_command(client: mqtt.Client, command):
         pgrm = c["pgrm"]
         usr = c["user"]
 
-        st = SynchronousTerminal(host, port)
-        st.start_program(pgrm, usr)
+        try:
+            st = SynchronousTerminal(host, port)
+            st.start_program(pgrm, usr)
+        except Exception as e:
+            print("ERROR---- tel start")
+            print(e)
 
     ret = 0
     if "return" in c:
