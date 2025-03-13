@@ -50,6 +50,8 @@ class SimulationOrchestrator:
         th_prune.start()
         self.is_stopping = False
 
+        self.ip_threads = {}
+
     def on_connect(self, client, userdata, flags, reason_code, properties):
         self.client.subscribe(f"starfish/ips/#")
 
@@ -153,7 +155,7 @@ class SimulationOrchestrator:
         ):
             time.sleep(0.1)
 
-    def kill_node(self, ip, peerID):
+    def kill_node(self, ip, peerID, prune=True):
         while not (self.command_data[ip]["available"]):
             time.sleep(0.1)
 
@@ -166,7 +168,8 @@ class SimulationOrchestrator:
             and self.command_data[ip]["return"] == ret
         ):
             time.sleep(0.1)
-        self.prune()
+        if prune:
+            self.prune()
 
     def send_connect_command(self, ip, host, port, peerID, transport):
         while not (self.command_data[ip]["available"]):

@@ -22,6 +22,7 @@ class Terminal:
 
     async def open(self):
         """Starts the event loop and opens the Telnet connection."""
+        print(f"Open: {self.host} {self.port}")
         coro = telnetlib3.open_connection(self.host, self.port, shell=self.handler)
         asyncio.create_task(coro)
 
@@ -65,6 +66,9 @@ class KernelControllerAsync:
         self.tel = tel
 
     async def connect_to_peer(self, peerID: bytes, transport: StarAddress):
+        print(
+            f"peer connect -p {peerID.hex(sep=':')} -t tcp://{transport.get_string_channel()}"
+        )
         await self.tel.send_command(
             f"peer connect -p {peerID.hex(sep=':')} -t tcp://{transport.get_string_channel()}"
         )
