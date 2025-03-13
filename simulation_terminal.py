@@ -100,8 +100,8 @@ class KernelControllerAsync:
 
 class SynchronousTerminal:
     def __init__(self, host, port):
-        self.tel = Terminal(host, port)
-        self.kc = KernelControllerAsync(self.tel)
+        self.host = host
+        self.port = port
 
     def connect_peer(self, peerID: bytes, transport_str: str):
         addr = StarAddress(transport_str)
@@ -111,6 +111,8 @@ class SynchronousTerminal:
         asyncio.run(self.run_start_program(pgrm, usr))
 
     async def run_connect_to_peer(self, peerID, transport):
+        self.tel = Terminal(self.host, self.port)
+        self.kc = KernelControllerAsync(self.tel)
         await self.tel.open()
         await asyncio.sleep(2)
         await self.kc.connect_to_peer(peerID, transport)
@@ -118,6 +120,8 @@ class SynchronousTerminal:
         await self.tel.close()
 
     async def run_start_program(self, pgrm_name, usr):
+        self.tel = Terminal(self.host, self.port)
+        self.kc = KernelControllerAsync(self.tel)
         await self.tel.open()
         await asyncio.sleep(2)
         await self.kc.start_program(pgrm_name, usr)
