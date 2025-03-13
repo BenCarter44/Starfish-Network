@@ -479,7 +479,8 @@ class TelNetConsoleHost:
         while True:
             logger.debug("IO - Waiting for read")
             in_str = await reader.read(1024)  # 1KB window size, returns string!
-            if len(in_str) == 0:
+            if len(in_str) == 0 or in_str == "DETACH\r\n":
+                logger.debug("IO - Safe close channel")
                 break
             # break on '\n'
             for ch in in_str:

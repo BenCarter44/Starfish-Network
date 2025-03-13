@@ -79,6 +79,8 @@ class Terminal:
 
     async def close(self):
         """Closes the connection."""
+        await self.send_command("DETACH")
+        await asyncio.sleep(0.1)
         await self.send_command(None)  # Signal to stop processing queue
 
 
