@@ -344,24 +344,25 @@ class PlugBoard:
             )
             await self.get_peer_transport(peer_to_query)
             return
-        if (
-            decision < 0.75
-        ):  # 25% of time, try to find new CLOSE people (use gauss dist)
-            query = gaussian_bytes(self.my_addr[0:4], 2**16, 4)  # d route
-            query = query + os.urandom(4)
-            logger.info(
-                f"DISCOVERY - Discovery: Searching for {query.hex()} - gauss - length remain: {len(self.seen_peers)}"
-            )
-            await self.get_peer_transport(query)
-            return
-        else:
-            # 25% of time, try to find FAR people. (General random dist.)
-            query = os.urandom(8)
-            logger.info(
-                f"DISCOVERY - Discovery: Searching for {query.hex()} - rand - length remain: {len(self.seen_peers)}"
-            )
-            await self.get_peer_transport(query)
-            return
+        # if (
+        #     decision < 0.75
+        # ):  # 25% of time, try to find new CLOSE people (use gauss dist)
+        #     query = gaussian_bytes(self.my_addr[0:4], 2**16, 4)  # d route
+        #     query = query + os.urandom(4)
+        #     logger.info(
+        #         f"DISCOVERY - Discovery: Searching for {query.hex()} - gauss - length remain: {len(self.seen_peers)}"
+        #     )
+        #     await self.get_peer_transport(query)
+        #     return
+
+        # else:
+        # 50% of time, try to find FAR people. (General random dist.)
+        query = os.urandom(8)
+        logger.info(
+            f"DISCOVERY - Discovery: Searching for {query.hex()} - rand - length remain: {len(self.seen_peers)}"
+        )
+        await self.get_peer_transport(query)
+        return
 
     async def perform_bootstrap(self, peer_addr: bytes, address: StarAddress):
         """Perform a bootstrap request.
