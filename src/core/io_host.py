@@ -479,8 +479,8 @@ class TelNetConsoleHost:
         while True:
             logger.debug("IO - Waiting for read")
             in_str = await reader.read(1024)  # 1KB window size, returns string!
-            if len(in_str) == 0 or in_str == "DETACH\r\n":
-                logger.debug("IO - Safe close channel")
+            if len(in_str) == 0:
+                logger.debug("IO - Safe close channel on empty")
                 break
             # break on '\n'
             for ch in in_str:
@@ -489,6 +489,11 @@ class TelNetConsoleHost:
                         len(line_buffer) >= len("kernel")
                         and line_buffer[0:6] == b"kernel"
                     )
+
+                    if line_buffer == b"DETACH":
+                        logger.debug("IO - Safe close channel on detach")
+                        queue_done.set()
+                        break
 
                     if is_kernel or self.is_kernel_enable[device]:
                         self.is_kernel_enable[device] = True

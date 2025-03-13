@@ -25,12 +25,13 @@ COPY uv.lock .
 RUN mkdir filestorage
 COPY examples examples
 COPY src src
-COPY main.py main.py
 
 # Build all star files
 WORKDIR "/home/ubuntu/examples"
 RUN for file in *.stardef.py; do uv run "$file"; done
 WORKDIR "/home/ubuntu"
+
+COPY main.py main.py
 
 ENV ADDRESS="01:02:03:04:05:06:07:08"
 ENV TRANSPORT="tcp://127.0.0.1:9280"

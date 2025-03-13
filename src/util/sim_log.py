@@ -42,7 +42,7 @@ class SimLoggerHandler:
         self.queue = Queue()
         self.is_running = False
         self.th = threading.Thread(None, target=self.run)
-        self.http = urllib3.PoolManager()
+        self.http = urllib3.PoolManager(20)
 
         self.queue_pre_sessions = Queue(10)
         self.th2 = threading.Thread(None, target=self.run_pre_session)
