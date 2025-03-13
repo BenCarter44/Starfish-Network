@@ -136,27 +136,27 @@ if __name__ == "__main__":
             return True
         record.msg = str(record.msg)
         if record.module.startswith("stream_writer"):
-            return False
+            return True
         if record.module.startswith("server"):
-            return False
+            return True
         if record.msg.startswith("PEER"):
-            return False
+            return True
         elif record.msg.startswith("ENGINE"):
-            return False
+            return True
         elif record.msg.startswith("TASK"):
             return True
         elif record.msg.startswith("FILE"):
-            return False
+            return True
         elif record.msg.startswith("DISCOVERY"):
-            return False
+            return True
         elif record.msg.startswith("DHT"):
-            return False
+            return True
         elif record.msg.startswith("IO"):
             return True
         elif record.msg.startswith("KEEPALIVE"):
-            return False
+            return True
         elif record.msg.startswith("META"):
-            return False
+            return True
         return True
 
     ch.addFilter(filter_messages_by_label)
