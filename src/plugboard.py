@@ -2,7 +2,7 @@
 Plugboard.py
 
 Serves as the middleware between the message services, DHTs, and internal Node APIs.
-It's the low-level side while `node.py` is the high level that has the Node class that 
+It's the low-level side while `node.py` is the high level that has the Node class that
 the outside world interacts with.
 """
 
@@ -337,7 +337,7 @@ class PlugBoard:
                 peer_to_query = x
                 break
             if peer_to_query is None:
-                return await self.perform_discovery_round()
+                return  # await self.perform_discovery_round()
             self.seen_peers.remove(peer_to_query)
             logger.info(
                 f"DISCOVERY - Discovery: Searching for {peer_to_query.hex()} - chain - length remain: {len(self.seen_peers)}"
