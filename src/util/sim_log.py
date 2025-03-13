@@ -4,7 +4,7 @@ import time
 from typing import Optional
 from dotenv import load_dotenv
 
-# from src.communications.main_pb2 import DHTSelect
+from src.communications.main_pb2 import DHTSelect
 
 load_dotenv()
 
@@ -93,14 +93,14 @@ class SimLoggerHandler:
             data["contentID"] = contentID.hex()
         if other is not None:
             data["other"] = other
-        # if select is not None and select == DHTSelect.PEER_ID:
-        #     data["select"] = "PEER"
-        # if select is not None and select == DHTSelect.TASK_ID:
-        #     data["select"] = "TASK"
-        # if select is not None and select == DHTSelect.FILE_ID:
-        #     data["select"] = "FILE"
-        # if select is not None and select == DHTSelect.DEVICE_ID:
-        #     data["select"] = "DEVICE"
+        if select is not None and select == DHTSelect.PEER_ID:
+            data["select"] = "PEER"
+        if select is not None and select == DHTSelect.TASK_ID:
+            data["select"] = "TASK"
+        if select is not None and select == DHTSelect.FILE_ID:
+            data["select"] = "FILE"
+        if select is not None and select == DHTSelect.DEVICE_ID:
+            data["select"] = "DEVICE"
 
         self.client.publish(f"starfish/logs/{self.peerID}", json.dumps(data))
 
