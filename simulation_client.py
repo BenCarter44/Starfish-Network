@@ -25,6 +25,8 @@ class DockerOrchestrator:
         self.running_peers: dict[bytes, dict[str, int | Container]] = {}
 
     def run(self, peer_address, os_port, io_port):
+        wkdir = os.getcwd() + "/log"
+
         print(f"Creating node: {peer_address.hex(sep=':')} os: {os_port} io: {io_port}")
         transport = f"tcp://{self.public_ip}:{os_port}"
         c_obj = self.client.containers.run(
@@ -35,6 +37,7 @@ class DockerOrchestrator:
                 "ADDRESS": f"{peer_address.hex(sep=':')}",
                 "TRANSPORT": f"{transport}",
             },
+            volumes={wkdir: {"bind": "/home/ubuntu/log", "mode": "rw"}},
             # ports: container_in : host
             ports={os_port: os_port, 2321: io_port},
         )

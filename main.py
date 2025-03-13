@@ -128,6 +128,9 @@ if __name__ == "__main__":
     ch.setLevel(logging.DEBUG)
     ch.setFormatter(CustomFormatter())
 
+    chf = logging.FileHandler(f"log/runtime.log.{args.address.replace(':', '')}")
+    chf.setLevel(logging.DEBUG)
+
     def filter_messages_by_label(record):
         if record.levelno >= logging.ERROR:
             return True
