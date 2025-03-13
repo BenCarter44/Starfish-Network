@@ -10,7 +10,7 @@ from src.communications.main_pb2 import DHTSelect
 
 load_dotenv()
 
-TURN_OFF_LOG = True
+TURN_OFF_LOG = False
 
 LOG_DHT_NODE_CREATE = "DHT_NODE_CREATE"
 LOG_DHT_NODE_DELETE = "DHT_NODE_DELETE"

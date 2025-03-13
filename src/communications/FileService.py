@@ -20,7 +20,7 @@ except:
 
 logger = logging.getLogger(__name__)
 
-FILE_REQ_TIMEOUT = 2
+FILE_REQ_TIMEOUT = 4
 
 
 class FileClient:

@@ -17,7 +17,7 @@ except:
 
 logger = logging.getLogger(__name__)
 
-TASK_SERVICE_TIMEOUT = 1
+TASK_SERVICE_TIMEOUT = 2
 
 
 class TaskPeer:

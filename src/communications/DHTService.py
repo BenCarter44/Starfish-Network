@@ -28,7 +28,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-DHT_REQ_TIMEOUT = 1
+DHT_REQ_TIMEOUT = 2
 
 
 def nice_print(bs):

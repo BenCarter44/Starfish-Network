@@ -24,7 +24,7 @@ except:
 
 logger = logging.getLogger(__name__)
 
-DEVICE_TIMEOUT = 1
+DEVICE_TIMEOUT = 2
 
 
 class IOClient:
