@@ -3,7 +3,28 @@ import io
 import time
 import telnetlib3
 
-from src.core.star_components import StarAddress
+
+class StarAddress:
+    """Event Struct"""
+
+    def __init__(self, string: str):
+        """Hold values that get passed from one task to another
+
+        Args:
+            a (Any, optional): A value. Defaults to 0.
+            b (Any, optional): B value. Defaults to 0.
+        """
+        self.protocol = string.split("://", 1)[0]
+        self.host = string[len(self.protocol) + 3 :].split(":", 1)[0]
+        self.port = int(string.split(":")[-1])
+        self.protocol = self.protocol.encode("utf-8")
+        self.host = self.host.encode("utf-8")
+        self.port = str(self.port).encode("utf-8")
+        self.keep_alive = None
+
+    def get_string_channel(self):
+        string = f"{self.host.decode('utf-8')}:{self.port.decode('utf-8')}"
+        return string
 
 
 def is_available(stream):
