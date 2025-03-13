@@ -1,10 +1,7 @@
 import json
 import os
-from queue import Queue
-import threading
 import time
 from typing import Optional
-import urllib3
 from dotenv import load_dotenv
 
 # from src.communications.main_pb2 import DHTSelect
