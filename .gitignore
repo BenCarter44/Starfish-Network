@@ -17,6 +17,8 @@ example.txt
 .env
 graph.html
 log/
+sim/
+cce-init.sh
 
 # Compiled Java class files
 *.class
