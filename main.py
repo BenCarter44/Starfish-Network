@@ -185,23 +185,23 @@ if __name__ == "__main__":
     )
 
     if args.verbose == 0:
-        logging.basicConfig(handlers=[ch], level=logging.ERROR)
+        logging.basicConfig(handlers=[ch, chf], level=logging.ERROR)
         asyncio.get_event_loop().set_debug(False)
 
     elif args.verbose == 1:
-        logging.basicConfig(handlers=[ch], level=logging.ERROR)
+        logging.basicConfig(handlers=[ch, chf], level=logging.ERROR)
         asyncio.get_event_loop().set_debug(True)
 
     elif args.verbose == 2:
-        logging.basicConfig(handlers=[ch], level=logging.WARNING)
+        logging.basicConfig(handlers=[ch, chf], level=logging.WARNING)
         asyncio.get_event_loop().set_debug(True)
 
     elif args.verbose == 3:
-        logging.basicConfig(handlers=[ch], level=logging.INFO)
+        logging.basicConfig(handlers=[ch, chf], level=logging.INFO)
         asyncio.get_event_loop().set_debug(True)
 
     elif args.verbose == 4:
-        logging.basicConfig(handlers=[ch], level=logging.DEBUG)
+        logging.basicConfig(handlers=[ch, chf], level=logging.DEBUG)
         asyncio.get_event_loop().set_debug(True)
 
     asyncio.get_event_loop().run_forever()
