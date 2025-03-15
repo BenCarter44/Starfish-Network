@@ -49,9 +49,9 @@ def compress_str_to_bytes(s: str) -> bytes:
     for character in s.upper():
         i = ord(character)
         if i == 47:
-            filtered_str.append(27)
+            filtered_str.append(1)
         if i >= 65 and i < 91:
-            filtered_str.append(i - 65 + 1)  # 0 is BLANK
+            filtered_str.append(i - 65 + 2)  # 0 is BLANK
 
     while len(filtered_str) < 6:
         filtered_str.append(0)
@@ -59,11 +59,11 @@ def compress_str_to_bytes(s: str) -> bytes:
     total = 0
     for i, num in enumerate(filtered_str):
         total += 28**i * num
-    return total.to_bytes(4, "big", signed=False)
+    return total.to_bytes(4, "little", signed=False)
 
 
 def decompress_bytes_to_str(b: bytes) -> str:
-    total = int.from_bytes(b, "big", signed=False)
+    total = int.from_bytes(b, "little", signed=False)
     filtered_str = []
     out = ""
     for c in range(6):
@@ -73,10 +73,10 @@ def decompress_bytes_to_str(b: bytes) -> str:
     for token in filtered_str:
         if token == 0:
             continue
-        if token == 27:
+        if token == 1:
             out += "/"
             continue
-        character = token - 1 + 65
+        character = token - 2 + 65
         out += chr(character)
     return out
 
