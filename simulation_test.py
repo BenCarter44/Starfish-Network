@@ -7,7 +7,10 @@ from src.util.util import gaussian_bytes
 import matplotlib.pyplot as plt
 from simulation_manager import PRUNE_TIME, SimulationOrchestrator
 import networkx as nx
+from pyvis.network import Network
 import random
+
+NUMBER_OF_PEERS_PER_IP = 10
 
 
 def local_distribution(number_of_peers):
@@ -74,16 +77,31 @@ def display_graph(graph):
     """
     plt.figure(figsize=(8, 6))
     pos = nx.spring_layout(graph)  # Compute layout for visualization
-    nx.draw(
-        graph,
-        pos,
-        with_labels=False,
-        node_color="skyblue",
-        edge_color="gray",
-        node_size=500,
-        font_size=12,
-    )
-    plt.show()
+    labels = {node: node.hex(sep=":") for node in graph.nodes()}
+    # nx.draw(
+    #     graph,
+    #     pos,
+    #     with_labels=True,
+    #     labels=labels,
+    #     node_color="skyblue",
+    #     edge_color="gray",
+    #     node_size=500,
+    #     font_size=8,
+    # )
+    # plt.show()
+
+    # Create a Pyvis network
+    net = Network(notebook=False)  # Set notebook=False if running outside Jupyter
+
+    # Add nodes with labels
+    for node in graph.nodes():
+        net.add_node(node.hex(), label=node.hex(sep=":"))
+
+    # Add edges
+    for edge in graph.edges():
+        net.add_edge(edge[0].hex(), edge[1].hex())
+
+    net.show("graph.html", notebook=False)  # Opens in a browser
 
 
 orchestrator = SimulationOrchestrator()
@@ -93,12 +111,16 @@ ips = orchestrator.get_ips()
 print(ips)
 peers = orchestrator.get_peers()
 print(peers)
+if len(ips) == 0:
+    input("No ips...")
+
+input("Send out...")
 
 ips = orchestrator.get_ips()
 print(f"There are {len(ips)} ips")
 
-number_of_peers_per_ip = 8
-total_number = number_of_peers_per_ip * len(ips)
+
+total_number = NUMBER_OF_PEERS_PER_IP * len(ips)
 out, means = local_distribution(total_number)
 
 print(f"Initializing {total_number} peers")
@@ -123,40 +145,72 @@ all_peers_to_ip = {}
 
 # Start Peers
 
-for peerCount in range(number_of_peers_per_ip):
+for peerCount in tqdm.tqdm(range(NUMBER_OF_PEERS_PER_IP)):
     for ip in ips:
         v: int = out.pop()
         peerID = v.to_bytes(4, "big") + os.urandom(4)
         peer_connections[ip].append(peerID)
         all_peers_to_ip[peerID] = ip
-        print(f"Starting peer: {peerID.hex(sep=':')} to IP: {ip}")
+        print(f"Starting peer: {peerID.hex(sep=':')} to IP: {ip} ")
         orchestrator.run_node(ip, peerID)
+        time.sleep(0.2)
+        io_port = orchestrator.view_peer(peerID)["io"]
+        print(f"Connect to {peerID.hex(sep=':')} at telnet://{ip}:{io_port}")
 
+# peerID = bytes.fromhex("00:22:00:05:04:03:02:01".replace(":", ""))
+# ip = "192.168.0.6"
+# all_peers_to_ip[peerID] = ip
+# orchestrator.run_node(ip, peerID)
 
-time.sleep(10)
+# peerID = bytes.fromhex("18:00:00:00:00:00:00:00".replace(":", ""))
+# ip = "192.168.0.7"
+# all_peers_to_ip[peerID] = ip
+# orchestrator.run_node(ip, peerID)
+
+# peerID = bytes.fromhex("30:00:00:00:00:00:00:00".replace(":", ""))
+# ip = "192.168.0.8"
+# all_peers_to_ip[peerID] = ip
+# orchestrator.run_node(ip, peerID)
+
+# peerID = bytes.fromhex("48:00:00:00:00:00:00:00".replace(":", ""))
+# ip = "192.168.0.9"
+# all_peers_to_ip[peerID] = ip
+# orchestrator.run_node(ip, peerID)
 
 # Connect peers.
+input("Connect???")
 
 my_graph = generate_connected_graph(list(all_peers_to_ip.keys()))
 
 display_graph(my_graph)
 
-for edge in tqdm.tqdm(my_graph.edges()):
-    sourcePeer = edge[0]
-    targetPeer = edge[1]
+
+def connect(sourcePeer, targetPeer):
     source = all_peers_to_ip[sourcePeer]
     target = all_peers_to_ip[targetPeer]
 
     source_io_port = orchestrator.view_peer(sourcePeer)["io"]
-    target_io_port = orchestrator.view_peer(targetPeer)["io"]
-    target_transport = f"tcp://{target}:{target_io_port}"
+    target_os_port = orchestrator.view_peer(targetPeer)["os"]
+    target_transport = f"tcp://{target}:{target_os_port}"
     print(f"Peer connect {sourcePeer.hex(sep=':')} to {targetPeer.hex(sep=':')}")
     orchestrator.send_connect_command(
         source, source, source_io_port, targetPeer, target_transport
     )
 
 
-time.sleep(120)
+for edge in tqdm.tqdm(my_graph.edges()):
+    connect(edge[0], edge[1])
+
+# source = bytes.fromhex("00:22:00:05:04:03:02:01".replace(":", ""))
+# target = bytes.fromhex("18:00:00:00:00:00:00:00".replace(":", ""))
+# connect(source, target)
+# target = bytes.fromhex("30:00:00:00:00:00:00:00".replace(":", ""))
+# connect(source, target)
+# target = bytes.fromhex("48:00:00:00:00:00:00:00".replace(":", ""))
+# connect(source, target)
+
+
+input("Enter to delete....")
 # Stop peers
 
 
@@ -172,5 +226,18 @@ with ThreadPoolExecutor(max_workers=len(ips)) as exe:
     for ip in peer_connections:
         result = exe.submit(kill_nodes_of_ip, ip)
 
+
+# orchestrator.kill_node(
+#     "192.168.0.6", bytes.fromhex("00:22:00:05:04:03:02:01".replace(":", ""))
+# )
+# orchestrator.kill_node(
+#     "192.168.0.7", bytes.fromhex("18:00:00:00:00:00:00:00".replace(":", ""))
+# )
+# orchestrator.kill_node(
+#     "192.168.0.8", bytes.fromhex("30:00:00:00:00:00:00:00".replace(":", ""))
+# )
+# orchestrator.kill_node(
+#     "192.168.0.9", bytes.fromhex("48:00:00:00:00:00:00:00".replace(":", ""))
+# )
 
 orchestrator.stop()

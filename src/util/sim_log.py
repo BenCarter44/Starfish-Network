@@ -59,7 +59,7 @@ class SimLoggerHandler:
         self.client.username_pw_set(MQTT_USER, MQTT_PWD)
         self.client.connect(MQTT_SERVER, MQTT_PORT, 30)
         data = {"eventType": "START", "time": time.time()}
-        self.client.publish(f"starfish/logs/{peerID}", json.dumps(data), 1)
+        self.client.publish(f"starfish/logs/{peerID}", json.dumps(data), qos=1)
 
     def start_session(self):
         if TURN_OFF_LOG:

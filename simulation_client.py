@@ -30,7 +30,7 @@ class DockerOrchestrator:
         print(f"Creating node: {peer_address.hex(sep=':')} os: {os_port} io: {io_port}")
         transport = f"tcp://{self.public_ip}:{os_port}"
         c_obj = self.client.containers.run(
-            "starfishnode",
+            "starfish",
             auto_remove=True,
             detach=True,
             environment={

@@ -4,7 +4,6 @@ import os
 import sys
 import time
 import paho.mqtt.client as mqtt
-import socket
 from dotenv import load_dotenv
 import sqlite3
 
@@ -17,7 +16,6 @@ MQTT_SERVER = os.getenv("MQTT_SERVER", "")
 MQTT_PORT = int(os.getenv("MQTT_PORT", 1883))
 MQTT_USER = os.getenv("MQTT_USER", "")
 MQTT_PWD = os.getenv("MQTT_PWD", "")
-HEARTBEAT = 10
 
 msg_queue = Queue()
 
@@ -38,7 +36,7 @@ def on_message(client, userdata, msg):
     try:
         data = json.loads(msg.payload)
     except:
-        pass
+        return  # skip!
     data_out = (
         peerID,
         data.get("session"),
@@ -100,7 +98,9 @@ while True:
             "VALUES (?,?,?,?,?,?,?,?,?,?)",
             tuple(msg),
         )
-        print(msg)
+        print(
+            f"{msg[0]} sends: {msg[2]} src: {msg[3]} dest: {msg[4]} contentID: {msg[5]} select: {msg[7]} other: {msg[6]} recv_time: {msg[9]}"
+        )
         counter += 1
         # if over 100 msgs or 2 seconds.
         if counter > 100 or time.time() - last_time > 2:

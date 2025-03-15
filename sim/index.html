@@ -1,0 +1,681 @@
+<html>
+<head>
+    <style> 
+        body 
+        {
+            margin: 0; 
+        } 
+        span
+        {
+            padding: 5px;
+            font-weight: bold;
+            border-radius: 10px;
+        }
+        label
+        {
+            color: #FFF;
+            padding: 5px;
+            font-weight: bold;
+        }
+    </style>
+    <!-- <script src="https://unpkg.com/3d-force-graph"></script> -->
+    <script src="/static/js/3d.js"></script>
+
+    <title>StarfishOS Simulation Viewer</title>
+
+    <script>
+        var maxEventCount = 0;
+        var currentEvent = 0;
+        var is_loop_running = false;
+    </script>
+    <script>
+        function retrieve_total_event_count()
+        {
+            if(is_loop_running)
+            {
+                return;
+            }
+            is_loop_running = true;
+            var xhr = new XMLHttpRequest();
+            xhr.open("GET", "/count_events", true);
+
+            xhr.onreadystatechange = function () 
+            {
+                if (xhr.readyState === 4 && xhr.status === 200) {
+                    maxEventCount = JSON.parse(xhr.responseText);
+                    console.log("Event Count:", maxEventCount);
+                    currentEvent = 0;
+                    start_simulation();
+                } 
+            };
+            xhr.send();
+        }
+    </script>
+    <script>
+        var xhr_gbl = new XMLHttpRequest();
+        xhr_gbl.onreadystatechange = function () 
+        {
+            if (xhr_gbl.readyState === 4 && xhr_gbl.status === 200) {
+                var evt = xhr_gbl.responseText;
+                var data = JSON.parse(evt);
+                console.log("Evt #: ", currentEvent);
+                process_event(data, false);
+                currentEvent = (currentEvent + 1);
+                if(currentEvent >= maxEventCount)
+                {
+                    update_slider();
+                }
+                else
+                {
+                    update_slider();
+                    let ele = document.getElementById('speed');
+                    setTimeout(sim_loop,ele.value);
+                }
+            } 
+        };
+
+        function retrieve_event(evt_number)
+        {
+            currentEvent = evt_number;
+            xhr_gbl.open("GET", `/event?e=${evt_number}`, true);
+            xhr_gbl.send();
+        }
+
+        function activate_event_stream(is_live_stream)
+        {
+            if(is_loop_running)
+            {
+                return;
+            }
+            is_loop_running = true;
+            var str_stream = "/event_stream";
+            if(is_live_stream)
+            {
+                console.log("Streaming live....");
+                str_stream = "/event_stream_live";
+            }
+            const eventSource = new EventSource(str_stream);
+
+            eventSource.onmessage = function(event) {
+                process_event(JSON.parse(event.data), true);
+            };
+
+            eventSource.onopen = function () {
+                console.log("EventSource open");
+            };
+
+            eventSource.onerror = function(error) {
+                console.log("Item is likely done! EventSource failed:", error);
+            };
+        }
+
+        function start_simulation()
+        {
+            currentEvent = 0;
+            update_slider();
+            sim_loop();
+        }
+        
+        function sim_loop()
+        {
+            let elePB = document.getElementById('progressBar');
+            currentEvent = JSON.parse(elePB.value);
+            retrieve_event(currentEvent);
+            update_slider();
+        }
+
+    </script>
+
+</head>
+<body>
+    <div id="3d-graph"></div>    
+    <!-- Controls -->
+    <div style="position: absolute; top: 5px; right: 5px;">
+        <label>Progress Bar:</label>
+        <input id="progressBar" type="range" min="0" max="100" value="0" class="slider">
+        <label>Speed:</label>
+        <input id="speed" type="range" min="1" max="2000" value="1000" class="slider">
+        <span id="taskLabel">Task</span>
+        <span id="peerLabel">Peer</span>
+        <span id="fileLabel">File</span>
+        <span id="ioLabel">IO</span>
+        <button id="animationToggle" style="margin: 8px; height: 25px; width: 100px;" onclick="retrieve_total_event_count()">
+            Play Normal
+        </button>
+        <button id="rotationToggle" style="margin: 8px; height: 25px; width: 100px;" onclick="activate_event_stream(false)">
+            Open Stream
+        </button>
+        <button id="liveToggle" style="margin: 8px; height: 25px; width: 100px;" onclick="activate_event_stream(true)">
+            Open LIVE
+        </button>
+    </div>
+    <script>
+        function update_slider()
+        {
+            let ele = document.getElementById('progressBar');
+            ele.value = currentEvent;
+            ele.max = maxEventCount - 1; 
+        }
+    </script>
+    <script>
+        // val affects sphere volume
+        let knownPeers = new Set();
+        let knownLinks = new Set();
+        let knownPeerColor = {};
+        let knownTaskRunningColor = {};
+        var linkCount = 0;
+
+        // Color constants
+        const DEFAULT_NODE_COLOR = "rgb(222,222,104)";
+        const BACKGROUND_COLOR = "#000001";
+                
+        const PEER_FLASH_OWN = "rgb(107,191,255)"; // w
+        const PEER_FLASH_NOTFOUND = "rgb(139,157,112)"; // d
+        const PEER_DHT_PACKET = "rgb(107,191,255)"; // white
+        const PEER_PACKET = "rgb(38,139,217)"; // norm
+
+        const TASK_FLASH_OWN = "rgb(107,255,107)";
+        const TASK_FLASH_NOTFOUND = "rgb(139,171,81)";
+        const TASK_DHT_PACKET = "rgb(107,255,107)";
+        const TASK_PACKET = "rgb(38,217,38)";
+        const TASK_IS_RUNNING = "rgb(0,255,135)";
+
+        const FILE_FLASH_OWN = "rgb(255,107,255)";
+        const FILE_FLASH_NOTFOUND = "rgb(164,139,112)";
+        const FILE_DHT_PACKET = "rgb(255,107,255)";
+        const FILE_PACKET = "rgb(184,38,217)";
+
+        const IO_FLASH_OWN = "rgb(243,95,95)";
+        const IO_FLASH_NOTFOUND = "rgb(171,139,80)";
+        const IO_DHT_PACKET = "rgb(255,139,139)";
+        const IO_PACKET = "rgb(217,38,38)";
+
+        const FLASH_OWN_TIME = 200;
+        const FLASH_NOT_FOUND_TIME = 100;
+
+    </script>
+    <script>
+    
+        var Graph = new ForceGraph3D(document.getElementById('3d-graph'));  //, "orbit")
+        Graph.d3Force('center').strength(1.2);
+        Graph.d3Force('charge').strength(-5);
+        Graph.d3Force('link').strength(0.01); // distance(140);
+//	      Graph.onNodeDragEnd(node => { node.fx = node.x; node.fy = node.y; node.fz = node.z });
+        Graph.linkDirectionalArrowLength(2);
+        Graph.linkDirectionalArrowRelPos(1);
+        Graph.linkCurvature(0.085);
+
+        // Graph.linkDirectionalParticles(2)
+        Graph.linkDirectionalParticleWidth(2); // 2.5
+        Graph.linkDirectionalParticleSpeed(0.05); // 0.05
+        // Graph.linkWidth(0.4);
+        function set_link_color(link)
+        {
+            if("pcolor" in link)
+            {
+                return link.pcolor;
+            }
+            else
+            {
+                return 'white';
+            }
+        }
+        Graph.linkDirectionalParticleColor(link => set_link_color(link));
+
+        function set_color(node)
+        {
+            if(node.id in knownTaskRunningColor && knownTaskRunningColor[node.id])
+            {
+                return TASK_IS_RUNNING;   
+            }
+            return knownPeerColor[node.id];
+        }
+        Graph.nodeColor(node => set_color(node));
+
+
+	Graph.onNodeClick(node => {
+          // Aim at node from outside it
+          const distance = 40;
+          const distRatio = 1 + distance/Math.hypot(node.x, node.y, node.z);
+
+          const newPos = node.x || node.y || node.z
+            ? { x: node.x * distRatio, y: node.y * distRatio, z: node.z * distRatio }
+            : { x: 0, y: 0, z: distance }; // special case if node is in (0,0,0)
+
+          Graph.cameraPosition(
+            newPos, // new position
+            node, // lookAt ({ x, y, z })
+            3000  // ms transition duration
+          );
+        });
+
+
+
+        function removeNode(node) {
+            let { nodes, links } = Graph.graphData();
+            function check_n(l) {
+                var match = l.source.id === node.id || l.target.id === node.id;
+                return !match;
+            }
+            links = links.filter(l => check_n(l)); // Remove links attached to node
+            function exact_match(n)
+            {
+                var match = n.id === node.id;
+                return !match;
+            }
+            nodes = nodes.filter(n => exact_match(n));
+            Graph.graphData({ nodes, links });
+        }
+        function removeLink(link) {
+            let { nodes, links } = Graph.graphData();
+            function check_l(l) {
+                var match = l.source.id === link.source && l.target.id === link.target;
+                return !match;
+            }
+            links = links.filter(l => check_l(l)); // Remove links with source/dst
+            Graph.graphData({ nodes, links });
+        }
+        function process_event(evt, isLive)
+        {
+            
+            if(evt.eventType == "START")
+            {
+                // create node
+                var peerID = evt.peerID.toUpperCase();
+                if(knownPeers.has(peerID))
+                {
+                    return;
+                }
+                console.log("START", peerID);
+                var nodeData = {"id":peerID,"name":peerID,"val":1}
+                let { nodes, links } = Graph.graphData();
+                var graphData = {nodes:[...nodes, nodeData], links:links};
+                knownPeerColor[peerID] = DEFAULT_NODE_COLOR;
+                knownPeers.add(peerID);
+                Graph.graphData(graphData);
+                return;
+            }
+            if(evt.eventType == "DHT_NODE_CREATE")
+            {
+                // create node
+                var peerID = evt.peerFrom.toUpperCase();
+                if(knownPeers.has(peerID))
+                {
+                    return;
+                }
+                console.log("DHT Create", peerID);
+                var nodeData = {"id":peerID,"name":peerID,"val":1}
+                let { nodes, links } = Graph.graphData();
+                var graphData = {nodes:[...nodes, nodeData], links:links};
+                knownPeerColor[peerID] = DEFAULT_NODE_COLOR;
+                knownPeers.add(peerID);
+                Graph.graphData(graphData);
+                return;
+            }
+            if(evt.eventType == "DHT_NODE_DELETE")
+            {
+                if(evt.selectTbl != "PEER")
+                {
+                    return;   
+                }
+                // delete node
+                var peerID = evt.peerFrom.toUpperCase();
+                if(!knownPeers.has(peerID))
+                {
+                    return;
+                }
+                console.log("DHT Delete", peerID);
+                knownPeers.delete(peerID);
+                var nodeData = {"id":peerID,"name":peerID,"val":1};
+                removeNode(nodeData);
+                return;
+            }
+            if(evt.eventType == "DHT_ADDRESS_UPDATE") 
+            {
+                // create link
+                var peerIDfrom = evt.peerFrom.toUpperCase();
+                var peerIDto = evt.peerTo.toUpperCase();
+                if(peerIDfrom == peerIDto)
+                {
+                    return;   
+                }
+                if(!knownPeers.has(peerIDfrom) || !knownPeers.has(peerIDto))
+                {
+                    return;
+                }
+                let s = `${peerIDfrom}-${peerIDto}`
+                if(knownLinks.has(s))
+                {
+                    return;
+                }
+                knownLinks.add(s);
+                console.log("Link Create", peerIDfrom, peerIDto);
+                var linkData = {"source":peerIDfrom,"target":peerIDto,"id":`ln${linkCount}`};
+                linkCount += 1;
+                let { nodes, links } = Graph.graphData();
+                graphData = {nodes:nodes, links:[...links, linkData]};
+                Graph.graphData(graphData);
+                return;
+            }
+            if(evt.eventType == "DHT_ADDRESS_DELETE") 
+            {
+                // create node
+                var peerIDfrom = evt.peerFrom.toUpperCase();
+                var peerIDto = evt.peerTo.toUpperCase();
+                if(!knownPeers.has(peerIDfrom) || !knownPeers.has(peerIDto))
+                {
+                    return;
+                }
+                let s = `${peerIDfrom}-${peerIDto}`
+                if(!knownLinks.has(s))
+                {
+                    return;
+                }
+                knownLinks.delete(s);
+                console.log("Link Delete", peerIDfrom, peerIDto);
+                var linkData = {"source":peerIDfrom,"target":peerIDto};
+                removeLink(linkData);
+                return;
+            }
+            if(evt.eventType == "DHT_LOOKUP_NEIGHBOR")
+            {
+                // SPAWN PARTICLE
+                var peerIDfrom = evt.peerFrom.toUpperCase();
+                var peerIDto = evt.peerTo.toUpperCase();
+                if(peerIDfrom == peerIDto)
+                {
+                    return;   
+                }
+                if(!knownPeers.has(peerIDfrom) || !knownPeers.has(peerIDto))
+                {
+                    return;
+                }
+                let s = `${peerIDfrom}-${peerIDto}`
+                if(!knownLinks.has(s))
+                {
+                    return;
+                }
+                console.log("Lookup Neighbor", peerIDfrom, peerIDto, evt.selectTbl);
+                var link = {"source":peerIDfrom,"target":peerIDto};
+
+                function find_link(l)
+                {
+                    var match = l.source.id === link.source && l.target.id === link.target;
+                    return match;
+                }
+                let { nodes, links } = Graph.graphData();
+                my_link = links.filter(l => find_link(l));
+                // console.log(my_link);
+                let lp = my_link[0];
+                if(evt.selectTbl == "PEER")
+                {
+                    lp['pcolor'] = PEER_DHT_PACKET;
+                }
+                else if(evt.selectTbl == "DEVICE")
+                {
+                    lp['pcolor'] = IO_DHT_PACKET;
+                }
+                else if(evt.selectTbl == "FILE")
+                {
+                    lp['pcolor'] = FILE_DHT_PACKET;
+                }
+                else if(evt.selectTbl == "TASK")
+                {
+                    lp['pcolor'] = TASK_DHT_PACKET;
+                }
+                else
+                {
+                    console.log("UNKNOWN TABLE",evt.selectTbl);
+                    lp['pcolor'] = "rgb(255,255,255)";
+                }
+                Graph.emitParticle(lp);
+                return;
+            }
+            if(evt.eventType == "DHT_LOOKUP_NOTFOUND")
+            {
+                // Flash
+                var peerIDfrom = evt.peerFrom.toUpperCase();
+                if(!knownPeers.has(peerIDfrom))
+                {
+                    return;
+                }
+                console.log("Flash not found",peerIDfrom, evt.selectTbl);
+                if(evt.selectTbl == "PEER")
+                {
+                    knownPeerColor[peerIDfrom] = PEER_FLASH_NOTFOUND;
+                }
+                else if(evt.selectTbl == "DEVICE")
+                {
+                    knownPeerColor[peerIDfrom] = IO_FLASH_NOTFOUND;
+                }
+                else if(evt.selectTbl == "FILE")
+                {
+                    knownPeerColor[peerIDfrom] = FILE_FLASH_NOTFOUND;
+                }
+                else if(evt.selectTbl == "TASK")
+                {
+                    knownPeerColor[peerIDfrom] = TASK_FLASH_NOTFOUND;
+                }
+                else
+                {
+                    knownPeerColor[peerIDfrom] = "rgb(50,50,50)"; // not found.
+                }
+                Graph.nodeColor(Graph.nodeColor());
+                setTimeout(fix_color,FLASH_NOT_FOUND_TIME,peerIDfrom);
+                return;
+            }
+            if(evt.eventType == "DHT_LOOKUP_OWNED")
+            {
+                // Flash
+                var peerIDfrom = evt.peerFrom.toUpperCase();
+                if(!knownPeers.has(peerIDfrom))
+                {
+                    return;
+                }
+                console.log("Flash Owned ",peerIDfrom, evt.selectTbl);
+                if(evt.selectTbl == "PEER")
+                {
+                    knownPeerColor[peerIDfrom] = PEER_FLASH_OWN;
+                }
+                else if(evt.selectTbl == "DEVICE")
+                {
+                    knownPeerColor[peerIDfrom] = IO_FLASH_OWN;
+                }
+                else if(evt.selectTbl == "FILE")
+                {
+                    knownPeerColor[peerIDfrom] = FILE_FLASH_OWN;
+                }
+                else if(evt.selectTbl == "TASK")
+                {
+                    knownPeerColor[peerIDfrom] = TASK_FLASH_OWN;
+                }
+                else
+                {
+                    knownPeerColor[peerIDfrom] = "rgb(50,50,50)"; // not found.
+                }
+                Graph.nodeColor(Graph.nodeColor());
+                setTimeout(fix_color,FLASH_OWN_TIME,peerIDfrom);
+                return;
+            }
+            if(evt.eventType == "PROCESS_TASK_START")
+            {
+                // Flash
+                var peerIDfrom = evt.peerFrom.toUpperCase();
+                if(!knownPeers.has(peerIDfrom))
+                {
+                    return;
+                }
+                console.log("Task Start ",peerIDfrom);
+                knownTaskRunningColor[peerIDfrom] = true;
+                Graph.nodeColor(Graph.nodeColor());
+                return;
+            }
+            if(evt.eventType == "PROCESS_TASK_END")
+            {
+                // Flash
+                var peerIDfrom = evt.peerFrom.toUpperCase();
+                if(!knownPeers.has(peerIDfrom))
+                {
+                    return;
+                }
+                console.log("Task End ",peerIDfrom);
+                knownTaskRunningColor[peerIDfrom] = false;
+                Graph.nodeColor(Graph.nodeColor());
+                return;
+            }
+            if(evt.eventType == "PROCESS_EVENT_SEND" || evt.eventType == "PROCESS_CHECKPOINT_SEND")
+            {
+                // SPAWN PARTICLE
+                var peerIDfrom = evt.peerFrom.toUpperCase();
+                var peerIDto = evt.peerTo.toUpperCase();
+                if(peerIDfrom == peerIDto)
+                {
+                    return;   
+                }
+                if(!knownPeers.has(peerIDfrom) || !knownPeers.has(peerIDto))
+                {
+                    return;
+                }
+                let s = `${peerIDfrom}-${peerIDto}`
+                if(!knownLinks.has(s))
+                {
+                    return;
+                }
+                console.log("Event send", peerIDfrom, peerIDto);
+                var link = {"source":peerIDfrom,"target":peerIDto};
+
+                function find_link(l)
+                {
+                    var match = l.source.id === link.source && l.target.id === link.target;
+                    return match;
+                }
+                let { nodes, links } = Graph.graphData();
+                my_link = links.filter(l => find_link(l));
+                // console.log(my_link);
+                let lp = my_link[0];
+                
+                lp['pcolor'] = TASK_PACKET;
+
+                Graph.emitParticle(lp);
+                return;
+            }
+            if(evt.eventType == "FILE_DATA_REQUEST" || evt.eventType == "FILE_CHECKPOINT_SEND")
+            {
+                // SPAWN PARTICLE
+                var peerIDfrom = evt.peerFrom.toUpperCase();
+                var peerIDto = evt.peerTo.toUpperCase();
+                if(peerIDfrom == peerIDto)
+                {
+                    return;   
+                }
+                if(!knownPeers.has(peerIDfrom) || !knownPeers.has(peerIDto))
+                {
+                    return;
+                }
+                let s = `${peerIDfrom}-${peerIDto}`
+                if(!knownLinks.has(s))
+                {
+                    return;
+                }
+                console.log("File data", peerIDfrom, peerIDto);
+                var link = {"source":peerIDfrom,"target":peerIDto};
+
+                function find_link(l)
+                {
+                    var match = l.source.id === link.source && l.target.id === link.target;
+                    return match;
+                }
+                let { nodes, links } = Graph.graphData();
+                my_link = links.filter(l => find_link(l));
+                // console.log(my_link);
+                let lp = my_link[0];
+                
+                lp['pcolor'] = FILE_PACKET;
+
+                Graph.emitParticle(lp);
+                return;
+            }
+            if(evt.eventType == "IO_REQUEST")
+            {
+                // SPAWN PARTICLE
+                var peerIDfrom = evt.peerFrom.toUpperCase();
+                var peerIDto = evt.peerTo.toUpperCase();
+                if(peerIDfrom == peerIDto)
+                {
+                    return;   
+                }
+                if(!knownPeers.has(peerIDfrom) || !knownPeers.has(peerIDto))
+                {
+                    return;
+                }
+                let s = `${peerIDfrom}-${peerIDto}`
+                if(!knownLinks.has(s))
+                {
+                    return;
+                }
+                console.log("IO data", peerIDfrom, peerIDto);
+                var link = {"source":peerIDfrom,"target":peerIDto};
+
+                function find_link(l)
+                {
+                    var match = l.source.id === link.source && l.target.id === link.target;
+                    return match;
+                }
+                let { nodes, links } = Graph.graphData();
+                my_link = links.filter(l => find_link(l));
+                // console.log(my_link);
+                let lp = my_link[0];
+                
+                lp['pcolor'] = IO_PACKET;
+
+                Graph.emitParticle(lp);
+                return;
+            }
+            console.log("OTHER: ", evt.eventType);
+        }
+       
+    
+        // .jsonUrl('../datasets/miserables.json')
+        // .nodeLabel('id')
+        // .nodeAutoColorBy('group')
+        // .linkDirectionalParticles("value")
+        // .linkDirectionalParticleSpeed(d => d.value * 0.001);
+    </script>
+    <script>
+        // recolor
+        function fix_color(peer)
+        {
+            knownPeerColor[peer] = DEFAULT_NODE_COLOR;
+            Graph.nodeColor(Graph.nodeColor());
+        }
+    </script>
+    <script type="module">
+
+        import { UnrealBloomPass } from 'https://esm.sh/three/examples/jsm/postprocessing/UnrealBloomPass.js'
+        
+        Graph.backgroundColor('#000001')
+        const bloomPass = new UnrealBloomPass();
+        bloomPass.strength = 0.4;
+        bloomPass.radius = 0.5;
+        bloomPass.threshold = 0;
+        Graph.postProcessingComposer().addPass(bloomPass);
+
+    </script>
+    <script>
+        function setSpanColors() {
+            document.getElementById("taskLabel").style.backgroundColor = TASK_PACKET;
+            document.getElementById("taskLabel").style.color = "black";
+            
+            document.getElementById("peerLabel").style.backgroundColor = PEER_PACKET;
+            document.getElementById("peerLabel").style.color = "black";
+            
+            document.getElementById("fileLabel").style.backgroundColor = FILE_PACKET;
+            document.getElementById("fileLabel").style.color = "black";
+            
+            document.getElementById("ioLabel").style.backgroundColor = IO_PACKET;
+            document.getElementById("ioLabel").style.color = "black";
+        }
+        setSpanColors();
+    </script>
+</body>
+</html>

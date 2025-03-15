@@ -38,4 +38,4 @@ ENV TRANSPORT="tcp://127.0.0.1:9280"
 ENV IOPORT=2321
 ENV PYTHONUNBUFFERED=1
 # CMD ["bash"]
-CMD ["sh","-c","uv run main.py -a ${ADDRESS} -t ${TRANSPORT} -i ${IOPORT} -p"]
+CMD ["sh","-c","uv run main.py -a ${ADDRESS} -t ${TRANSPORT} -i ${IOPORT} -p -v 4"]

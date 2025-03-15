@@ -17,7 +17,7 @@ example.txt
 .env
 graph.html
 log/
-sim/
+sim/*.db
 lib/
 cce-init.sh
 

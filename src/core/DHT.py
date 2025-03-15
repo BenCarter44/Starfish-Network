@@ -2,7 +2,7 @@
 
 By Benjamin Carter - 2025
 
-It is a simple wrapper to the python dict, but also searches a list of 
+It is a simple wrapper to the python dict, but also searches a list of
 peer addresses to send the key to. It doesn't do the actual sending, but rather
 informs the user what peer would be more appropriate for the key to be stored under.
 
