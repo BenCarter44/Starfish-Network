@@ -18,6 +18,7 @@ example.txt
 graph.html
 log/
 sim/
+lib/
 cce-init.sh
 
 # Compiled Java class files

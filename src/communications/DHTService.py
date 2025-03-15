@@ -308,10 +308,11 @@ class DHTService(pb.DHTServiceServicer):
 
         # Not found. Query peers.
         logger.debug(f"DHT - Not found, query neighbors.")
+        did_visit_neighbor_for_log = False
         for addr in neighbors:
             if addr in nodes_visited:
                 continue
-
+            did_visit_neighbor_for_log = True
             logger.debug(f"DHT - Neighbor: {addr.hex()}")
 
             # internal_callback. Get peer
@@ -355,17 +356,18 @@ class DHTService(pb.DHTServiceServicer):
         # logger.info(
         #     f"DHT - No Neighbors! Not FOUND for fetch! Key: {request.key.hex()}"
         # )
-
-        slog = sim.SimLogger()
-        session = request.simulation_session
-        slog.log(
-            sim.LOG_DHT_LOOKUP_NOTFOUND,
-            self.addr,
-            None,
-            session=session,
-            contentID=request.key,
-            select=request.select,
-        )
+        if not (did_visit_neighbor_for_log):
+            # so sim log skips the backtracking
+            slog = sim.SimLogger()
+            session = request.simulation_session
+            slog.log(
+                sim.LOG_DHT_LOOKUP_NOTFOUND,
+                self.addr,
+                None,
+                session=session,
+                contentID=request.key,
+                select=request.select,
+            )
 
         return pb_base.DHT_Fetch_Response(
             key=request.key,

@@ -136,14 +136,6 @@ class TaskService(pb.TaskServiceServicer):
                 # the request came from me and I don't own it.... don't send a checkpoint
                 pass
             else:
-                slog = sim.SimLogger()
-                slog.log(
-                    sim.LOG_PROCESS_CHECKPOINT,
-                    self.addr,
-                    session=request.simulation_session,
-                    contentID=task.get_id(),
-                )
-
                 # tell the next person checkpoint.
                 try:
                     await self.internal_callback.send_checkpoint_forward(

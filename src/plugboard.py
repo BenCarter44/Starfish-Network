@@ -828,6 +828,13 @@ class PlugBoard:
             tp = await self.get_peer_transport(monitor_peer)
             assert tp is not None
 
+        slog = sim.SimLogger()
+        slog.log(
+            sim.LOG_PROCESS_CHECKPOINT,
+            self.my_addr,
+            monitor_peer,
+            contentID=task_id,
+        )
         logger.info(f"TASK - Send checkpoint {monitor_peer.hex()}")
         taskClient = TaskPeer(tp, monitor_peer)
         await taskClient.SendCheckpoint(
@@ -862,6 +869,13 @@ class PlugBoard:
         if not (is_alive):
             return  # plugboard will later assign new monitor
 
+        slog = sim.SimLogger()
+        slog.log(
+            sim.LOG_PROCESS_CHECKPOINT,
+            self.my_addr,
+            monitor_peer,
+            contentID=task_id,
+        )
         taskClient = TaskPeer(tp, monitor_peer)
         await taskClient.SendCheckpoint(
             task_id, event_origin_previous, event_origin, self.my_addr, backwards=True
