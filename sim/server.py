@@ -24,7 +24,7 @@ msg_queue = Queue(int(QUEUE_SIZE * 1.5))
 app = Flask(__name__)
 
 # SIMULATION_DB = "test.db"
-SIMULATION_DB = "simulation-data-20250314-185843.db"
+SIMULATION_DB = "simulation-data-20250317-183842.db"
 
 # skips all log entries that are not this:
 supported_events = set(
@@ -102,7 +102,7 @@ def stream_events():
 
         for i in tqdm.tqdm(logIDs):
             cur.execute(
-                "SELECT peerID, sessionString, eventType, peerFrom, peerTo, contentID, other, selectTbl FROM starlogs WHERE logID=?",
+                "SELECT peerID, eventType, peerFrom, peerTo, contentID, other, selectTbl FROM starlogs WHERE logID=?",
                 (i,),
             )
             row = cur.fetchone()

@@ -175,6 +175,8 @@ class PlugBoard:
         Returns:
             Optional[StarAddress]: StarAddress of peer or None if not found.
         """
+        if addr is None:
+            return None
         logger.debug(f"PEER - GET PEER TRANSPORT {addr.hex()}")
         # Peer ID. Get StarAddress
         tp_b = await self.dht_get(addr, DHTSelect.PEER_ID, ignore=ignore)

@@ -375,9 +375,12 @@ def command_cat(evt: star.Event, task: star.StarTask):
     file_factory = task.get_file_factory()
     my_file = file_factory.File(task.get_user(), file)
 
-    my_file.open()
-    contents = my_file.read()
-    my_file.close()
+    try:
+        my_file.open()
+        contents = my_file.read()
+        my_file.close()
+    except ValueError:
+        contents = b"File not found!"
 
     status = device.write(contents + b"\n")
     if status != IO_OK:

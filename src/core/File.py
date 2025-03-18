@@ -288,20 +288,21 @@ class HostedFile:
 
     def get_key(self):
         # set three bits to zero.
-        mode_mask = b"\xFF\xFF\xFF\xFF\x1F\xFF\xFF\xFF"
+        mode_mask = b"\xff\xff\xff\xff\xff\xff\xff\x3f"
 
         out = self.userID + self.filepath
         out = and_bytes(out, mode_mask)
         # print(out.hex(sep=" "))
 
         if self.mode == TYPE_FILE:
-            mode_bin = b"\x00\x00\x00\x00\x20\x00\x00\x00"  # 001
+            mode_bin = b"\x00\x00\x00\x00\x00\x00\x00\x80"  # 10
         elif self.mode == TYPE_IO:
-            mode_bin = b"\x00\x00\x00\x00\x40\x00\x00\x00"  # 010
+            mode_bin = b"\x00\x00\x00\x00\x00\x00\x00\xc0"  # 11
         elif self.mode == TYPE_DIR:
-            mode_bin = b"\x00\x00\x00\x00\x60\x00\x00\x00"  # 011
+            mode_bin = b"\x00\x00\x00\x00\x00\x00\x00\x40"  # 01
         else:
-            mode_bin = b"\x00\x00\x00\x00\x80\x00\x00\x00"  # 100
+            mode_bin = b"\x00\x00\x00\x00\x00\x00\x00\x00"  # 00
+
             # mode_bin = b"\x00\x00\x00\x00\xA0\x00\x00\x00"  # 101
             # mode_bin = b"\x00\x00\x00\x00\xC0\x00\x00\x00"  # 110
             # mode_bin = b"\x00\x00\x00\x00\xE0\x00\x00\x00"  # 111
@@ -312,15 +313,15 @@ class HostedFile:
     @classmethod
     def from_key(cls, key):
         user = key[0:4]
-        mode_mask = b"\xFF\xFF\xFF\xFF\x1F\xFF\xFF\xFF"
+        mode_mask = b"\xff\xff\xff\xff\xff\xff\xff\x3f"
 
         mode = and_bytes(key, not_bytes(mode_mask))
-        mode = mode[4]
-        if mode == 0x20:
+        mode = mode[7]
+        if mode == 0x80:
             mode_set = TYPE_FILE
-        elif mode == 0x40:
+        elif mode == 0xC0:
             mode_set = TYPE_IO
-        elif mode == 0x60:
+        elif mode == 0x40:
             mode_set = TYPE_DIR
         else:
             raise ValueError("Invalid key")
