@@ -20,7 +20,7 @@ except:
 
 logger = logging.getLogger(__name__)
 
-PING_TIMEOUT = 0.3
+PING_TIMEOUT = 0.6
 
 
 class KeepAliveComm:

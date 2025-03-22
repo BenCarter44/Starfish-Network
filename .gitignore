@@ -14,6 +14,12 @@ src/star/scratchwork/
 *.debug.json
 src/star/.vscode/
 example.txt
+.env
+graph.html
+log/
+sim/*.db
+lib/
+cce-init.sh
 
 # Compiled Java class files
 *.class

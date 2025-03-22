@@ -1,0 +1,12 @@
+docker==7.1.0
+matplotlib==3.7.3
+paho-mqtt==2.1.0
+python-dotenv==1.0.1
+telnetlib3==2.0.4
+rich==13.7.1
+typing-extensions==4.12.2
+networkx==3.4.2
+flask==2.2.3
+tqdm==4.66.4
+pyvis==0.3.2
+

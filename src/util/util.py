@@ -1,5 +1,18 @@
 import os
-import numpy as np
+import random
+import math
+
+
+def random_normal(mean=0, stddev=1):
+    """Generate a random number following a normal distribution using Box-Muller transform."""
+    u1, u2 = (
+        random.random(),
+        random.random(),
+    )  # Two independent uniform random variables
+    z0 = math.sqrt(-2 * math.log(u1)) * math.cos(
+        2 * math.pi * u2
+    )  # Standard normal variable
+    return mean + z0 * stddev  # Scale and shift to desired mean and std deviation
 
 
 def gaussian_bytes(mean: bytes, std_dev: bytes | int, length: int) -> bytes:
@@ -20,7 +33,7 @@ def gaussian_bytes(mean: bytes, std_dev: bytes | int, length: int) -> bytes:
         std_dev = int.from_bytes(std_dev, byteorder="big", signed=False)
 
     # Generate random Gaussian values
-    random_value = np.random.normal(mean_int, std_dev)
+    random_value = random_normal(mean_int, std_dev)
 
     # Clip the value to be within valid byte range   # 1 << 5 same as 2^5
     clipped_value = max(0, min(random_value, (1 << (8 * length)) - 1))
@@ -36,9 +49,9 @@ def compress_str_to_bytes(s: str) -> bytes:
     for character in s.upper():
         i = ord(character)
         if i == 47:
-            filtered_str.append(27)
+            filtered_str.append(1)
         if i >= 65 and i < 91:
-            filtered_str.append(i - 65 + 1)  # 0 is BLANK
+            filtered_str.append(i - 65 + 2)  # 0 is BLANK
 
     while len(filtered_str) < 6:
         filtered_str.append(0)
@@ -46,11 +59,11 @@ def compress_str_to_bytes(s: str) -> bytes:
     total = 0
     for i, num in enumerate(filtered_str):
         total += 28**i * num
-    return total.to_bytes(4, "big", signed=False)
+    return total.to_bytes(4, "little", signed=False)
 
 
 def decompress_bytes_to_str(b: bytes) -> str:
-    total = int.from_bytes(b, "big", signed=False)
+    total = int.from_bytes(b, "little", signed=False)
     filtered_str = []
     out = ""
     for c in range(6):
@@ -60,10 +73,10 @@ def decompress_bytes_to_str(b: bytes) -> str:
     for token in filtered_str:
         if token == 0:
             continue
-        if token == 27:
+        if token == 1:
             out += "/"
             continue
-        character = token - 1 + 65
+        character = token - 2 + 65
         out += chr(character)
     return out
 
@@ -107,28 +120,24 @@ def xor_bytes(a: bytes, b: bytes):
 
 
 def xor(a: bytes, b: bytes) -> bytes:
-    """Calculate XOR of bytes
-
-    Padded with 0's for longest
+    """Calculate XOR of bytes, padded with 0's for the longest.
 
     Args:
-        a (bytes): bytes
-        b (bytes): bytes
+        a (bytes): First byte sequence.
+        b (bytes): Second byte sequence.
 
     Returns:
-        bytes: a ^ b
+        bytes: Result of a ^ b with zero-padding to match the longer input.
     """
-    a_buf = np.frombuffer(a, dtype=np.uint8)
-    b_buf = np.frombuffer(b, dtype=np.uint8)
-    a_len = a_buf.shape[0]
-    b_len = b_buf.shape[0]
-    # append 0s to MSB until same size.
-    if a_len > b_len:
-        b_buf = np.pad(b_buf, (a_len - b_len, 0), "constant", constant_values=(0,))
-    elif b_len > a_len:
-        a_buf = np.pad(a_buf, (b_len - a_len, 0), "constant", constant_values=(0,))
+    a_len, b_len = len(a), len(b)
+    max_len = max(a_len, b_len)
 
-    return (a_buf ^ b_buf).tobytes()
+    # Pad the shorter byte sequence with 0s
+    a_padded = a.rjust(max_len, b"\x00")
+    b_padded = b.rjust(max_len, b"\x00")
+
+    # Perform XOR operation
+    return bytes(x ^ y for x, y in zip(a_padded, b_padded))
 
 
 def pad_bytes(b: bytes, l: int) -> bytes:
@@ -193,7 +202,7 @@ if __name__ == "__main2__":
     result = gaussian_bytes(mean_bytes, std_dev_bytes, 32)
     print(result.hex())
 
-if __name__ == "__main__":
+if __name__ == "__main3__":
     t = "HELLO"
     b = compress_str_to_bytes(t)
     s = decompress_bytes_to_str(b)

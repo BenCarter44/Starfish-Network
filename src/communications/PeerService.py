@@ -18,7 +18,7 @@ from . import main_pb2 as pb_base
 from . import main_pb2_grpc as pb
 from ..core.star_components import StarAddress
 
-PEER_DISCOVERY_TIMEOUT = 1
+PEER_DISCOVERY_TIMEOUT = 2
 
 
 class PeerDiscoveryClient:

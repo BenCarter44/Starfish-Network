@@ -101,21 +101,24 @@ CLOSE_DEV: UPDATE_TYPE
 UNMOUNT: UPDATE_TYPE
 
 class DHT_Fetch_Request(_message.Message):
-    __slots__ = ("key", "query_chain", "status", "select")
+    __slots__ = ("key", "query_chain", "status", "select", "simulation_session")
     KEY_FIELD_NUMBER: _ClassVar[int]
     QUERY_CHAIN_FIELD_NUMBER: _ClassVar[int]
     STATUS_FIELD_NUMBER: _ClassVar[int]
     SELECT_FIELD_NUMBER: _ClassVar[int]
+    SIMULATION_SESSION_FIELD_NUMBER: _ClassVar[int]
     key: bytes
     query_chain: _containers.RepeatedScalarFieldContainer[bytes]
     status: DHTStatus
     select: DHTSelect
+    simulation_session: str
     def __init__(
         self,
         key: _Optional[bytes] = ...,
         query_chain: _Optional[_Iterable[bytes]] = ...,
         status: _Optional[_Union[DHTStatus, str]] = ...,
         select: _Optional[_Union[DHTSelect, str]] = ...,
+        simulation_session: _Optional[str] = ...,
     ) -> None: ...
 
 class DHT_Fetch_Response(_message.Message):
@@ -148,6 +151,7 @@ class DHT_Store_Request(_message.Message):
         "select",
         "who",
         "fixed_owner",
+        "simulation_session",
     )
     KEY_FIELD_NUMBER: _ClassVar[int]
     VALUE_FIELD_NUMBER: _ClassVar[int]
@@ -156,6 +160,7 @@ class DHT_Store_Request(_message.Message):
     SELECT_FIELD_NUMBER: _ClassVar[int]
     WHO_FIELD_NUMBER: _ClassVar[int]
     FIXED_OWNER_FIELD_NUMBER: _ClassVar[int]
+    SIMULATION_SESSION_FIELD_NUMBER: _ClassVar[int]
     key: bytes
     value: bytes
     query_chain: _containers.RepeatedScalarFieldContainer[bytes]
@@ -163,6 +168,7 @@ class DHT_Store_Request(_message.Message):
     select: DHTSelect
     who: bytes
     fixed_owner: int
+    simulation_session: str
     def __init__(
         self,
         key: _Optional[bytes] = ...,
@@ -172,6 +178,7 @@ class DHT_Store_Request(_message.Message):
         select: _Optional[_Union[DHTSelect, str]] = ...,
         who: _Optional[bytes] = ...,
         fixed_owner: _Optional[int] = ...,
+        simulation_session: _Optional[str] = ...,
     ) -> None: ...
 
 class DHT_Store_Response(_message.Message):
@@ -345,15 +352,18 @@ class TaskAllocate_Response(_message.Message):
     def __init__(self, status: _Optional[_Union[DHTStatus, str]] = ...) -> None: ...
 
 class SendEvent_Request(_message.Message):
-    __slots__ = ("evt", "who")
+    __slots__ = ("evt", "who", "simulation_session")
     EVT_FIELD_NUMBER: _ClassVar[int]
     WHO_FIELD_NUMBER: _ClassVar[int]
+    SIMULATION_SESSION_FIELD_NUMBER: _ClassVar[int]
     evt: _primitives_pb2.Event
     who: bytes
+    simulation_session: str
     def __init__(
         self,
         evt: _Optional[_Union[_primitives_pb2.Event, _Mapping]] = ...,
         who: _Optional[bytes] = ...,
+        simulation_session: _Optional[str] = ...,
     ) -> None: ...
 
 class SendEvent_Response(_message.Message):

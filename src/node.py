@@ -21,6 +21,7 @@ from src.plugboard import PlugBoard
 import asyncio
 import logging
 
+import src.util.sim_log as sim
 from src.util.util import decompress_bytes_to_str
 
 logger = logging.getLogger(__name__)
@@ -70,6 +71,10 @@ class Node:
             bin_addr (bytes): The node binary address (Peer ID)
             transport (StarAddress): Transport address to serve on.
         """
+        # sim log
+        log = sim.SimLogger(bin_addr)
+        log.log(sim.LOG_DHT_NODE_CREATE, bin_addr)
+
         self.plugboard = PlugBoard(bin_addr, transport, file_save_dir, self)
         self.addr = bin_addr
         self.transport = transport

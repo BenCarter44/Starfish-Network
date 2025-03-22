@@ -2,7 +2,7 @@
 Plugboard.py
 
 Serves as the middleware between the message services, DHTs, and internal Node APIs.
-It's the low-level side while `node.py` is the high level that has the Node class that 
+It's the low-level side while `node.py` is the high level that has the Node class that
 the outside world interacts with.
 """
 
@@ -29,6 +29,7 @@ from .communications.main_pb2 import DHTSelect, DHTStatus, FileValue
 from .communications.primitives_pb2 import TaskValue
 from .core.star_components import StarTask, StarProcess, StarAddress, Event
 import logging
+import src.util.sim_log as sim
 
 logger = logging.getLogger(__name__)
 
@@ -158,6 +159,8 @@ class PlugBoard:
                     logger.info(f"IO - DEVICE_TABLE \t [{key.hex()}]")
 
     def remove_peer_from_address_tables(self, peer):
+        log = sim.SimLogger()
+        log.log(sim.LOG_DHT_ADDRESS_DELETE, self.my_addr, peer)
         self.peer_table.remove_address(peer)
         self.task_table.remove_address(peer)
         self.file_table.remove_address(peer)
@@ -172,6 +175,8 @@ class PlugBoard:
         Returns:
             Optional[StarAddress]: StarAddress of peer or None if not found.
         """
+        if addr is None:
+            return None
         logger.debug(f"PEER - GET PEER TRANSPORT {addr.hex()}")
         # Peer ID. Get StarAddress
         tp_b = await self.dht_get(addr, DHTSelect.PEER_ID, ignore=ignore)
@@ -334,31 +339,32 @@ class PlugBoard:
                 peer_to_query = x
                 break
             if peer_to_query is None:
-                return await self.perform_discovery_round()
+                return  # await self.perform_discovery_round()
             self.seen_peers.remove(peer_to_query)
             logger.info(
                 f"DISCOVERY - Discovery: Searching for {peer_to_query.hex()} - chain - length remain: {len(self.seen_peers)}"
             )
             await self.get_peer_transport(peer_to_query)
             return
-        if (
-            decision < 0.75
-        ):  # 25% of time, try to find new CLOSE people (use gauss dist)
-            query = gaussian_bytes(self.my_addr[0:4], 2**16, 4)  # d route
-            query = query + os.urandom(4)
-            logger.info(
-                f"DISCOVERY - Discovery: Searching for {query.hex()} - gauss - length remain: {len(self.seen_peers)}"
-            )
-            await self.get_peer_transport(query)
-            return
-        else:
-            # 25% of time, try to find FAR people. (General random dist.)
-            query = os.urandom(8)
-            logger.info(
-                f"DISCOVERY - Discovery: Searching for {query.hex()} - rand - length remain: {len(self.seen_peers)}"
-            )
-            await self.get_peer_transport(query)
-            return
+        # if (
+        #     decision < 0.75
+        # ):  # 25% of time, try to find new CLOSE people (use gauss dist)
+        #     query = gaussian_bytes(self.my_addr[0:4], 2**16, 4)  # d route
+        #     query = query + os.urandom(4)
+        #     logger.info(
+        #         f"DISCOVERY - Discovery: Searching for {query.hex()} - gauss - length remain: {len(self.seen_peers)}"
+        #     )
+        #     await self.get_peer_transport(query)
+        #     return
+
+        # else:
+        # 50% of time, try to find FAR people. (General random dist.)
+        query = os.urandom(8)
+        logger.info(
+            f"DISCOVERY - Discovery: Searching for {query.hex()} - rand - length remain: {len(self.seen_peers)}"
+        )
+        await self.get_peer_transport(query)
+        return
 
     async def perform_bootstrap(self, peer_addr: bytes, address: StarAddress):
         """Perform a bootstrap request.
@@ -397,8 +403,19 @@ class PlugBoard:
         logger.debug(f"TASK - {evt.origin}")
         assert str(evt).find("Event object") != -1
         # Sends to local.
+
+        slog = sim.SimLogger()
+        session = slog.start_session()
+        slog.log(
+            sim.LOG_PROCESS_EVENT_SEND,
+            self.my_addr,
+            self.my_addr,
+            session=session,
+            contentID=evt.target.get_id(),
+        )
+
         try:
-            resp = await self.task_interface.SendEvent(evt)
+            resp = await self.task_interface.SendEvent(evt, simulation_session=session)
         except:
             logger.info("Unable to deliver event to node!")
             return False
@@ -813,6 +830,13 @@ class PlugBoard:
             tp = await self.get_peer_transport(monitor_peer)
             assert tp is not None
 
+        slog = sim.SimLogger()
+        slog.log(
+            sim.LOG_PROCESS_CHECKPOINT,
+            self.my_addr,
+            monitor_peer,
+            contentID=task_id,
+        )
         logger.info(f"TASK - Send checkpoint {monitor_peer.hex()}")
         taskClient = TaskPeer(tp, monitor_peer)
         await taskClient.SendCheckpoint(
@@ -847,6 +871,13 @@ class PlugBoard:
         if not (is_alive):
             return  # plugboard will later assign new monitor
 
+        slog = sim.SimLogger()
+        slog.log(
+            sim.LOG_PROCESS_CHECKPOINT,
+            self.my_addr,
+            monitor_peer,
+            contentID=task_id,
+        )
         taskClient = TaskPeer(tp, monitor_peer)
         await taskClient.SendCheckpoint(
             task_id, event_origin_previous, event_origin, self.my_addr, backwards=True
@@ -862,6 +893,16 @@ class PlugBoard:
             return None
         addr = await self.get_peer_transport(peerID)
         assert addr is not None
+
+        slog = sim.SimLogger()
+        slog.log(
+            sim.LOG_FILE_DATA_REQUEST,
+            self.my_addr,
+            peerID,
+            contentID=file.get_key(),
+            other="open",
+        )
+
         fc = FileClient(addr, peerID, process_id)
         identifier = await fc.OpenFile(file)
         file.local_identifier = identifier
@@ -873,6 +914,16 @@ class PlugBoard:
         assert peerID is not None
         addr = await self.get_peer_transport(peerID)
         assert addr is not None
+
+        slog = sim.SimLogger()
+        slog.log(
+            sim.LOG_FILE_DATA_REQUEST,
+            self.my_addr,
+            peerID,
+            contentID=file.get_key(),
+            other="read",
+        )
+
         fc = FileClient(addr, peerID, process_id)
         data = await fc.ReadFile(file, length)
         return data
@@ -883,6 +934,16 @@ class PlugBoard:
         assert peerID is not None
         addr = await self.get_peer_transport(peerID)
         assert addr is not None
+
+        slog = sim.SimLogger()
+        slog.log(
+            sim.LOG_FILE_DATA_REQUEST,
+            self.my_addr,
+            peerID,
+            contentID=file.get_key(),
+            other="write",
+        )
+
         fc = FileClient(addr, peerID, process_id)
         data = await fc.WriteFile(file, data)
         return data
@@ -895,6 +956,16 @@ class PlugBoard:
         assert peerID is not None
         addr = await self.get_peer_transport(peerID)
         assert addr is not None
+
+        slog = sim.SimLogger()
+        slog.log(
+            sim.LOG_FILE_DATA_REQUEST,
+            self.my_addr,
+            peerID,
+            contentID=file.get_key(),
+            other="seek",
+        )
+
         fc = FileClient(addr, peerID, process_id)
         data = await fc.SeekFile(file, offset, whence)
         return data
@@ -905,6 +976,16 @@ class PlugBoard:
         assert peerID is not None
         addr = await self.get_peer_transport(peerID)
         assert addr is not None
+
+        slog = sim.SimLogger()
+        slog.log(
+            sim.LOG_FILE_DATA_REQUEST,
+            self.my_addr,
+            peerID,
+            contentID=file.get_key(),
+            other="close",
+        )
+
         fc = FileClient(addr, peerID, process_id)
         data = await fc.CloseFile(file)
         return data
@@ -1000,6 +1081,14 @@ class PlugBoard:
         if idf is None:
             return IO_BUSY
 
+        slog = sim.SimLogger()
+        slog.log(
+            sim.LOG_IO_REQUEST,
+            self.my_addr,
+            who,
+            contentID=device.get_id(),
+            other="write",
+        )
         ioc = IOClient(tp, who, idf)
         status = await ioc.WriteDevice(device, data)
         status = convert_to_io_status(status)
@@ -1018,6 +1107,14 @@ class PlugBoard:
         idf = device.get_local_device_identifier()
         if idf is None:
             return b"", IO_BUSY
+        slog = sim.SimLogger()
+        slog.log(
+            sim.LOG_IO_REQUEST,
+            self.my_addr,
+            who,
+            contentID=device.get_id(),
+            other="read",
+        )
         ioc = IOClient(tp, who, idf)
         out, status = await ioc.ReadDevice(device, l)
         status = convert_to_io_status(status)
@@ -1036,6 +1133,14 @@ class PlugBoard:
         idf = device.get_local_device_identifier()
         if idf is None:
             return b"", IO_BUSY
+        slog = sim.SimLogger()
+        slog.log(
+            sim.LOG_IO_REQUEST,
+            self.my_addr,
+            who,
+            contentID=device.get_id(),
+            other="readavail",
+        )
         ioc = IOClient(tp, who, idf)
         out, status = await ioc.ReadAvailable(device)
         logger.debug(f"IO - ReadAvail Output: {out}")
@@ -1051,7 +1156,14 @@ class PlugBoard:
         tp = await self.get_peer_transport(who)
         if tp is None:
             return b"", IO_NONEXIST
-
+        slog = sim.SimLogger()
+        slog.log(
+            sim.LOG_IO_REQUEST,
+            self.my_addr,
+            who,
+            contentID=device.get_id(),
+            other="open",
+        )
         ioc = IOClient(tp, who, processID)
         out_id, status = await ioc.OpenDevice(device)
         logger.info("IO - Open request done")
@@ -1069,6 +1181,14 @@ class PlugBoard:
         idf = device.get_local_device_identifier()
         if idf is None:
             return IO_BUSY
+        slog = sim.SimLogger()
+        slog.log(
+            sim.LOG_IO_REQUEST,
+            self.my_addr,
+            who,
+            contentID=device.get_id(),
+            other="close",
+        )
         ioc = IOClient(tp, who, idf)
         status = await ioc.CloseDevice(device)
         return convert_to_io_status(status)
@@ -1085,6 +1205,14 @@ class PlugBoard:
         idf = device.get_local_device_identifier()
         if idf is None:
             return b"", IO_BUSY
+        slog = sim.SimLogger()
+        slog.log(
+            sim.LOG_IO_REQUEST,
+            self.my_addr,
+            who,
+            contentID=device.get_id(),
+            other="unmount",
+        )
         ioc = IOClient(tp, who, idf)
         status = await ioc.UnmountDevice(device)
         return convert_to_io_status(status)
@@ -1102,8 +1230,19 @@ class PlugBoard:
             Optional[bytes]: value or None for not found
         """
         # It tries my local loopback.... interface is on local loopback.
+        slog = sim.SimLogger()
+        session = slog.start_session()
+        slog.log(
+            sim.LOG_DHT_LOOKUP_START,
+            self.my_addr,
+            self.my_addr,
+            session=session,
+            contentID=key,
+            select=select,
+        )
+
         value, status, select_in = await self.dht_interface.FetchItem(
-            key, select, nodes_visited=ignore
+            key, select, nodes_visited=ignore, simlog_session=session
         )  # send out.
         if (
             status != DHTStatus.FOUND and status != DHTStatus.OWNED
@@ -1161,9 +1300,23 @@ class PlugBoard:
         Returns:
             DHTStatus: Status of operation
         """
-
+        slog = sim.SimLogger()
+        session = slog.start_session()
+        slog.log(
+            sim.LOG_DHT_LOOKUP_START,
+            self.my_addr,
+            self.my_addr,
+            session=session,
+            contentID=key,
+            select=select,
+        )
         status, who = await self.dht_interface.StoreItem(
-            key, value, select, nodes_visited=nodes_visited, fixed_owner=fixed_owner
+            key,
+            value,
+            select,
+            nodes_visited=nodes_visited,
+            fixed_owner=fixed_owner,
+            simlog_session=session,
         )
         return status, who
 
@@ -1178,12 +1331,13 @@ class PlugBoard:
             select (DHTSelect): DHT to store under
         """
         if select == DHTSelect.PEER_ID:
-
             self.peer_table.update_addresses(key)
             result = self.peer_table.set_cache(key, value)
             self.task_table.update_addresses(key)
             self.file_table.update_addresses(key)
             self.device_table.update_addresses(key)
+            slog = sim.SimLogger()
+            slog.log(sim.LOG_DHT_ADDRESS_UPDATE, self.my_addr, key)
             if not (result):
                 # I already owned it.
                 return
@@ -1371,6 +1525,8 @@ class PlugBoard:
             self.task_table.update_addresses(key)
             self.file_table.update_addresses(key)
             self.device_table.update_addresses(key)
+            slog = sim.SimLogger()
+            slog.log(sim.LOG_DHT_ADDRESS_UPDATE, self.my_addr, key)
             r = self.peer_table.set(key, value, ignore=ignore)
             if r.response_code == DHTStatus.OWNED:
                 #  Add callback to KeepAlive
@@ -1500,6 +1656,9 @@ class PlugBoard:
         if select == DHTSelect.PEER_ID:
             if not (self.peer_table.exists(key)):
                 return DHTStatus.ERR
+
+            log = sim.SimLogger()
+            log.log(sim.LOG_DHT_NODE_DELETE, key, select=select)
 
             self.remove_peer_from_address_tables(key)
             await self.dht_delete_notice_plain(key, select)

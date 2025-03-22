@@ -3,7 +3,8 @@
 
 import asyncio
 import logging
-from typing import AsyncGenerator, Iterator
+from typing import AsyncGenerator, Iterator, Optional
+import src.util.sim_log as sim
 
 import grpc
 
@@ -27,7 +28,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-DHT_REQ_TIMEOUT = 1
+DHT_REQ_TIMEOUT = 2
 
 
 def nice_print(bs):
@@ -51,13 +52,17 @@ class DHTClient:
         select: pb_base.DHTSelect,
         nodes_visited: list[bytes] = [],
         timeout=DHT_REQ_TIMEOUT,
+        simlog_session: str = "",
     ) -> tuple[bytes, pb_base.DHTStatus, pb_base.DHTSelect]:
 
         logger.debug(f"DHT - Create FetchItem request")
         logger.debug(f"DHT - [{key.hex()}]")
         peer_id = self.peer_id
         request = pb_base.DHT_Fetch_Request(
-            key=key, select=select, query_chain=nodes_visited
+            key=key,
+            select=select,
+            query_chain=nodes_visited,
+            simulation_session=simlog_session,
         )
 
         try:
@@ -78,6 +83,7 @@ class DHTClient:
         nodes_visited: list[bytes] = [],
         timeout=DHT_REQ_TIMEOUT,
         fixed_owner=False,
+        simlog_session="",
     ) -> tuple[pb_base.DHTStatus, bytes]:
         peer_id = self.peer_id
 
@@ -93,6 +99,7 @@ class DHTClient:
             query_chain=nodes_visited,
             who=self.peer_id,
             fixed_owner=fixed_owner,
+            simulation_session=simlog_session,
         )
         # request.query_chain.append(peer_id)
         # for x in request.query_chain:
@@ -274,6 +281,22 @@ class DHTService(pb.DHTServiceServicer):
         if (
             status == pb_base.DHTStatus.OWNED or status == pb_base.DHTStatus.FOUND
         ):  # I own it or in cache.
+
+            slog = sim.SimLogger()
+            session = request.simulation_session
+            slog.log(
+                (
+                    sim.LOG_DHT_LOOKUP_OWNED
+                    if status == pb_base.DHTStatus.OWNED
+                    else sim.LOG_DHT_LOOKUP_CACHED
+                ),
+                self.addr,
+                None,
+                session=session,
+                contentID=request.key,
+                select=request.select,
+            )
+
             logger.debug(f"DHT - I {self.addr.hex()} have {request.key.hex()}")
             return pb_base.DHT_Fetch_Response(
                 key=request.key,
@@ -282,12 +305,14 @@ class DHTService(pb.DHTServiceServicer):
                 status=pb_base.DHTStatus.FOUND,
                 select=request.select,
             )
+
         # Not found. Query peers.
         logger.debug(f"DHT - Not found, query neighbors.")
+        did_visit_neighbor_for_log = False
         for addr in neighbors:
             if addr in nodes_visited:
                 continue
-
+            did_visit_neighbor_for_log = True
             logger.debug(f"DHT - Neighbor: {addr.hex()}")
 
             # internal_callback. Get peer
@@ -297,6 +322,17 @@ class DHTService(pb.DHTServiceServicer):
             if transport is None:
                 logger.info(f"DHT - Transport for {addr.hex()} not found!")
                 continue
+
+            slog = sim.SimLogger()
+            session = request.simulation_session
+            slog.log(
+                sim.LOG_DHT_LOOKUP_NEIGHBOR,
+                self.addr,
+                addr,
+                session=session,
+                contentID=request.key,
+                select=request.select,
+            )
 
             dhtClient = DHTClient(transport, addr, self.addr, self.keep_alive)
             response, status, select = await dhtClient.FetchItem(
@@ -320,6 +356,19 @@ class DHTService(pb.DHTServiceServicer):
         # logger.info(
         #     f"DHT - No Neighbors! Not FOUND for fetch! Key: {request.key.hex()}"
         # )
+        if not (did_visit_neighbor_for_log):
+            # so sim log skips the backtracking
+            slog = sim.SimLogger()
+            session = request.simulation_session
+            slog.log(
+                sim.LOG_DHT_LOOKUP_NOTFOUND,
+                self.addr,
+                None,
+                session=session,
+                contentID=request.key,
+                select=request.select,
+            )
+
         return pb_base.DHT_Fetch_Response(
             key=request.key,
             value=data,
@@ -375,6 +424,17 @@ class DHTService(pb.DHTServiceServicer):
             logger.debug(
                 f"DHT - I {self.addr.hex()} now own record {request.key.hex()}"
             )
+            slog = sim.SimLogger()
+            session = request.simulation_session
+            slog.log(
+                sim.LOG_DHT_LOOKUP_OWNED,
+                self.addr,
+                None,
+                session=session,
+                contentID=request.key,
+                other="stored",
+                select=request.select,
+            )
             return pb_base.DHT_Store_Response(
                 key=request.key,
                 query_chain=nodes_visited,
@@ -402,6 +462,17 @@ class DHTService(pb.DHTServiceServicer):
                 continue
 
             logger.debug(f"DHT - {transport.get_string_channel()}")
+
+            slog = sim.SimLogger()
+            session = request.simulation_session
+            slog.log(
+                sim.LOG_DHT_LOOKUP_NEIGHBOR,
+                self.addr,
+                addr,
+                session=session,
+                contentID=request.key,
+                select=request.select,
+            )
             dhtClient = DHTClient(transport, addr, self.addr, self.keep_alive)
             response, who = await dhtClient.StoreItem(
                 request.key, request.value, request.select, nodes_visited=nodes_visited
@@ -422,6 +493,16 @@ class DHTService(pb.DHTServiceServicer):
 
         logger.info(
             f"DHT - No Neighbors! Not FOUND for store! Key: {request.key.hex()}"
+        )
+        slog = sim.SimLogger()
+        session = request.simulation_session
+        slog.log(
+            sim.LOG_DHT_LOOKUP_NOTFOUND,
+            self.addr,
+            None,
+            session=session,
+            contentID=request.key,
+            select=request.select,
         )
         return pb_base.DHT_Store_Response(
             key=request.key,

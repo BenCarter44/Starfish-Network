@@ -8,6 +8,7 @@ import grpc
 from . import main_pb2 as pb_base
 from . import main_pb2_grpc as pb
 from ..core.star_components import Event, StarAddress, StarProcess, StarTask
+import src.util.sim_log as sim
 
 try:
     from src.plugboard import PlugBoard  # For typing purposes.
@@ -16,7 +17,7 @@ except:
 
 logger = logging.getLogger(__name__)
 
-TASK_SERVICE_TIMEOUT = 1
+TASK_SERVICE_TIMEOUT = 2
 
 
 class TaskPeer:
@@ -30,10 +31,12 @@ class TaskPeer:
         self.peer_id = my_addr
 
     async def SendEvent(
-        self, evt: Event, timeout=TASK_SERVICE_TIMEOUT
+        self, evt: Event, timeout=TASK_SERVICE_TIMEOUT, simulation_session=""
     ) -> pb_base.SendEvent_Response:
         event = evt.to_pb()
-        request = pb_base.SendEvent_Request(evt=event, who=self.peer_id)
+        request = pb_base.SendEvent_Request(
+            evt=event, who=self.peer_id, simulation_session=simulation_session
+        )
         response = await self.stub.SendEvent(request, timeout=timeout)
         await self.kp_channel.update()
         return response
@@ -167,6 +170,13 @@ class TaskService(pb.TaskServiceServicer):
             )
 
         taskClient = TaskPeer(tp, peerID)
+        slog = sim.SimLogger()
+        slog.log(
+            sim.LOG_PROCESS_EVENT_SEND,
+            self.addr,
+            session=request.simulation_session,
+            contentID=task.get_id(),
+        )
         try:
             response = await taskClient.SendEvent(evt, timeout=TASK_SERVICE_TIMEOUT)
         except Exception as e:

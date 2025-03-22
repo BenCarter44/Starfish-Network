@@ -102,12 +102,12 @@ if __name__ == "__main__":
     parser = create_parser()
     args = parser.parse_args()
 
-    # if args.transport is None or args.transport == "default":
-    #     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    #     s.connect(("8.8.8.8", 80))
-    #     my_ip = s.getsockname()[0]
-    #     s.close()
-    #     args.transport = transport = f"tcp://{my_ip}:9280"
+    if args.transport is None or args.transport == "default":
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        my_ip = s.getsockname()[0]
+        s.close()
+        args.transport = transport = f"tcp://{my_ip}:9280"
 
     # if args.transport == "docker":
     #     host = socket.gethostname()
@@ -128,32 +128,35 @@ if __name__ == "__main__":
     ch.setLevel(logging.DEBUG)
     ch.setFormatter(CustomFormatter())
 
+    chf = logging.FileHandler(f"log/runtime.log.{args.address.replace(':', '')}")
+    chf.setLevel(logging.DEBUG)
+
     def filter_messages_by_label(record):
         if record.levelno >= logging.ERROR:
             return True
         record.msg = str(record.msg)
         if record.module.startswith("stream_writer"):
-            return False
+            return True
         if record.module.startswith("server"):
-            return False
+            return True
         if record.msg.startswith("PEER"):
-            return False
+            return True
         elif record.msg.startswith("ENGINE"):
-            return False
+            return True
         elif record.msg.startswith("TASK"):
             return True
         elif record.msg.startswith("FILE"):
-            return False
+            return True
         elif record.msg.startswith("DISCOVERY"):
-            return False
+            return True
         elif record.msg.startswith("DHT"):
-            return False
+            return True
         elif record.msg.startswith("IO"):
             return True
         elif record.msg.startswith("KEEPALIVE"):
-            return False
+            return True
         elif record.msg.startswith("META"):
-            return False
+            return True
         return True
 
     ch.addFilter(filter_messages_by_label)
@@ -182,23 +185,23 @@ if __name__ == "__main__":
     )
 
     if args.verbose == 0:
-        logging.basicConfig(handlers=[ch], level=logging.ERROR)
+        logging.basicConfig(handlers=[ch, chf], level=logging.ERROR)
         asyncio.get_event_loop().set_debug(False)
 
     elif args.verbose == 1:
-        logging.basicConfig(handlers=[ch], level=logging.ERROR)
+        logging.basicConfig(handlers=[ch, chf], level=logging.ERROR)
         asyncio.get_event_loop().set_debug(True)
 
     elif args.verbose == 2:
-        logging.basicConfig(handlers=[ch], level=logging.WARNING)
+        logging.basicConfig(handlers=[ch, chf], level=logging.WARNING)
         asyncio.get_event_loop().set_debug(True)
 
     elif args.verbose == 3:
-        logging.basicConfig(handlers=[ch], level=logging.INFO)
+        logging.basicConfig(handlers=[ch, chf], level=logging.INFO)
         asyncio.get_event_loop().set_debug(True)
 
     elif args.verbose == 4:
-        logging.basicConfig(handlers=[ch], level=logging.DEBUG)
+        logging.basicConfig(handlers=[ch, chf], level=logging.DEBUG)
         asyncio.get_event_loop().set_debug(True)
 
     asyncio.get_event_loop().run_forever()
