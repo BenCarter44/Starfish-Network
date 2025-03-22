@@ -26,7 +26,7 @@ MQTT_SERVER = os.getenv("MQTT_SERVER", "")
 MQTT_PORT = int(os.getenv("MQTT_PORT", 1883))
 MQTT_USER = os.getenv("MQTT_USER", "")
 MQTT_PWD = os.getenv("MQTT_PWD", "")
-PRUNE_TIME = 120
+PRUNE_TIME = 240
 
 
 class SimulationOrchestrator:

@@ -10,7 +10,7 @@ import networkx as nx
 from pyvis.network import Network
 import random
 
-NUMBER_OF_PEERS_PER_IP = 10
+NUMBER_OF_PEERS_PER_IP = 1
 
 
 def local_distribution(number_of_peers):
@@ -210,8 +210,7 @@ for edge in tqdm.tqdm(my_graph.edges()):
 # connect(source, target)
 
 
-input("Enter to delete....")
-# Stop peers
+input("Delete peers...")
 
 
 def kill_nodes_of_ip(ip):

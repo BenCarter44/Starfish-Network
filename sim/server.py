@@ -16,7 +16,7 @@ MQTT_PORT = int(os.getenv("MQTT_PORT", 1883))
 MQTT_USER = os.getenv("MQTT_USER", "")
 MQTT_PWD = os.getenv("MQTT_PWD", "")
 
-STREAM_DELAY = 0.02
+STREAM_DELAY = 0.021
 QUEUE_SIZE = 2000
 
 msg_queue = Queue(int(QUEUE_SIZE * 1.5))
@@ -24,8 +24,8 @@ msg_queue = Queue(int(QUEUE_SIZE * 1.5))
 app = Flask(__name__)
 
 # SIMULATION_DB = "test.db"
-SIMULATION_DB = "simulation-data-20250317-183842.db"
-
+# SIMULATION_DB = "simulation-data-20250317-183842.db"
+SIMULATION_DB = "simulation-data-20250317-172950.db"
 # skips all log entries that are not this:
 supported_events = set(
     [
