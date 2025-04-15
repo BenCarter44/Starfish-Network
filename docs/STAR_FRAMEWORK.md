@@ -9,7 +9,6 @@ Each program is then broken down into tasks which are marked by the `star.task()
 2. The task must try to run as fast as possible (try less than 100msec) to free up the OS for other tasks.
 3. The task must include required imports inside the task
 
-**Run `simple_executor.py <PATH TO STAR PROGRAM>` to run a STAR program.**
 
 An example task
 
@@ -141,4 +140,3 @@ Look at the example programs.
 2. `list_dist.stardef.py` is another example.
 3. `file_reader.py` is an example for file usage (although not using the OS features just yet)
 
-**Run `simple_executor.py <PATH TO STAR PROGRAM>` to run a STAR program.**
