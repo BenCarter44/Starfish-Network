@@ -13,6 +13,16 @@ This is currently a research project for [Benjamin Carter's](https://codingcando
 
 ---
 
+[Watch a video of a OS visual that demonstrates node communication in real time here.](https://codingcando.com/fileShare/file?code=CD2KBNHH23)
+
+[See a demo of StarfishOS in action (no sound)](https://codingcando.com/fileShare/file?code=starfishUse)
+
+[View my research poster here.](https://codingcando.com/fileShare/file?code=starfishOS)
+
+This project was presented in front of Grand Canyon University Administration, including the Provost and President of the University, in the GCU Undergraduate Research Symposium. [See the news article.](https://news.gcu.edu/gcu-news/students-highlight-unique-studies-at-research-symposium/)
+
+---
+
 ## Overview - In Simple English
 
 A simple lay-man definition of a computer is this: A machine that:
@@ -28,7 +38,7 @@ So, the Starfish Network seeks to recreate the above, to "simulate a computer".
 
 It seeks to combine those into one unified system. A completely distributed OS.
 
-This repository is a proof of concept of the Starfish OS and Architecture. A node can be run as a Docker container by building the
+This repository is a proof of concept of the Starfish OS and architecture. A node can be run as a Docker container by building the
 provided Dockerfile. 
 
 See the `/docs/general.md` for more information. Or, [take a look at the overview blog article](https://codingcando.com/starfish)
